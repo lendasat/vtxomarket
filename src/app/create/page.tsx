@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { getNDK, loginWithPrivateKey, connectNDK, VTXO_TOKEN_KIND } from "@/lib/nostr";
-import { issueToken, getDustAmount, getBalance } from "@/lib/ark-wallet";
-import type { BalanceInfo } from "@/lib/ark-wallet";
+import { issueToken, getDustAmount } from "@/lib/ark-wallet";
 import { mnemonicToNostrPrivateKeyHex } from "@/lib/wallet-crypto";
 import { NDKEvent } from "@nostr-dev-kit/ndk";
 
@@ -30,31 +29,15 @@ export default function CreatePage() {
   const walletReady = useAppStore((s) => s.walletReady);
   const addToken = useAppStore((s) => s.addToken);
 
-  const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [dustAmount, setDustAmount] = useState<number>(0);
 
-  // Fetch balance + dust amount when wallet is ready
+  // Fetch issuance cost when wallet is ready
   useEffect(() => {
     if (!arkWallet) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [bal, dust] = await Promise.all([
-          getBalance(arkWallet),
-          Promise.resolve(getDustAmount(arkWallet)),
-        ]);
-        if (!cancelled) {
-          setBalance(bal);
-          setDustAmount(dust);
-        }
-      } catch (e) {
-        console.error("[create] Failed to fetch balance:", e);
-      }
-    })();
-    return () => { cancelled = true; };
+    try {
+      setDustAmount(getDustAmount(arkWallet));
+    } catch { /* */ }
   }, [arkWallet]);
-
-  const hasEnoughFunds = balance !== null && balance.available >= dustAmount && dustAmount > 0;
 
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -109,7 +92,7 @@ export default function CreatePage() {
 
   const supplyNum = parseInt(supply, 10);
   const validSupply = !isNaN(supplyNum) && supplyNum > 0;
-  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady && hasEnoughFunds;
+  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady;
 
   const handleCreate = async () => {
     if (!canCreate || !arkWallet) return;
@@ -181,7 +164,7 @@ export default function CreatePage() {
       console.error("Failed to create token:", err);
       const msg = err instanceof Error ? err.message : "Failed to create token";
       if (/insufficient|not enough|funds/i.test(msg)) {
-        setError(`Insufficient sats. You need at least ${dustAmount.toLocaleString()} sats to issue a token. Deposit sats to your wallet first.`);
+        setError("__insufficient__");
       } else {
         setError(msg);
       }
@@ -213,63 +196,13 @@ export default function CreatePage() {
         </div>
       </div>
 
-      {/* Wallet / balance status */}
-      {!walletReady ? (
+      {/* Wallet connecting */}
+      {!walletReady && (
         <div className="mb-6 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 flex items-center gap-3">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-400/50 border-t-transparent shrink-0" />
           <p className="text-xs text-orange-400/80">
             Connecting to Ark wallet...
           </p>
-        </div>
-      ) : (
-        <div className={`mb-6 rounded-xl px-4 py-3 border ${
-          hasEnoughFunds
-            ? "bg-white/[0.03] border-white/[0.07]"
-            : "bg-red-500/8 border-red-500/20"
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className={`h-2 w-2 rounded-full ${hasEnoughFunds ? "bg-emerald-400" : "bg-red-400 animate-pulse"}`} />
-              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
-                Wallet Balance
-              </span>
-            </div>
-            <span className="text-sm font-semibold tabular-nums">
-              {balance ? balance.available.toLocaleString() : "..."} <span className="text-xs text-muted-foreground/40 font-normal">sats</span>
-            </span>
-          </div>
-
-          {dustAmount > 0 && (
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium">
-                Issuance Cost
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground/60">
-                ~{dustAmount.toLocaleString()} sats
-              </span>
-            </div>
-          )}
-
-          {!hasEnoughFunds && balance !== null && (
-            <div className="mt-3 pt-3 border-t border-red-500/10">
-              <p className="text-xs text-red-400/90 leading-relaxed">
-                You need at least <span className="font-semibold tabular-nums">{dustAmount.toLocaleString()} sats</span> to issue a token.
-                Deposit sats to your wallet first.
-              </p>
-              <Link
-                href="/wallet"
-                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                  <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h7.5A2.25 2.25 0 0 1 14 4.25v5.5A2.25 2.25 0 0 1 11.75 12h-1.312c.1.128.21.248.328.36a.75.75 0 0 1 .234.545v.345a.75.75 0 0 1-.75.75H5.75a.75.75 0 0 1-.75-.75v-.345a.75.75 0 0 1 .234-.545c.118-.111.228-.232.328-.36H4.25A2.25 2.25 0 0 1 2 9.75v-5.5Z" clipRule="evenodd" />
-                </svg>
-                Go to Wallet
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-muted-foreground/40">
-                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                </svg>
-              </Link>
-            </div>
-          )}
         </div>
       )}
 
@@ -598,9 +531,31 @@ export default function CreatePage() {
           </div>
 
           {/* Error */}
-          {error && (
+          {error && error !== "__insufficient__" && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
               <p className="text-xs text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Insufficient funds error */}
+          {error === "__insufficient__" && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 space-y-2">
+              <p className="text-xs text-red-400 font-medium">
+                Not enough sats to issue a token
+              </p>
+              <p className="text-[11px] text-red-400/70 leading-relaxed">
+                You need at least {dustAmount > 0 ? `${dustAmount.toLocaleString()} sats` : "a small amount of sats"} in
+                your Ark wallet. Deposit sats first, then try again.
+              </p>
+              <Link
+                href="/wallet"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground transition-colors mt-1"
+              >
+                Go to Wallet
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </Link>
             </div>
           )}
 
@@ -625,6 +580,13 @@ export default function CreatePage() {
               </span>
             )}
           </button>
+
+          {/* Issuance cost note */}
+          {dustAmount > 0 && (
+            <p className="text-center text-[11px] text-muted-foreground/30">
+              Issuance costs ~{dustAmount.toLocaleString()} sats
+            </p>
+          )}
         </div>
       </div>
     </div>
