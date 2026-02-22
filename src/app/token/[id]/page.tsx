@@ -273,41 +273,41 @@ export default function TokenPage() {
 
               {/* Trades */}
               {infoTab === "trades" && (
-                <div className="space-y-1.5">
+                <div className="divide-y divide-white/[0.05]">
                   {trades.map((t) => {
                     const isBuy = t.type === "buy";
                     return (
                       <div
                         key={t.id}
-                        className="flex items-center gap-3 rounded-lg bg-muted/10 px-3 py-2.5 transition-colors hover:bg-muted/20"
+                        className="flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0"
                       >
-                        {/* Buy/Sell indicator */}
-                        <div className={`h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold ${
-                          isBuy
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-red-500/10 text-red-400"
-                        }`}>
-                          {isBuy ? "B" : "S"}
-                        </div>
+                        {/* Buy/Sell dot */}
+                        <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          isBuy ? "bg-emerald-400" : "bg-red-400"
+                        }`} />
 
-                        {/* Main info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-medium ${isBuy ? "text-emerald-400" : "text-red-400"}`}>
-                              {isBuy ? "Bought" : "Sold"}
-                            </span>
-                            <span className="text-xs font-semibold tabular-nums">
-                              {t.tokens.toLocaleString()}
-                              <span className="text-muted-foreground/50 font-normal ml-1">${t.ticker}</span>
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground/40 mt-0.5">
-                            for {t.sats.toLocaleString()} sats &middot; {t.wallet}
-                          </p>
-                        </div>
+                        {/* Wallet */}
+                        <span className="shrink-0 text-[11px] font-mono text-muted-foreground/40">
+                          {t.wallet}
+                        </span>
 
-                        {/* Time */}
-                        <span className="shrink-0 text-[11px] text-muted-foreground/30 tabular-nums">
+                        {/* Action + amount */}
+                        <span className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-red-400/80"}`}>
+                          {isBuy ? "bought" : "sold"}
+                        </span>
+                        <span className="text-[11px] font-semibold tabular-nums">
+                          {t.tokens.toLocaleString()}
+                          <span className="text-muted-foreground/35 font-normal ml-0.5">${t.ticker}</span>
+                        </span>
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Sats + time */}
+                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
+                          {t.sats.toLocaleString()} <span className="text-muted-foreground/30">sat</span>
+                        </span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground/25 tabular-nums">
                           {timeAgo(t.time)}
                         </span>
                       </div>

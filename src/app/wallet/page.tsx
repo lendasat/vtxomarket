@@ -19,7 +19,9 @@ import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
 import { MOCK_TOKENS } from "@/lib/mock-tokens";
 
-type Tab = "onchain" | "lightning" | "arkade";
+type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
+type StableCoin = "USDC" | "USDT";
+type StableChain = "arbitrum" | "ethereum" | "polygon";
 type Mode = null | "send" | "receive" | "debug";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -48,6 +50,15 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
         <path d="M8.372 1.349a.75.75 0 0 0-.744 0l-4.81 2.748L8 7.131l5.182-3.034-4.81-2.748ZM14 5.357 8.75 8.43v6.005l4.872-2.784A.75.75 0 0 0 14 11V5.357ZM7.25 14.435V8.43L2 5.357V11c0 .27.144.518.378.651l4.872 2.784Z" />
+      </svg>
+    ),
+  },
+  {
+    key: "stablecoin",
+    label: "Stablecoins",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+        <path fillRule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0ZM8.75 4.37V4a.75.75 0 0 0-1.5 0v.37c-.906.27-1.75.96-1.75 2.13 0 1.42 1.2 2 2.5 2.36 1.07.3 1.25.6 1.25.89 0 .5-.48.88-1.25.88s-1.25-.38-1.25-.88a.75.75 0 0 0-1.5 0c0 1.17.844 1.86 1.75 2.13V12a.75.75 0 0 0 1.5 0v-.37c.906-.27 1.75-.96 1.75-2.13 0-1.42-1.2-2-2.5-2.36-1.07-.3-1.25-.6-1.25-.89 0-.5.48-.88 1.25-.88s1.25.38 1.25.88a.75.75 0 0 0 1.5 0c0-1.17-.844-1.86-1.75-2.13Z" clipRule="evenodd" />
       </svg>
     ),
   },
@@ -105,6 +116,12 @@ export default function WalletPage() {
   const [lnSendLoading, setLnSendLoading] = useState(false);
   const [lnSendResult, setLnSendResult] = useState<string | null>(null);
   const [lnError, setLnError] = useState("");
+
+  // Stablecoin state
+  const [stableCoin, setStableCoin] = useState<StableCoin>("USDC");
+  const [stableChain, setStableChain] = useState<StableChain>("arbitrum");
+  const [stableAmount, setStableAmount] = useState("");
+  const [stableAddress, setStableAddress] = useState("");
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -173,6 +190,10 @@ export default function WalletPage() {
     setLnSendLoading(false);
     setLnSendResult(null);
     setLnError("");
+    setStableCoin("USDC");
+    setStableChain("arbitrum");
+    setStableAmount("");
+    setStableAddress("");
   };
 
   const addressForTab = (t: Tab): string => {
@@ -444,7 +465,17 @@ export default function WalletPage() {
                 {/* ── RECEIVE ── */}
                 {mode === "receive" && (
                   <div>
-                    {tab === "lightning" ? (
+                    {tab === "stablecoin" ? (
+                      <StablecoinReceive
+                        stableCoin={stableCoin}
+                        setStableCoin={setStableCoin}
+                        stableChain={stableChain}
+                        setStableChain={setStableChain}
+                        copied={copied}
+                        copyToClipboard={copyToClipboard}
+                        truncateAddr={truncateAddr}
+                      />
+                    ) : tab === "lightning" ? (
                       <LightningReceive
                         lnReady={lnReady}
                         lnSuccess={lnSuccess}
@@ -494,7 +525,18 @@ export default function WalletPage() {
                 {/* ── SEND ── */}
                 {mode === "send" && (
                   <div>
-                    {tab === "lightning" ? (
+                    {tab === "stablecoin" ? (
+                      <StablecoinSend
+                        stableCoin={stableCoin}
+                        setStableCoin={setStableCoin}
+                        stableChain={stableChain}
+                        setStableChain={setStableChain}
+                        stableAmount={stableAmount}
+                        setStableAmount={setStableAmount}
+                        stableAddress={stableAddress}
+                        setStableAddress={setStableAddress}
+                      />
+                    ) : tab === "lightning" ? (
                       <LightningSend
                         lnReady={lnReady}
                         lnSendInvoice={lnSendInvoice}
@@ -890,6 +932,249 @@ function LightningSend({
       >
         {lnSendLoading ? "Sending..." : lnurlParams ? "Pay" : "Send"}
       </button>
+    </div>
+  );
+}
+
+// ===================== Stablecoin components =====================
+
+const STABLE_COINS: { key: StableCoin; color: string }[] = [
+  { key: "USDC", color: "text-blue-400" },
+  { key: "USDT", color: "text-emerald-400" },
+];
+
+const STABLE_CHAINS: { key: StableChain; label: string; icon: React.ReactNode }[] = [
+  {
+    key: "arbitrum",
+    label: "Arbitrum",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+        <circle cx="10" cy="10" r="10" fill="#213147" />
+        <path d="M10.87 6.22 13.5 12.3l-1.12.65-2.63-6.08 1.12-.65Zm2.63 6.08.94 2.18-1.12.65-.94-2.18 1.12-.65Z" fill="#28A0F0" />
+        <path d="M9.13 6.22 6.5 12.3l1.12.65 2.63-6.08-1.12-.65Zm-2.63 6.08-.94 2.18 1.12.65.94-2.18-1.12-.65Z" fill="white" />
+      </svg>
+    ),
+  },
+  {
+    key: "ethereum",
+    label: "Ethereum",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+        <circle cx="10" cy="10" r="10" fill="#627EEA" />
+        <path d="M10 3v5.25l4.38 1.96L10 3Z" fill="white" fillOpacity="0.6" />
+        <path d="M10 3 5.62 10.21 10 8.25V3Z" fill="white" />
+        <path d="M10 13.47v3.52l4.38-6.06L10 13.47Z" fill="white" fillOpacity="0.6" />
+        <path d="M10 16.99v-3.52l-4.38-2.54L10 17Z" fill="white" />
+        <path d="M10 12.66l4.38-2.45L10 8.25v4.41Z" fill="white" fillOpacity="0.2" />
+        <path d="M5.62 10.21 10 12.66V8.25l-4.38 1.96Z" fill="white" fillOpacity="0.6" />
+      </svg>
+    ),
+  },
+  {
+    key: "polygon",
+    label: "Polygon",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+        <circle cx="10" cy="10" r="10" fill="#8247E5" />
+        <path d="M13.05 8.36a.77.77 0 0 0-.76 0l-1.35.8-1.21.69-1.35.8a.77.77 0 0 1-.76 0l-1.06-.63a.77.77 0 0 1-.38-.66v-1.2a.73.73 0 0 1 .38-.65l1.06-.6a.77.77 0 0 1 .76 0l1.06.62a.77.77 0 0 1 .38.65v.8l1.21-.7v-.83a.73.73 0 0 0-.38-.66l-2.24-1.3a.77.77 0 0 0-.76 0l-2.3 1.33a.73.73 0 0 0-.38.65v2.62a.73.73 0 0 0 .38.65l2.27 1.31a.77.77 0 0 0 .76 0l1.35-.77 1.21-.72 1.35-.77a.77.77 0 0 1 .76 0l1.06.6a.77.77 0 0 1 .38.66v1.2a.73.73 0 0 1-.38.65l-1.03.63a.77.77 0 0 1-.76 0l-1.06-.6a.77.77 0 0 1-.38-.66v-.77l-1.21.7v.8a.73.73 0 0 0 .38.66l2.27 1.3a.77.77 0 0 0 .76 0l2.27-1.3a.77.77 0 0 0 .38-.66V9.64a.73.73 0 0 0-.38-.65l-2.3-1.32Z" fill="white" />
+      </svg>
+    ),
+  },
+];
+
+const MOCK_DEPOSIT_ADDRESSES: Record<StableChain, string> = {
+  arbitrum: "0x1a2b3c4d5e6f7890abcdef1234567890abcdef12",
+  ethereum: "0xabcdef1234567890abcdef1234567890abcdef12",
+  polygon: "0x7890abcdef1234567890abcdef1234567890abcd",
+};
+
+function CoinChainSelectors({
+  stableCoin,
+  setStableCoin,
+  stableChain,
+  setStableChain,
+}: {
+  stableCoin: StableCoin;
+  setStableCoin: (v: StableCoin) => void;
+  stableChain: StableChain;
+  setStableChain: (v: StableChain) => void;
+}) {
+  return (
+    <div className="flex gap-2">
+      {/* Coin toggle */}
+      <div className="flex rounded-lg bg-white/[0.04] border border-white/[0.07] p-0.5">
+        {STABLE_COINS.map(({ key, color }) => (
+          <button
+            key={key}
+            onClick={() => setStableCoin(key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              stableCoin === key
+                ? `bg-white/[0.1] ${color}`
+                : "text-muted-foreground/40 hover:text-muted-foreground/60"
+            }`}
+          >
+            {key}
+          </button>
+        ))}
+      </div>
+
+      {/* Chain icons */}
+      <div className="flex items-center gap-1 ml-auto">
+        {STABLE_CHAINS.map(({ key, label, icon }) => (
+          <button
+            key={key}
+            onClick={() => setStableChain(key)}
+            title={label}
+            className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all ${
+              stableChain === key
+                ? "bg-white/[0.1] border border-white/[0.14] ring-1 ring-white/[0.06]"
+                : "bg-white/[0.04] border border-transparent hover:bg-white/[0.07] opacity-40 hover:opacity-70"
+            }`}
+          >
+            {icon}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StablecoinReceive({
+  stableCoin,
+  setStableCoin,
+  stableChain,
+  setStableChain,
+  copied,
+  copyToClipboard,
+  truncateAddr,
+}: {
+  stableCoin: StableCoin;
+  setStableCoin: (v: StableCoin) => void;
+  stableChain: StableChain;
+  setStableChain: (v: StableChain) => void;
+  copied: boolean;
+  copyToClipboard: (text: string) => void;
+  truncateAddr: (addr: string, chars?: number) => string;
+}) {
+  const depositAddr = MOCK_DEPOSIT_ADDRESSES[stableChain];
+  const chainLabel = STABLE_CHAINS.find((c) => c.key === stableChain)!.label;
+
+  return (
+    <div className="space-y-4">
+      <CoinChainSelectors
+        stableCoin={stableCoin}
+        setStableCoin={setStableCoin}
+        stableChain={stableChain}
+        setStableChain={setStableChain}
+      />
+
+      <p className="text-[10px] text-muted-foreground/40 uppercase tracking-[0.15em]">
+        Send {stableCoin} on {chainLabel} to
+      </p>
+
+      <div className="flex justify-center py-2">
+        <div className="rounded-xl bg-white p-3">
+          <QRCodeSVG value={depositAddr} size={160} bgColor="#ffffff" fgColor="#111827" level="M" />
+        </div>
+      </div>
+
+      <button
+        onClick={() => copyToClipboard(depositAddr)}
+        className="w-full flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-white/[0.05] border border-white/[0.07] hover:bg-white/[0.09] transition-all"
+      >
+        <code className="text-xs text-muted-foreground/60 break-all">
+          {truncateAddr(depositAddr)}
+        </code>
+        <span className="shrink-0 text-xs font-medium text-muted-foreground/50">
+          {copied ? "Copied!" : "Copy"}
+        </span>
+      </button>
+
+      <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-3">
+        <p className="text-xs text-emerald-400/80">
+          Automatically swapped into sats via LendaSwap
+        </p>
+      </div>
+
+      <p className="text-center text-[10px] text-muted-foreground/30">
+        Powered by LendaSwap
+      </p>
+    </div>
+  );
+}
+
+function StablecoinSend({
+  stableCoin,
+  setStableCoin,
+  stableChain,
+  setStableChain,
+  stableAmount,
+  setStableAmount,
+  stableAddress,
+  setStableAddress,
+}: {
+  stableCoin: StableCoin;
+  setStableCoin: (v: StableCoin) => void;
+  stableChain: StableChain;
+  setStableChain: (v: StableChain) => void;
+  stableAmount: string;
+  setStableAmount: (v: string) => void;
+  stableAddress: string;
+  setStableAddress: (v: string) => void;
+}) {
+  const sats = parseInt(stableAmount, 10);
+  const estimatedStable = !isNaN(sats) && sats > 0 ? (sats * 0.00065).toFixed(2) : null;
+  const chainLabel = STABLE_CHAINS.find((c) => c.key === stableChain)!.label;
+
+  return (
+    <div className="space-y-4">
+      <CoinChainSelectors
+        stableCoin={stableCoin}
+        setStableCoin={setStableCoin}
+        stableChain={stableChain}
+        setStableChain={setStableChain}
+      />
+
+      {/* Recipient */}
+      <input
+        value={stableAddress}
+        onChange={(e) => setStableAddress(e.target.value)}
+        placeholder={`Recipient address on ${chainLabel} (0x...)`}
+        className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
+      />
+
+      {/* Amount with inline conversion */}
+      <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            value={stableAmount}
+            onChange={(e) => setStableAmount(e.target.value)}
+            placeholder="0"
+            className="flex-1 bg-transparent text-lg font-semibold tabular-nums text-foreground placeholder:text-muted-foreground/20 outline-none"
+          />
+          <span className="text-xs text-muted-foreground/40 font-medium">sats</span>
+        </div>
+        {estimatedStable && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/40">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0">
+              <path fillRule="evenodd" d="M13.78 10.47a.75.75 0 0 1 0 1.06l-2.25 2.25a.75.75 0 0 1-1.06 0l-2.25-2.25a.75.75 0 1 1 1.06-1.06l.97.97V5.75a.75.75 0 0 1 1.5 0v5.69l.97-.97a.75.75 0 0 1 1.06 0ZM2.22 5.53a.75.75 0 0 1 0-1.06l2.25-2.25a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1-1.06 1.06l-.97-.97v5.69a.75.75 0 0 1-1.5 0V4.56l-.97.97a.75.75 0 0 1-1.06 0Z" clipRule="evenodd" />
+            </svg>
+            <span>&asymp; {estimatedStable} {stableCoin} on {chainLabel}</span>
+          </div>
+        )}
+      </div>
+
+      <button
+        disabled={!stableAmount || !stableAddress || isNaN(sats) || sats <= 0}
+        className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Send {stableCoin}
+      </button>
+
+      <p className="text-center text-[10px] text-muted-foreground/30">
+        Powered by LendaSwap
+      </p>
     </div>
   );
 }

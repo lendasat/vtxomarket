@@ -103,14 +103,14 @@ export function AppSidebar() {
 
       {/* ─── Mobile: floating pill bottom bar ─── */}
       <div className="md:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        <nav className="flex items-center gap-4 px-5 h-14 rounded-full bg-white/[0.07] backdrop-blur-2xl border border-white/[0.1] shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+        <nav className="flex items-center gap-5 px-6 h-16 rounded-full bg-white/[0.07] backdrop-blur-2xl border border-white/[0.1] shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
           {navItems.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`h-10 w-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+                className={`h-12 w-12 rounded-full flex items-center justify-center transition-all duration-200 ${
                   active
                     ? "bg-white/[0.14] text-foreground shadow-[0_0_10px_rgba(255,255,255,0.06)]"
                     : "text-muted-foreground/50 active:scale-90"
