@@ -11,6 +11,7 @@
 
 import { NDKEvent, NDKFilter, NDKSubscription } from "@nostr-dev-kit/ndk";
 import { ensureNostrReady, getNDK, VTXO_TOKEN_KIND } from "./nostr";
+import { ARK_SERVER_URL } from "./ark-wallet";
 import type { CurveState } from "./bonding-curve";
 import {
   getPrice,
@@ -20,6 +21,18 @@ import {
   TOKEN_TOTAL_SUPPLY,
 } from "./bonding-curve";
 import type { Token } from "./store";
+
+// ── Network identifier ───────────────────────────────────────────────
+// Derived from Ark server URL so Nostr events are scoped per network.
+// e.g. "mutinynet.arkade.sh" or "arkade.computer"
+
+function getNetworkId(): string {
+  try {
+    return new URL(ARK_SERVER_URL).hostname;
+  } catch {
+    return "unknown";
+  }
+}
 
 // ── Label tags ────────────────────────────────────────────────────────
 
@@ -73,6 +86,7 @@ export async function publishTokenListing(params: PublishTokenListingParams): Pr
     ["d", `vtxofun/token/${ticker}`],
     ...labelTags("token"),
     ["t", "vtxofun-token"],
+    ["network", getNetworkId()],
     ["name", name],
     ["ticker", ticker],
     ["assetId", assetId],
@@ -219,12 +233,13 @@ function parseTokenEvent(event: NDKEvent): Token | null {
   }
 }
 
-/** Subscribe to all vtxo.fun token listing events */
+/** Subscribe to all vtxo.fun token listing events for the current network */
 export function subscribeToTokenListings(callbacks: {
   onToken: (token: Token) => void;
   onEose?: () => void;
 }): NDKSubscription | null {
   const ndk = getNDK();
+  const networkId = getNetworkId();
   const filter: NDKFilter = {
     kinds: [VTXO_TOKEN_KIND as number],
     "#t": ["vtxofun-token"],
@@ -236,6 +251,10 @@ export function subscribeToTokenListings(callbacks: {
     // Only process token listing events (not curve/trade/order)
     const dTag = event.tags.find((t) => t[0] === "d")?.[1] || "";
     if (!dTag.startsWith("vtxofun/token/")) return;
+
+    // Filter by network — skip tokens from other networks
+    const eventNetwork = event.tags.find((t) => t[0] === "network")?.[1];
+    if (eventNetwork && eventNetwork !== networkId) return;
 
     const token = parseTokenEvent(event);
     if (token) callbacks.onToken(token);
@@ -370,9 +389,10 @@ export function subscribeToComments(
   return sub;
 }
 
-/** One-shot fetch a token listing by ticker */
+/** One-shot fetch a token listing by ticker (current network only) */
 export async function fetchTokenByTicker(ticker: string): Promise<Token | null> {
   const ndk = getNDK();
+  const networkId = getNetworkId();
   const filter: NDKFilter = {
     kinds: [VTXO_TOKEN_KIND as number],
     "#d": [`vtxofun/token/${ticker}`],
@@ -381,6 +401,10 @@ export async function fetchTokenByTicker(ticker: string): Promise<Token | null> 
 
   const events = await ndk.fetchEvents(filter);
   for (const event of events) {
+    // Skip tokens from other networks
+    const eventNetwork = event.tags.find((t) => t[0] === "network")?.[1];
+    if (eventNetwork && eventNetwork !== networkId) continue;
+
     const token = parseTokenEvent(event);
     if (token) return token;
   }

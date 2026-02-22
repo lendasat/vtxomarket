@@ -34,7 +34,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
   const { SingleKey, Wallet } = await getSDK();
-  console.log("[ark] SDK loaded, creating wallet...");
+  console.log("[ark] SDK loaded, connecting to:", ARK_SERVER_URL);
   const identity = SingleKey.fromHex(privateKeyHex);
 
   let lastError: Error | null = null;
