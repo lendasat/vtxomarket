@@ -764,13 +764,11 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{isSent ? "Sent" : "Received"}</p>
-          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${
-            tx.settled
-              ? "bg-emerald-500/10 text-emerald-400/80 border-emerald-500/20"
-              : "bg-blue-500/10 text-blue-400/80 border-blue-500/20"
-          }`}>
-            {tx.settled ? "Settled" : "Preconfirmed"}
-          </span>
+          {!tx.settled && tx.boardingTxid && (
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-white/[0.05] text-muted-foreground/50 border border-white/[0.08]">
+              Pending
+            </span>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground/35 mt-0.5">
           {timeStr}
