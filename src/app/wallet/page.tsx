@@ -333,10 +333,11 @@ export default function WalletPage() {
           </p>
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
             <AssetRow
-              icon={<BitcoinIcon className="size-4" />}
+              icon={<BitcoinIcon className="size-9" />}
               name="Bitcoin"
               description="Arkade"
               value={balance?.available ?? 0}
+              iconFill
             />
             {balance && balance.onchain > 0 && (
               <AssetRow
@@ -824,16 +825,18 @@ function AssetRow({
   description,
   value,
   highlight,
+  iconFill,
 }: {
   icon: React.ReactNode;
   name: string;
   description: string;
   value: number;
   highlight?: boolean;
+  iconFill?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3.5">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-muted-foreground/50">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl overflow-hidden ${iconFill ? "" : "bg-white/[0.06] text-muted-foreground/50"}`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
