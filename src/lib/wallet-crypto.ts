@@ -1,7 +1,7 @@
 import { generateMnemonic as bip39Generate, mnemonicToSeedSync, validateMnemonic as bip39Validate } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { HDKey } from "@scure/bip32";
-import { hex } from "@scure/base";
+import { hex, bech32 } from "@scure/base";
 
 // Arkade key derivation path (same as arkade-king-game)
 const ARK_DERIVATION_PATH = "m/44'/1237'/0'/0/0";
@@ -31,4 +31,20 @@ export function mnemonicToNostrPrivateKeyHex(mnemonic: string): string {
   const child = master.derive(NOSTR_DERIVATION_PATH);
   if (!child.privateKey) throw new Error("Failed to derive Nostr private key");
   return hex.encode(child.privateKey);
+}
+
+export function decodeNsec(nsec: string): string {
+  const trimmed = nsec.trim().toLowerCase();
+  if (!trimmed.startsWith("nsec1")) {
+    throw new Error("Invalid nsec: must start with nsec1");
+  }
+  const decoded = bech32.decode(trimmed as `${string}1${string}`, 1500);
+  if (decoded.prefix !== "nsec") {
+    throw new Error("Invalid nsec prefix");
+  }
+  const bytes = bech32.fromWords(decoded.words);
+  if (bytes.length !== 32) {
+    throw new Error("Invalid nsec: key must be 32 bytes");
+  }
+  return hex.encode(bytes);
 }

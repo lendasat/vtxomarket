@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { deleteMnemonic } from "@/lib/wallet-storage";
+import { deleteMnemonic, deleteAllWalletData } from "@/lib/wallet-storage";
 import {
   mnemonicToNostrPrivateKeyHex,
   mnemonicToArkPrivateKeyHex,
@@ -210,6 +210,28 @@ export default function SettingsPage() {
               your keys are safe.
             </p>
           )}
+        </div>
+      </div>
+
+      {/* Logout */}
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+        <div className="p-5 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold">Logout</h2>
+            <p className="mt-1 text-[11px] text-muted-foreground/50 leading-relaxed">
+              Sign out and return to the login screen. Make sure you&apos;ve backed up your seed phrase first.
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              await deleteAllWalletData();
+              sessionStorage.clear();
+              window.location.reload();
+            }}
+            className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-semibold transition-all hover:bg-white/[0.12] hover:border-white/[0.14]"
+          >
+            Logout
+          </button>
         </div>
       </div>
 

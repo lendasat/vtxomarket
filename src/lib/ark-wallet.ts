@@ -112,6 +112,44 @@ export async function sendPayment(wallet: any, address: string, amountSats: numb
   return txid;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getDustAmount(wallet: any): number {
+  return Number(wallet.dustAmount ?? 0);
+}
+
+// -- Token issuance --
+
+export interface IssueTokenParams {
+  amount: number;
+  name: string;
+  ticker: string;
+  decimals?: number;
+  icon?: string;
+}
+
+export interface IssueTokenResult {
+  arkTxId: string;
+  assetId: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function issueToken(wallet: any, params: IssueTokenParams): Promise<IssueTokenResult> {
+  const { amount, name, ticker, decimals, icon } = params;
+  if (amount <= 0) throw new Error("Amount must be greater than 0");
+
+  // Build metadata matching AssetMetadata (KnownMetadata & Record<string, unknown>)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const metadata: Record<string, any> = { name, ticker };
+  if (decimals !== undefined) metadata.decimals = decimals;
+  if (icon) metadata.icon = icon;
+
+  const result = await wallet.assetManager.issue({ amount, metadata });
+  return {
+    arkTxId: result.arkTxId,
+    assetId: result.assetId,
+  };
+}
+
 // -- Debug helpers --
 
 export interface WalletBalance {

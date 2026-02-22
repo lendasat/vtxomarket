@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
-import { saveMnemonic, getMnemonic } from "@/lib/wallet-storage";
+import { saveMnemonic, getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
 import {
   generateMnemonic,
   mnemonicToArkPrivateKeyHex,
+  mnemonicToNostrPrivateKeyHex,
 } from "@/lib/wallet-crypto";
 
 const REFRESH_INTERVAL = 30_000;
@@ -37,17 +38,33 @@ export function useWallet() {
       }
       useAppStore.getState().setMnemonic(mnemonic);
 
-      // 2. Derive Ark key
+      // 2. Derive keys
       let arkKeyHex: string;
+      let nostrKeyHex: string;
       try {
         arkKeyHex = mnemonicToArkPrivateKeyHex(mnemonic);
-        console.log("[wallet] Ark key derived");
+        nostrKeyHex = mnemonicToNostrPrivateKeyHex(mnemonic);
+        console.log("[wallet] Keys derived");
       } catch (e) {
         console.error("[wallet] Key derivation failed:", e);
         return;
       }
 
-      // 3. Ark wallet - go straight to it, no Nostr blocking
+      // 3. Nostr signer (fire-and-forget, don't block Ark)
+      //    Check for an imported nsec override first
+      import("@/lib/nostr").then(async ({ loginWithPrivateKey, connectNDK }) => {
+        try {
+          const override = await getNostrKeyOverride();
+          const key = override || nostrKeyHex;
+          await loginWithPrivateKey(key);
+          await connectNDK();
+          console.log("[wallet] Nostr connected", override ? "(nsec override)" : "(derived)");
+        } catch (e) {
+          console.error("[wallet] Nostr init failed:", e);
+        }
+      });
+
+      // 4. Ark wallet
       console.log("[wallet] Connecting to Ark server...");
       try {
         const { initArkWallet } = await import("@/lib/ark-wallet");

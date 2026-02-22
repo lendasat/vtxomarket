@@ -1,23 +1,65 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAppStore } from "@/lib/store";
-import { getNDK, VTXO_TOKEN_KIND } from "@/lib/nostr";
+import { getNDK, loginWithPrivateKey, connectNDK, VTXO_TOKEN_KIND } from "@/lib/nostr";
+import { issueToken, getDustAmount, getBalance } from "@/lib/ark-wallet";
+import type { BalanceInfo } from "@/lib/ark-wallet";
+import { mnemonicToNostrPrivateKeyHex } from "@/lib/wallet-crypto";
 import { NDKEvent } from "@nostr-dev-kit/ndk";
 
 const NAME_MAX = 32;
 const TICKER_MAX = 10;
 const DESC_MAX = 256;
+const DEFAULT_SUPPLY = 1_000_000;
+
+const SUPPLY_PRESETS = [
+  { label: "1M", value: 1_000_000 },
+  { label: "10M", value: 10_000_000 },
+  { label: "21M", value: 21_000_000 },
+  { label: "100M", value: 100_000_000 },
+];
 
 export default function CreatePage() {
   const router = useRouter();
   const user = useAppStore((s) => s.user);
+  const mnemonic = useAppStore((s) => s.mnemonic);
+  const arkWallet = useAppStore((s) => s.arkWallet);
+  const walletReady = useAppStore((s) => s.walletReady);
   const addToken = useAppStore((s) => s.addToken);
+
+  const [balance, setBalance] = useState<BalanceInfo | null>(null);
+  const [dustAmount, setDustAmount] = useState<number>(0);
+
+  // Fetch balance + dust amount when wallet is ready
+  useEffect(() => {
+    if (!arkWallet) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [bal, dust] = await Promise.all([
+          getBalance(arkWallet),
+          Promise.resolve(getDustAmount(arkWallet)),
+        ]);
+        if (!cancelled) {
+          setBalance(bal);
+          setDustAmount(dust);
+        }
+      } catch (e) {
+        console.error("[create] Failed to fetch balance:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [arkWallet]);
+
+  const hasEnoughFunds = balance !== null && balance.available >= dustAmount && dustAmount > 0;
 
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [description, setDescription] = useState("");
+  const [supply, setSupply] = useState(String(DEFAULT_SUPPLY));
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
@@ -28,6 +70,7 @@ export default function CreatePage() {
   const [telegram, setTelegram] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState("");
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
 
@@ -64,43 +107,71 @@ export default function CreatePage() {
 
   const resolvedImage = imagePreview || imageUrl || undefined;
 
+  const supplyNum = parseInt(supply, 10);
+  const validSupply = !isNaN(supplyNum) && supplyNum > 0;
+  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady && hasEnoughFunds;
+
   const handleCreate = async () => {
-    if (!name || !ticker) return;
+    if (!canCreate || !arkWallet) return;
     setLoading(true);
     setError("");
 
     try {
       const finalImage = imageUrl || imagePreview || "";
+      const tickerUp = ticker.toUpperCase();
 
-      const ndk = getNDK();
+      // Step 1: Issue token on Arkade
+      setStep("Issuing token on Arkade...");
+      const result = await issueToken(arkWallet, {
+        amount: supplyNum,
+        name,
+        ticker: tickerUp,
+        decimals: 8,
+        icon: finalImage || undefined,
+      });
+
+      // Step 2: Publish metadata to Nostr
+      setStep("Publishing to Nostr...");
+      if (!mnemonic) throw new Error("Wallet not initialized");
+      const nostrKey = mnemonicToNostrPrivateKeyHex(mnemonic);
+      const ndk = await loginWithPrivateKey(nostrKey);
+      await connectNDK();
       const event = new NDKEvent(ndk);
       event.kind = VTXO_TOKEN_KIND;
       event.content = JSON.stringify({
         name,
-        ticker: ticker.toUpperCase(),
+        ticker: tickerUp,
         description,
         image: finalImage,
+        assetId: result.assetId,
+        arkTxId: result.arkTxId,
+        supply: supplyNum,
         ...(website && { website }),
         ...(twitter && { twitter }),
         ...(telegram && { telegram }),
       });
       event.tags = [
-        ["d", `vtxo-token-${Date.now()}`],
+        ["d", `vtxo-token-${result.assetId}`],
         ["t", "vtxo-token"],
         ["name", name],
-        ["ticker", ticker.toUpperCase()],
+        ["ticker", tickerUp],
+        ["assetId", result.assetId],
+        ["supply", String(supplyNum)],
       ];
 
       await event.publish();
 
+      // Step 3: Add to local state
       addToken({
         id: event.id,
+        assetId: result.assetId,
         name,
-        ticker: ticker.toUpperCase(),
+        ticker: tickerUp,
         description,
         image: finalImage || undefined,
         creator: user?.pubkey ?? "unknown",
         createdAt: Math.floor(Date.now() / 1000),
+        supply: supplyNum,
         marketCap: 0,
         replies: 0,
       });
@@ -108,13 +179,17 @@ export default function CreatePage() {
       router.push("/");
     } catch (err) {
       console.error("Failed to create token:", err);
-      setError(err instanceof Error ? err.message : "Failed to create token");
+      const msg = err instanceof Error ? err.message : "Failed to create token";
+      if (/insufficient|not enough|funds/i.test(msg)) {
+        setError(`Insufficient sats. You need at least ${dustAmount.toLocaleString()} sats to issue a token. Deposit sats to your wallet first.`);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
+      setStep("");
     }
   };
-
-  const canCreate = name.trim().length > 0 && ticker.trim().length > 0;
 
   const inputClass =
     "w-full px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all";
@@ -131,12 +206,72 @@ export default function CreatePage() {
             Launch your token
           </h1>
           <p className="mt-3 text-sm text-muted-foreground/50 max-w-sm mx-auto leading-relaxed">
-            Deploy on Ark, powered by Nostr.
+            Issue on Arkade, publish on Nostr.
             <br />
             <span className="text-muted-foreground/35">Immutable. Permissionless. Yours.</span>
           </p>
         </div>
       </div>
+
+      {/* Wallet / balance status */}
+      {!walletReady ? (
+        <div className="mb-6 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 flex items-center gap-3">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-400/50 border-t-transparent shrink-0" />
+          <p className="text-xs text-orange-400/80">
+            Connecting to Ark wallet...
+          </p>
+        </div>
+      ) : (
+        <div className={`mb-6 rounded-xl px-4 py-3 border ${
+          hasEnoughFunds
+            ? "bg-white/[0.03] border-white/[0.07]"
+            : "bg-red-500/8 border-red-500/20"
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className={`h-2 w-2 rounded-full ${hasEnoughFunds ? "bg-emerald-400" : "bg-red-400 animate-pulse"}`} />
+              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+                Wallet Balance
+              </span>
+            </div>
+            <span className="text-sm font-semibold tabular-nums">
+              {balance ? balance.available.toLocaleString() : "..."} <span className="text-xs text-muted-foreground/40 font-normal">sats</span>
+            </span>
+          </div>
+
+          {dustAmount > 0 && (
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-medium">
+                Issuance Cost
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground/60">
+                ~{dustAmount.toLocaleString()} sats
+              </span>
+            </div>
+          )}
+
+          {!hasEnoughFunds && balance !== null && (
+            <div className="mt-3 pt-3 border-t border-red-500/10">
+              <p className="text-xs text-red-400/90 leading-relaxed">
+                You need at least <span className="font-semibold tabular-nums">{dustAmount.toLocaleString()} sats</span> to issue a token.
+                Deposit sats to your wallet first.
+              </p>
+              <Link
+                href="/wallet"
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                  <path fillRule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h7.5A2.25 2.25 0 0 1 14 4.25v5.5A2.25 2.25 0 0 1 11.75 12h-1.312c.1.128.21.248.328.36a.75.75 0 0 1 .234.545v.345a.75.75 0 0 1-.75.75H5.75a.75.75 0 0 1-.75-.75v-.345a.75.75 0 0 1 .234-.545c.118-.111.228-.232.328-.36H4.25A2.25 2.25 0 0 1 2 9.75v-5.5Z" clipRule="evenodd" />
+                </svg>
+                Go to Wallet
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-muted-foreground/40">
+                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main form card */}
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
@@ -283,6 +418,43 @@ export default function CreatePage() {
             </div>
           </div>
 
+          {/* Supply */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+                Total Supply <span className="text-red-400">*</span>
+              </label>
+              {validSupply && (
+                <span className="text-[10px] tabular-nums text-muted-foreground/40">
+                  {supplyNum.toLocaleString()} tokens
+                </span>
+              )}
+            </div>
+            <input
+              type="number"
+              placeholder="1000000"
+              value={supply}
+              onChange={(e) => setSupply(e.target.value)}
+              className={`${inputClass} h-11 tabular-nums`}
+            />
+            <div className="flex gap-2">
+              {SUPPLY_PRESETS.map(({ label, value }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSupply(String(value))}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                    supply === String(value)
+                      ? "bg-white/[0.1] text-foreground border border-white/[0.14]"
+                      : "bg-white/[0.04] text-muted-foreground/40 border border-white/[0.07] hover:bg-white/[0.07]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Description */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -385,7 +557,7 @@ export default function CreatePage() {
                     </div>
                   )}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-semibold leading-tight truncate">
                     {name || "Token Name"}
                   </p>
@@ -393,10 +565,9 @@ export default function CreatePage() {
                     ${ticker || "TICKER"}
                   </p>
                 </div>
-                {/* Fake market cap badge */}
-                <div className="ml-auto shrink-0">
+                <div className="shrink-0 text-right">
                   <span className="text-[10px] text-muted-foreground/30 font-medium px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
-                    0 sats
+                    {validSupply ? supplyNum.toLocaleString() : "0"} supply
                   </span>
                 </div>
               </div>
@@ -418,10 +589,10 @@ export default function CreatePage() {
               />
             </svg>
             <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground/80">Token metadata is permanent</p>
+              <p className="text-xs font-medium text-foreground/80">Issued as an Arkade Asset</p>
               <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                Name, ticker, and image cannot be changed after creation.
-                Published as a Nostr event on the Ark network.
+                Your token is issued on Arkade as a native asset (tVTXO), then metadata
+                is published to Nostr. Name, ticker, and supply are permanent.
               </p>
             </div>
           </div>
@@ -442,7 +613,7 @@ export default function CreatePage() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
-                Creating...
+                {step || "Creating..."}
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">

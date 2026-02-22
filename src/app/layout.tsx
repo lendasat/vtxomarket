@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${poppins.variable} antialiased`}>
+      <body className={`${poppins.variable} font-sans antialiased`}>
         <Providers>
           <AppSidebar />
           <main className="min-h-screen px-4 py-4 pb-24 md:ml-[60px] md:px-6 md:py-5 md:pb-5">

@@ -4,12 +4,14 @@ import type { BalanceInfo } from "./ark-wallet";
 
 export interface Token {
   id: string;
+  assetId?: string;
   name: string;
   ticker: string;
   description: string;
   image?: string;
   creator: string;
   createdAt: number;
+  supply: number;
   marketCap: number;
   replies: number;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthGate } from "@/components/auth-gate";
 import { useWallet } from "@/hooks/useWallet";
 
 function WalletInit() {
@@ -11,8 +12,10 @@ function WalletInit() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
-      <WalletInit />
-      {children}
+      <AuthGate>
+        <WalletInit />
+        {children}
+      </AuthGate>
     </TooltipProvider>
   );
 }
