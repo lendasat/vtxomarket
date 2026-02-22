@@ -164,21 +164,70 @@ export interface IssueTokenResult {
   assetId: string;
 }
 
+/**
+ * Issue a new token on Ark.
+ *
+ * We replicate the SDK's assetManager.issue() logic because the SDK has a bug:
+ * Packet.txOut() returns amount=0, but the Ark server requires all outputs to
+ * have amount >= 1 sat. We fix this by moving 1 sat from the main output to
+ * the packet output.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function issueToken(wallet: any, params: IssueTokenParams): Promise<IssueTokenResult> {
   const { amount, name, ticker, decimals, icon } = params;
   if (amount <= 0) throw new Error("Amount must be greater than 0");
 
-  // Build metadata matching AssetMetadata (KnownMetadata & Record<string, unknown>)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const metadata: Record<string, any> = { name, ticker };
-  if (decimals !== undefined) metadata.decimals = decimals;
-  if (icon) metadata.icon = icon;
+  const sdk = await getSDK();
+  const { AssetGroup, AssetOutput, AssetId, Packet } = sdk.asset;
 
-  const result = await wallet.assetManager.issue({ amount, metadata });
+  // Build metadata array matching SDK's castMetadata format:
+  // [["key", "value"], ...]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const metadata: any[][] = [["name", name], ["ticker", ticker]];
+  if (decimals !== undefined) metadata.push(["decimals", String(decimals)]);
+  if (icon) metadata.push(["icon", icon]);
+
+  // Select coins (same as SDK: select coins to reach dustAmount)
+  const vtxos = await wallet.getVtxos({ withRecoverable: false });
+  const dustAmt = Number(wallet.dustAmount);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { selectVirtualCoins } = await import("@arkade-os/sdk").then((m: any) => m);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const coinSelection: any = selectVirtualCoins(vtxos, dustAmt);
+  let totalBtcSelected = BigInt(0);
+  for (const coin of coinSelection.inputs) {
+    totalBtcSelected += BigInt(coin.value);
+  }
+
+  // Build asset packet
+  const issuedAssetOutput = AssetOutput.create(0, BigInt(amount));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const issuedAssetGroup = AssetGroup.create(null, null, [], [issuedAssetOutput], metadata as any);
+  const packet = Packet.create([issuedAssetGroup]);
+  const packetOut = packet.txOut();
+
+  // Fix: give the packet output 1 sat (server rejects 0)
+  // and subtract it from the main output
+  const packetAmount = BigInt(1);
+  const mainAmount = totalBtcSelected - packetAmount;
+  if (mainAmount < BigInt(dustAmt)) {
+    throw new Error(`Insufficient sats: need at least ${dustAmt + 1} available (have ${totalBtcSelected})`);
+  }
+
+  const address = await wallet.getAddress();
+  const { ArkAddress } = await import("@arkade-os/sdk").then((m) => m);
+  const outputAddress = ArkAddress.decode(address);
+
+  const outputs = [
+    { script: outputAddress.pkScript, amount: mainAmount },
+    { ...packetOut, amount: packetAmount },
+  ];
+
+  const { arkTxid } = await wallet.buildAndSubmitOffchainTx(coinSelection.inputs, outputs);
   return {
-    arkTxId: result.arkTxId,
-    assetId: result.assetId,
+    arkTxId: arkTxid,
+    assetId: AssetId.create(arkTxid, 0).toString(),
   };
 }
 
