@@ -1,0 +1,174 @@
+// We use dynamic import because Turbopack (Next.js 16) breaks @arkade-os/sdk
+// when bundling it statically. The dynamic import ensures it loads correctly
+// in the browser at runtime.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ArkWallet = any;
+
+export const ARK_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
+const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
+
+export const ONCHAIN_FEE_SATS = 200;
+
+let _sdk: typeof import("@arkade-os/sdk") | null = null;
+
+async function getSDK() {
+  if (!_sdk) {
+    _sdk = await import("@arkade-os/sdk");
+  }
+  return _sdk;
+}
+
+export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
+  const { SingleKey, Wallet } = await getSDK();
+  console.log("[ark] SDK loaded, creating wallet...");
+  const identity = SingleKey.fromHex(privateKeyHex);
+  const wallet = await Wallet.create({
+    identity,
+    arkServerUrl: ARK_SERVER_URL,
+    esploraUrl: ESPLORA_URL,
+  });
+  console.log("[ark] Wallet created successfully");
+  return wallet;
+}
+
+export interface BalanceInfo {
+  total: number;
+  available: number;
+  offchain: number;
+  onchain: number;
+  onchainConfirmed: number;
+  onchainUnconfirmed: number;
+  settled: number;
+  preconfirmed: number;
+  recoverable: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getBalance(wallet: any): Promise<BalanceInfo> {
+  const balance = await wallet.getBalance();
+  return {
+    total: balance.total,
+    available: balance.available ?? 0,
+    offchain: (balance.settled ?? 0) + (balance.preconfirmed ?? 0),
+    onchain: balance.boarding?.total ?? 0,
+    onchainConfirmed: balance.boarding?.confirmed ?? 0,
+    onchainUnconfirmed: balance.boarding?.unconfirmed ?? 0,
+    settled: balance.settled ?? 0,
+    preconfirmed: balance.preconfirmed ?? 0,
+    recoverable: balance.recoverable ?? 0,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getReceivingAddresses(wallet: any) {
+  const offchainAddr = await wallet.getAddress();
+  const boardingAddr = await wallet.getBoardingAddress();
+  return { offchainAddr, boardingAddr };
+}
+
+export function isBtcAddress(addr: string): boolean {
+  return (
+    /^(bc1|tb1|bcrt1)[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{39,87}$/.test(addr) ||
+    /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(addr)
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function sendPayment(wallet: any, address: string, amountSats: number): Promise<string> {
+  if (isBtcAddress(address)) {
+    const totalNeeded = amountSats + ONCHAIN_FEE_SATS;
+    const vtxos = await wallet.getVtxos();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sorted = [...vtxos].sort((a: any, b: any) => (a.virtualStatus.batchExpiry ?? 0) - (b.virtualStatus.batchExpiry ?? 0));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const selected: any[] = [];
+    let total = 0;
+    for (const v of sorted) {
+      selected.push(v);
+      total += v.value;
+      if (total >= totalNeeded) break;
+    }
+    if (total < totalNeeded) throw new Error("Insufficient balance (amount + 200 sats network fee)");
+
+    const outputs: { address: string; amount: bigint }[] = [
+      { address, amount: BigInt(amountSats) },
+    ];
+    const change = total - totalNeeded;
+    if (change > 0) {
+      const changeAddr = await wallet.getAddress();
+      outputs.push({ address: changeAddr, amount: BigInt(change) });
+    }
+
+    const txid = await wallet.settle(
+      { inputs: selected, outputs },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (event: any) => console.log("[collaborative-exit]", event)
+    );
+    return txid;
+  }
+
+  const txid = await wallet.sendBitcoin({ address, amount: amountSats });
+  return txid;
+}
+
+// -- Debug helpers --
+
+export interface WalletBalance {
+  total: number;
+  available: number;
+  settled: number;
+  preconfirmed: number;
+  recoverable: number;
+  boarding?: { total: number; confirmed: number; unconfirmed: number };
+}
+
+export interface VtxoInfo {
+  type: "boarding" | "vtxo";
+  value: number;
+  confirmed: boolean;
+  state?: string;
+  batchExpiry?: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getRawBalance(wallet: any): Promise<WalletBalance> {
+  return wallet.getBalance();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getVtxoDetails(wallet: any): Promise<VtxoInfo[]> {
+  const results: VtxoInfo[] = [];
+  const boardingUtxos = await wallet.getBoardingUtxos();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const utxo of boardingUtxos) {
+    results.push({ type: "boarding", value: utxo.value, confirmed: utxo.status.confirmed });
+  }
+  const vtxos = await wallet.getVtxos({ withRecoverable: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const vtxo of vtxos) {
+    results.push({
+      type: "vtxo", value: vtxo.value, confirmed: true,
+      state: vtxo.virtualStatus.state, batchExpiry: vtxo.virtualStatus.batchExpiry,
+    });
+  }
+  return results;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function settleVtxos(wallet: any): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inputs: any[] = [...boardingUtxos];
+  if (inputs.length === 0) throw new Error("No confirmed UTXOs to settle");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const amount = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
+  const offchainAddr = await wallet.getAddress();
+  const txid = await wallet.settle(
+    { inputs, outputs: [{ address: offchainAddr, amount: BigInt(amount) }] },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (event: any) => console.log("[settle]", event)
+  );
+  return txid;
+}

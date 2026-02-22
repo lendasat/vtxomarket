@@ -1,0 +1,640 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { TokenChart } from "@/components/token-chart";
+import { MOCK_TOKENS } from "@/lib/mock-tokens";
+
+type TradeTab = "buy" | "sell";
+type InfoTab = "thread" | "trades" | "holders";
+
+const QUICK_BUY_AMOUNTS = [100, 500, 1_000, 5_000, 10_000];
+const QUICK_SELL_PCTS = [25, 50, 75, 100];
+
+const NOW = Math.floor(Date.now() / 1000);
+
+// ── Mock data generators ───────────────────────────────────────────
+
+function makeMockComments(tokenName: string) {
+  return [
+    { id: "c1", pubkey: "3aFk...x9nQ", text: `${tokenName} to the moon, this is just the beginning`, time: NOW - 45 },
+    { id: "c2", pubkey: "7BcD...m3Rp", text: "Just aped in, LFG", time: NOW - 120 },
+    { id: "c3", pubkey: "9XyZ...kL4v", text: "Bonding curve looking healthy, nice organic growth", time: NOW - 340 },
+    { id: "c4", pubkey: "2LnP...eP3z", text: "Dev is based, been in the Nostr community for years", time: NOW - 600 },
+    { id: "c5", pubkey: "5FaK...bBdG", text: "Price action is insane right now", time: NOW - 890 },
+    { id: "c6", pubkey: "8mNq...rR2s", text: "Who else is holding through the dip?", time: NOW - 1500 },
+    { id: "c7", pubkey: "1AbC...dEfG", text: "This is the one, I can feel it", time: NOW - 2100 },
+    { id: "c8", pubkey: "4HjK...lMnO", text: "Chart looking bullish af", time: NOW - 3200 },
+  ];
+}
+
+function makeMockTrades(ticker: string, price: number) {
+  const trades = [];
+  for (let i = 0; i < 20; i++) {
+    const isBuy = Math.random() > 0.4;
+    const sats = Math.floor(Math.random() * 5000 + 100);
+    const tokens = Math.floor(sats / price);
+    const wallets = ["3aFk...x9nQ", "7BcD...m3Rp", "9XyZ...kL4v", "2LnP...eP3z", "5FaK...bBdG", "8mNq...rR2s", "1AbC...dEfG", "0HnY...bDgR"];
+    trades.push({
+      id: `t${i}`,
+      wallet: wallets[Math.floor(Math.random() * wallets.length)],
+      type: isBuy ? ("buy" as const) : ("sell" as const),
+      sats,
+      tokens,
+      ticker,
+      time: NOW - i * Math.floor(Math.random() * 120 + 30),
+    });
+  }
+  return trades;
+}
+
+function makeMockHolders() {
+  return [
+    { wallet: "5FaK...x9nQ", pct: 8.4, label: "Creator" },
+    { wallet: "7BcD...m3Rp", pct: 5.2, label: null },
+    { wallet: "9XyZ...kL4v", pct: 4.1, label: null },
+    { wallet: "2LnP...eP3z", pct: 3.8, label: null },
+    { wallet: "8mNq...rR2s", pct: 2.9, label: null },
+    { wallet: "1AbC...dEfG", pct: 2.3, label: null },
+    { wallet: "4HjK...lMnO", pct: 1.7, label: null },
+    { wallet: "0HnY...bDgR", pct: 1.2, label: null },
+    { wallet: "6ClB...21mM", pct: 0.9, label: null },
+    { wallet: "3ZaP...nRgY", pct: 0.7, label: null },
+  ];
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function timeAgo(ts: number): string {
+  const s = NOW - ts;
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function formatSats(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+// ── Page component ─────────────────────────────────────────────────
+
+export default function TokenPage() {
+  const params = useParams();
+  const router = useRouter();
+  const tokenId = params.id as string;
+
+  const tokenIndex = MOCK_TOKENS.findIndex((t) => t.id === tokenId);
+  const token = MOCK_TOKENS[tokenIndex];
+
+  const [tradeTab, setTradeTab] = useState<TradeTab | null>(null);
+  const [infoTab, setInfoTab] = useState<InfoTab>("thread");
+  const [amount, setAmount] = useState("");
+  const [sellPct, setSellPct] = useState<number | null>(null);
+  const [slippage, setSlippage] = useState("1");
+  const [showSlippage, setShowSlippage] = useState(false);
+  const [newComment, setNewComment] = useState("");
+
+  // Mock user holdings for sell side
+  const userHolding = 12_480;
+  const userHoldingValue = Math.floor(userHolding * (token?.price ?? 0));
+
+  const openTrade = (tab: TradeTab) => {
+    setTradeTab(tab);
+    setAmount("");
+    setSellPct(null);
+    setShowSlippage(false);
+  };
+  const closeTrade = () => {
+    setTradeTab(null);
+    setAmount("");
+    setSellPct(null);
+  };
+
+  const comments = useMemo(() => token ? makeMockComments(token.name) : [], [token]);
+  const trades = useMemo(() => token ? makeMockTrades(token.ticker, token.price) : [], [token]);
+  const holders = useMemo(() => makeMockHolders(), []);
+
+  if (!token) {
+    return (
+      <div className="py-20 text-center space-y-3">
+        <p className="text-muted-foreground">Token not found</p>
+        <Button variant="ghost" size="sm" onClick={() => router.push("/")}>
+          Back to Marketplace
+        </Button>
+      </div>
+    );
+  }
+
+  const isPositive = token.change24h >= 0;
+
+  const amountNum = parseInt(amount, 10);
+  const estimatedTokens = amountNum && !isNaN(amountNum) && token.price > 0
+    ? Math.floor(amountNum / token.price)
+    : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Back + Token header */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => router.push("/")}
+          className="shrink-0 h-8 w-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.1] transition-all"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+            <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/60 tracking-wider">
+            {token.image ? (
+              <img src={token.image} alt={token.name} className="h-full w-full rounded-xl object-cover" />
+            ) : (
+              token.ticker.slice(0, 2)
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-bold text-base sm:text-lg truncate">{token.name}</h1>
+              <span className="text-[11px] font-mono text-muted-foreground/40 hidden sm:inline">${token.ticker}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+              <span className="sm:hidden font-mono">${token.ticker}</span>
+              <span className="hidden sm:inline">by {token.creatorShort}</span>
+              <span>{timeAgo(token.createdAt)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-base sm:text-lg font-bold tabular-nums">
+            {token.price.toFixed(2)}
+            <span className="text-[10px] text-muted-foreground/30 ml-0.5">sat</span>
+          </p>
+          <p className={`text-[11px] font-medium tabular-nums ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
+            {isPositive ? "+" : ""}{token.change24h.toFixed(1)}%
+          </p>
+        </div>
+      </div>
+
+      {/* Two-column layout */}
+      <div className="grid gap-4 lg:grid-cols-[1fr,340px]">
+        {/* ─── Left column: Chart + Tabs ─── */}
+        <div className="space-y-4">
+          {/* Chart card */}
+          <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-3 sm:p-4">
+            <TokenChart basePrice={token.price} />
+          </div>
+
+          {/* Buy / Sell buttons */}
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => openTrade("buy")}
+              className="flex-1 py-3 rounded-xl bg-emerald-500/90 text-white text-sm font-semibold hover:bg-emerald-400/90 shadow-[0_4px_20px_rgba(52,211,153,0.15)] hover:shadow-[0_4px_24px_rgba(52,211,153,0.25)] transition-all"
+            >
+              Buy
+            </button>
+            <button
+              onClick={() => openTrade("sell")}
+              className="flex-1 py-3 rounded-xl bg-red-500/90 text-white text-sm font-semibold hover:bg-red-400/90 shadow-[0_4px_20px_rgba(248,113,113,0.15)] hover:shadow-[0_4px_24px_rgba(248,113,113,0.25)] transition-all"
+            >
+              Sell
+            </button>
+          </div>
+
+          {/* Info tabs */}
+          <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+            {/* Tab header */}
+            <div className="flex border-b border-white/[0.07]">
+              {(["thread", "trades", "holders"] as InfoTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setInfoTab(tab)}
+                  className={`flex-1 py-3 text-xs font-medium capitalize transition-colors ${
+                    infoTab === tab
+                      ? "text-foreground border-b-2 border-primary"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
+                  }`}
+                >
+                  {tab}
+                  {tab === "thread" && (
+                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{comments.length}</span>
+                  )}
+                  {tab === "trades" && (
+                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{trades.length}</span>
+                  )}
+                  {tab === "holders" && (
+                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{holders.length}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            <div className="p-4">
+              {/* Thread */}
+              {infoTab === "thread" && (
+                <div className="space-y-4">
+                  {/* Comment input */}
+                  <div className="flex gap-2">
+                    <Input
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Post a reply..."
+                      className="h-9 text-xs rounded-lg"
+                    />
+                    <Button size="sm" className="h-9 px-4 rounded-lg text-xs" disabled={!newComment.trim()}>
+                      Post
+                    </Button>
+                  </div>
+
+                  {/* Comments list */}
+                  <div className="space-y-3">
+                    {comments.map((c) => (
+                      <div key={c.id} className="flex gap-3">
+                        <div className="h-7 w-7 shrink-0 rounded-full bg-muted/50 flex items-center justify-center text-[10px] font-mono text-muted-foreground">
+                          {c.pubkey.slice(0, 2)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-mono text-muted-foreground/70">{c.pubkey}</span>
+                            <span className="text-[10px] text-muted-foreground/40">{timeAgo(c.time)}</span>
+                          </div>
+                          <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{c.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Trades */}
+              {infoTab === "trades" && (
+                <div className="space-y-1.5">
+                  {trades.map((t) => {
+                    const isBuy = t.type === "buy";
+                    return (
+                      <div
+                        key={t.id}
+                        className="flex items-center gap-3 rounded-lg bg-muted/10 px-3 py-2.5 transition-colors hover:bg-muted/20"
+                      >
+                        {/* Buy/Sell indicator */}
+                        <div className={`h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold ${
+                          isBuy
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : "bg-red-500/10 text-red-400"
+                        }`}>
+                          {isBuy ? "B" : "S"}
+                        </div>
+
+                        {/* Main info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-medium ${isBuy ? "text-emerald-400" : "text-red-400"}`}>
+                              {isBuy ? "Bought" : "Sold"}
+                            </span>
+                            <span className="text-xs font-semibold tabular-nums">
+                              {t.tokens.toLocaleString()}
+                              <span className="text-muted-foreground/50 font-normal ml-1">${t.ticker}</span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground/40 mt-0.5">
+                            for {t.sats.toLocaleString()} sats &middot; {t.wallet}
+                          </p>
+                        </div>
+
+                        {/* Time */}
+                        <span className="shrink-0 text-[11px] text-muted-foreground/30 tabular-nums">
+                          {timeAgo(t.time)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Holders */}
+              {infoTab === "holders" && (
+                <div className="space-y-1.5">
+                  {holders.map((h, i) => {
+                    const barWidth = Math.max(4, (h.pct / holders[0].pct) * 100);
+                    return (
+                      <div
+                        key={h.wallet}
+                        className="relative rounded-lg bg-muted/10 px-3 py-2.5 overflow-hidden transition-colors hover:bg-muted/20"
+                      >
+                        {/* Background bar */}
+                        <div
+                          className="absolute inset-y-0 left-0 bg-foreground/[0.03]"
+                          style={{ width: `${barWidth}%` }}
+                        />
+
+                        <div className="relative flex items-center gap-3">
+                          {/* Rank */}
+                          <span className="h-7 w-7 shrink-0 rounded-md bg-muted/30 flex items-center justify-center text-[11px] font-semibold tabular-nums text-muted-foreground/50">
+                            {i + 1}
+                          </span>
+
+                          {/* Wallet + label */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-muted-foreground/70">
+                                {h.wallet}
+                              </span>
+                              {h.label && (
+                                <span className="text-[10px] font-medium text-muted-foreground/50 bg-muted/30 rounded px-1.5 py-0.5">
+                                  {h.label}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Percentage */}
+                          <div className="shrink-0 text-right">
+                            <span className="text-xs font-semibold tabular-nums">{h.pct.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Right column: Bonding + Info ─── */}
+        <div className="space-y-4">
+          {/* Bonding curve */}
+          <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
+                Bonding Curve
+              </h3>
+              <span className="text-sm font-semibold tabular-nums">{token.curveProgress}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-white/[0.1] to-white/[0.2] transition-all"
+                style={{ width: `${token.curveProgress}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground/40 leading-relaxed">
+              When the bonding curve reaches 100%, the token graduates and liquidity is locked.
+            </p>
+          </div>
+
+          {/* Token info */}
+          <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4 space-y-3">
+            <h3 className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
+              Token Info
+            </h3>
+
+            <div className="space-y-2.5">
+              <InfoRow label="Market Cap" value={`${formatSats(token.marketCap)} sats`} />
+              <InfoRow label="24h Volume" value={`${formatSats(token.volume24h)} sats`} />
+              <InfoRow label="Holders" value={String(token.holders)} />
+              <InfoRow label="Replies" value={String(token.replies)} />
+              <InfoRow label="Creator" value={token.creatorShort} mono />
+            </div>
+
+            {token.description && (
+              <>
+                <div className="h-px bg-white/[0.06]" />
+                <p className="text-xs text-muted-foreground/50 leading-relaxed">
+                  {token.description}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Trade overlay modal ─── */}
+      {tradeTab !== null && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeTrade}
+          />
+
+          {/* Glass panel — bottom sheet on mobile, centered on desktop */}
+          <div className="relative w-full sm:max-w-sm sm:mx-4 rounded-t-2xl sm:rounded-2xl border-t sm:border border-white/[0.1] bg-card/95 backdrop-blur-2xl shadow-[0_16px_64px_rgba(0,0,0,0.5)] overflow-hidden max-h-[90vh] overflow-y-auto">
+            {/* Handle bar (mobile) */}
+            <div className="sm:hidden flex justify-center pt-3 pb-1">
+              <div className="h-1 w-10 rounded-full bg-white/[0.15]" />
+            </div>
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 pt-3 sm:pt-5 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-muted/60 flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                  {token.ticker.slice(0, 2)}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{token.name}</p>
+                  <p className="text-[11px] text-muted-foreground/50">${token.ticker}</p>
+                </div>
+              </div>
+              <button
+                onClick={closeTrade}
+                className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/40 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                  <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Buy / Sell toggle */}
+            <div className="px-5 pb-4">
+              <div className="flex gap-1.5 rounded-lg bg-muted/20 p-1">
+                <button
+                  onClick={() => { setTradeTab("buy"); setAmount(""); setSellPct(null); }}
+                  className={`flex-1 py-2 rounded-md text-xs font-semibold transition-all ${
+                    tradeTab === "buy"
+                      ? "bg-emerald-500 text-white shadow-sm"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
+                  }`}
+                >
+                  Buy
+                </button>
+                <button
+                  onClick={() => { setTradeTab("sell"); setAmount(""); setSellPct(null); }}
+                  className={`flex-1 py-2 rounded-md text-xs font-semibold transition-all ${
+                    tradeTab === "sell"
+                      ? "bg-red-500 text-white shadow-sm"
+                      : "text-muted-foreground/60 hover:text-muted-foreground"
+                  }`}
+                >
+                  Sell
+                </button>
+              </div>
+            </div>
+
+            {/* Trade form */}
+            <div className="px-5 pb-5 space-y-4">
+              {/* You pay */}
+              <div className="rounded-xl bg-muted/10 border border-border/20 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] text-muted-foreground/50">
+                    {tradeTab === "buy" ? "You pay" : "You sell"}
+                  </span>
+                  {tradeTab === "sell" && (
+                    <span className="text-[11px] text-muted-foreground/40">
+                      Balance: {userHolding.toLocaleString()} ${token.ticker}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={amount}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9]/g, "");
+                      setAmount(v);
+                      setSellPct(null);
+                    }}
+                    placeholder="0"
+                    className="flex-1 bg-transparent text-xl font-semibold tabular-nums outline-none placeholder:text-muted-foreground/20"
+                  />
+                  <span className="text-xs font-medium text-muted-foreground/50">
+                    {tradeTab === "buy" ? "sats" : token.ticker}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick amounts */}
+              <div className="flex gap-1.5">
+                {tradeTab === "buy"
+                  ? QUICK_BUY_AMOUNTS.map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => { setAmount(String(a)); setSellPct(null); }}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                          amount === String(a)
+                            ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                            : "bg-muted/15 text-muted-foreground/50 border border-transparent hover:bg-muted/25"
+                        }`}
+                      >
+                        {a >= 1000 ? `${a / 1000}K` : a}
+                      </button>
+                    ))
+                  : QUICK_SELL_PCTS.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          const tokens = Math.floor(userHolding * (p / 100));
+                          setAmount(String(tokens));
+                          setSellPct(p);
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                          sellPct === p
+                            ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                            : "bg-muted/15 text-muted-foreground/50 border border-transparent hover:bg-muted/25"
+                        }`}
+                      >
+                        {p}%
+                      </button>
+                    ))}
+              </div>
+
+              {/* Arrow divider */}
+              <div className="flex justify-center">
+                <div className="h-8 w-8 rounded-full bg-muted/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-muted-foreground/40">
+                    <path fillRule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* You receive */}
+              <div className="rounded-xl bg-muted/10 border border-border/20 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] text-muted-foreground/50">You receive</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-xl font-semibold tabular-nums text-muted-foreground/70">
+                    {tradeTab === "buy"
+                      ? (estimatedTokens > 0 ? `~${estimatedTokens.toLocaleString()}` : "0")
+                      : (amountNum > 0 ? `~${Math.floor(amountNum * token.price).toLocaleString()}` : "0")}
+                  </span>
+                  <span className="text-xs font-medium text-muted-foreground/50">
+                    {tradeTab === "buy" ? token.ticker : "sats"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Slippage */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setShowSlippage(!showSlippage)}
+                  className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
+                >
+                  Slippage: {slippage}%
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`inline ml-1 h-3 w-3 transition-transform ${showSlippage ? "rotate-180" : ""}`}>
+                    <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <span className="text-[11px] text-muted-foreground/30">
+                  Fee: ~1%
+                </span>
+              </div>
+
+              {showSlippage && (
+                <div className="flex gap-1.5">
+                  {["0.5", "1", "2", "5"].map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSlippage(s)}
+                      className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                        slippage === s
+                          ? "bg-muted/30 text-foreground border border-border/40"
+                          : "bg-muted/10 text-muted-foreground/50 border border-transparent hover:bg-muted/20"
+                      }`}
+                    >
+                      {s}%
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Action button */}
+              <button
+                disabled={!amountNum || amountNum <= 0}
+                className={`w-full py-3.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                  tradeTab === "buy"
+                    ? "bg-emerald-500 hover:bg-emerald-400 text-white"
+                    : "bg-red-500 hover:bg-red-400 text-white"
+                }`}
+              >
+                {tradeTab === "buy"
+                  ? amountNum > 0 ? `Buy ${estimatedTokens.toLocaleString()} $${token.ticker}` : "Enter amount"
+                  : amountNum > 0 ? `Sell ${amountNum.toLocaleString()} $${token.ticker}` : "Enter amount"}
+              </button>
+
+              {/* Safe area for mobile */}
+              <div className="h-[env(safe-area-inset-bottom)] sm:hidden" />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] text-muted-foreground/50">{label}</span>
+      <span className={`text-xs font-medium tabular-nums ${mono ? "font-mono text-muted-foreground/70" : ""}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
