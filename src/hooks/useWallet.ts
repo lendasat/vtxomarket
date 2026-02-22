@@ -52,7 +52,7 @@ export function useWallet() {
 
       // 3. Nostr signer (fire-and-forget, don't block Ark)
       //    Check for an imported nsec override first
-      import("@/lib/nostr").then(async ({ loginWithPrivateKey, connectNDK }) => {
+      import("@/lib/nostr").then(async ({ loginWithPrivateKey, connectNDK, fetchMyProfile }) => {
         try {
           const override = await getNostrKeyOverride();
           const key = override || nostrKeyHex;
@@ -67,6 +67,17 @@ export function useWallet() {
             useAppStore.getState().setConnected(true);
           }
           useAppStore.getState().setNostrReady(true);
+
+          // Fetch profile from relays (non-blocking)
+          try {
+            const profile = await fetchMyProfile();
+            if (profile) {
+              useAppStore.getState().setProfile(profile);
+              console.log("[wallet] Profile loaded:", profile.name || profile.displayName || "(no name)");
+            }
+          } catch (e) {
+            console.warn("[wallet] Profile fetch failed:", e);
+          }
         } catch (e) {
           console.error("[wallet] Nostr init failed:", e);
         }

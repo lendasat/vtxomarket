@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { useAppStore } from "@/lib/store";
 import { deleteAllWalletData, getNostrKeyOverride } from "@/lib/wallet-storage";
 import {
@@ -11,6 +12,8 @@ import {
 export default function SettingsPage() {
   const mnemonic = useAppStore((s) => s.mnemonic);
   const user = useAppStore((s) => s.user);
+  const profile = useAppStore((s) => s.profile);
+  const nostrReady = useAppStore((s) => s.nostrReady);
   const walletReady = useAppStore((s) => s.walletReady);
 
   const [revealed, setRevealed] = useState(false);
@@ -18,6 +21,48 @@ export default function SettingsPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [nostrPrivKeyHex, setNostrPrivKeyHex] = useState("");
   const [hasNsecOverride, setHasNsecOverride] = useState(false);
+
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profilePicture, setProfilePicture] = useState("");
+  const [profileAbout, setProfileAbout] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const profileInitRef = useRef(false);
+
+  // Sync form fields when profile loads
+  useEffect(() => {
+    if (profile && !profileInitRef.current) {
+      profileInitRef.current = true;
+      setProfileName(profile.displayName || profile.name || "");
+      setProfilePicture(profile.picture || "");
+      setProfileAbout(profile.about || "");
+    }
+  }, [profile]);
+
+  const handleSaveProfile = async () => {
+    if (!nostrReady) return;
+    setSavingProfile(true);
+    try {
+      const { updateMyProfile } = await import("@/lib/nostr");
+      const updated = await updateMyProfile({
+        name: profileName || undefined,
+        displayName: profileName || undefined,
+        picture: profilePicture || undefined,
+        about: profileAbout || undefined,
+      });
+      useAppStore.getState().setProfile(updated);
+      setEditingProfile(false);
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2000);
+    } catch (e) {
+      console.error("[settings] Profile save failed:", e);
+      alert("Failed to save profile: " + (e instanceof Error ? e.message : "Unknown error"));
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -76,6 +121,117 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-muted-foreground/60">
           Wallet and account settings
         </p>
+      </div>
+
+      {/* Profile */}
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+        <div className="p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Profile</h2>
+            {profileSaved && (
+              <span className="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Saved
+              </span>
+            )}
+          </div>
+
+          {/* Avatar + name display */}
+          <div className="flex items-center gap-4">
+            <div className="relative h-16 w-16 shrink-0 rounded-full overflow-hidden bg-white/[0.06] border border-white/[0.08]">
+              {profilePicture ? (
+                <Image
+                  src={profilePicture}
+                  alt="Profile"
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xl font-bold text-muted-foreground/30">
+                  {(profileName || user?.npub || "?")[0]?.toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {profileName || (user?.npub ? `${user.npub.slice(0, 12)}...` : "Anonymous")}
+              </p>
+              {profileAbout && !editingProfile && (
+                <p className="text-[11px] text-muted-foreground/40 mt-0.5 line-clamp-2">
+                  {profileAbout}
+                </p>
+              )}
+              {!profileName && !profile && nostrReady && (
+                <p className="text-[11px] text-muted-foreground/30 mt-0.5">
+                  No profile set yet
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Edit form */}
+          {editingProfile ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-muted-foreground/50 font-medium">Display Name</label>
+                <input
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  placeholder="Satoshi"
+                  className="w-full h-10 px-3.5 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-muted-foreground/50 font-medium">Profile Picture URL</label>
+                <input
+                  value={profilePicture}
+                  onChange={(e) => setProfilePicture(e.target.value)}
+                  placeholder="https://nostr.build/i/..."
+                  className="w-full h-10 px-3.5 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-muted-foreground/50 font-medium">About</label>
+                <textarea
+                  value={profileAbout}
+                  onChange={(e) => setProfileAbout(e.target.value)}
+                  placeholder="Tell the world about yourself..."
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all resize-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setEditingProfile(false);
+                    // Reset to stored values
+                    setProfileName(profile?.displayName || profile?.name || "");
+                    setProfilePicture(profile?.picture || "");
+                    setProfileAbout(profile?.about || "");
+                  }}
+                  className="flex-1 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] text-xs font-medium transition-all hover:bg-white/[0.1]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={savingProfile}
+                  className="flex-1 h-9 rounded-xl bg-white/[0.1] border border-white/[0.12] text-xs font-semibold transition-all hover:bg-white/[0.14] disabled:opacity-40"
+                >
+                  {savingProfile ? "Publishing..." : "Save to Nostr"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditingProfile(true)}
+              disabled={!nostrReady}
+              className="w-full h-9 rounded-xl bg-white/[0.07] border border-white/[0.1] text-xs font-medium transition-all hover:bg-white/[0.12] hover:border-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {nostrReady ? "Edit Profile" : "Connecting..."}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Seed Phrase */}

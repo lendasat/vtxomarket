@@ -1,4 +1,4 @@
-import NDK, { NDKPrivateKeySigner } from "@nostr-dev-kit/ndk";
+import NDK, { NDKPrivateKeySigner, type NDKUserProfile } from "@nostr-dev-kit/ndk";
 
 const RELAYS = [
   "wss://relay.damus.io",
@@ -46,6 +46,28 @@ export function ensureNostrReady(): NDK {
     throw new Error("Nostr not connected to relays.");
   }
   return ndk;
+}
+
+/** Fetch the signed-in user's profile (kind 0) from relays */
+export async function fetchMyProfile(): Promise<NDKUserProfile | null> {
+  const ndk = ensureNostrReady();
+  const user = await ndk.signer!.user();
+  user.ndk = ndk;
+  return user.fetchProfile();
+}
+
+/** Update the signed-in user's profile. Merges with existing fields. */
+export async function updateMyProfile(updates: Partial<NDKUserProfile>): Promise<NDKUserProfile> {
+  const ndk = ensureNostrReady();
+  const user = await ndk.signer!.user();
+  user.ndk = ndk;
+
+  // Fetch existing profile so we don't overwrite fields we don't touch
+  await user.fetchProfile();
+
+  user.profile = { ...user.profile, ...updates };
+  await user.publish(); // signs kind 0 event and broadcasts to relays
+  return user.profile;
 }
 
 // Custom event kind for vtxo.fun token listings

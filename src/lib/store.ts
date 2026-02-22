@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { NDKUser } from "@nostr-dev-kit/ndk";
+import type { NDKUser, NDKUserProfile } from "@nostr-dev-kit/ndk";
 import type { BalanceInfo } from "./ark-wallet";
 
 export interface Token {
@@ -22,6 +22,7 @@ interface AppState {
 
   // Nostr
   user: NDKUser | null;
+  profile: NDKUserProfile | null;
   connected: boolean;
   nostrReady: boolean;
 
@@ -39,6 +40,7 @@ interface AppState {
   // Actions
   setMnemonic: (mnemonic: string | null) => void;
   setUser: (user: NDKUser | null) => void;
+  setProfile: (profile: NDKUserProfile | null) => void;
   setConnected: (connected: boolean) => void;
   setNostrReady: (ready: boolean) => void;
   setWalletReady: (ready: boolean) => void;
@@ -54,6 +56,7 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   mnemonic: null,
   user: null,
+  profile: null,
   connected: false,
   nostrReady: false,
   walletReady: false,
@@ -64,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
   tokens: [],
   setMnemonic: (mnemonic) => set({ mnemonic }),
   setUser: (user) => set({ user }),
+  setProfile: (profile) => set({ profile }),
   setConnected: (connected) => set({ connected }),
   setNostrReady: (nostrReady) => set({ nostrReady }),
   setWalletReady: (walletReady) => set({ walletReady }),
