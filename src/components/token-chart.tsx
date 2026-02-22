@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import type { TradeReceiptData } from "@/lib/nostr-market";
 
 type Timeframe = "1m" | "5m" | "15m" | "1H" | "4H" | "1D";
 
@@ -20,49 +21,6 @@ interface VolumeData {
   color: string;
 }
 
-/** Generate mock OHLC data around a base price */
-function generateMockCandles(
-  basePrice: number,
-  count: number,
-  intervalSec: number
-): { candles: CandleData[]; volumes: VolumeData[] } {
-  const candles: CandleData[] = [];
-  const volumes: VolumeData[] = [];
-  const now = Math.floor(Date.now() / 1000);
-  let price = basePrice * 0.3; // start low, trend up
-
-  for (let i = 0; i < count; i++) {
-    const time = now - (count - i) * intervalSec;
-    const volatility = basePrice * 0.08;
-    const trend = (basePrice - price) * 0.02; // mean-revert toward base
-    const open = price;
-    const change1 = (Math.random() - 0.45) * volatility + trend;
-    const change2 = (Math.random() - 0.45) * volatility + trend;
-    const close = Math.max(0.001, open + change1);
-    const high = Math.max(open, close) + Math.abs(change2) * 0.5;
-    const low = Math.min(open, close) - Math.abs(change2) * 0.3;
-
-    candles.push({
-      time,
-      open: +open.toFixed(4),
-      high: +high.toFixed(4),
-      low: +Math.max(0.001, low).toFixed(4),
-      close: +close.toFixed(4),
-    });
-
-    const vol = Math.random() * 5000 + 500;
-    volumes.push({
-      time,
-      value: +vol.toFixed(0),
-      color: close >= open ? "rgba(52, 211, 153, 0.4)" : "rgba(248, 113, 113, 0.4)",
-    });
-
-    price = close;
-  }
-
-  return { candles, volumes };
-}
-
 function getIntervalSec(tf: Timeframe): number {
   switch (tf) {
     case "1m": return 60;
@@ -74,10 +32,82 @@ function getIntervalSec(tf: Timeframe): number {
   }
 }
 
-export function TokenChart({ basePrice }: { basePrice: number }) {
+/** Aggregate trade receipts into candles */
+function aggregateTrades(
+  trades: TradeReceiptData[],
+  intervalSec: number,
+  basePrice: number
+): { candles: CandleData[]; volumes: VolumeData[] } {
+  if (trades.length === 0) {
+    // Generate a flat line at basePrice if no trades
+    const candles: CandleData[] = [];
+    const volumes: VolumeData[] = [];
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 20; i++) {
+      const time = now - (20 - i) * intervalSec;
+      candles.push({ time, open: basePrice, high: basePrice, low: basePrice, close: basePrice });
+      volumes.push({ time, value: 0, color: "rgba(52, 211, 153, 0.2)" });
+    }
+    return { candles, volumes };
+  }
+
+  const sorted = [...trades].sort((a, b) => a.timestamp - b.timestamp);
+  const buckets = new Map<number, TradeReceiptData[]>();
+
+  for (const trade of sorted) {
+    const bucket = Math.floor(trade.timestamp / intervalSec) * intervalSec;
+    if (!buckets.has(bucket)) buckets.set(bucket, []);
+    buckets.get(bucket)!.push(trade);
+  }
+
+  const candles: CandleData[] = [];
+  const volumes: VolumeData[] = [];
+  let lastClose = sorted[0].price;
+
+  const sortedBuckets = [...buckets.entries()].sort(([a], [b]) => a - b);
+
+  for (const [time, bucketTrades] of sortedBuckets) {
+    const prices = bucketTrades.map((t) => t.price);
+    const open = lastClose;
+    const close = prices[prices.length - 1];
+    const high = Math.max(open, close, ...prices);
+    const low = Math.min(open, close, ...prices);
+    const vol = bucketTrades.reduce((s, t) => s + t.sats, 0);
+
+    candles.push({
+      time,
+      open: +open.toFixed(6),
+      high: +high.toFixed(6),
+      low: +low.toFixed(6),
+      close: +close.toFixed(6),
+    });
+
+    volumes.push({
+      time,
+      value: vol,
+      color: close >= open ? "rgba(52, 211, 153, 0.4)" : "rgba(248, 113, 113, 0.4)",
+    });
+
+    lastClose = close;
+  }
+
+  return { candles, volumes };
+}
+
+interface TokenChartProps {
+  trades?: TradeReceiptData[];
+  basePrice: number;
+}
+
+export function TokenChart({ trades = [], basePrice }: TokenChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof import("lightweight-charts").createChart> | null>(null);
   const [tf, setTf] = useState<Timeframe>("5m");
+
+  const { candles, volumes } = useMemo(
+    () => aggregateTrades(trades, getIntervalSec(tf), basePrice),
+    [trades, tf, basePrice]
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -89,7 +119,6 @@ export function TokenChart({ basePrice }: { basePrice: number }) {
 
       if (disposed || !containerRef.current) return;
 
-      // Clear previous chart
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -140,16 +169,11 @@ export function TokenChart({ basePrice }: { basePrice: number }) {
         scaleMargins: { top: 0.85, bottom: 0 },
       });
 
-      const intervalSec = getIntervalSec(tf);
-      const count = tf === "1D" ? 60 : tf === "4H" ? 48 : tf === "1H" ? 72 : 100;
-      const { candles, volumes } = generateMockCandles(basePrice, count, intervalSec);
-
       candleSeries.setData(candles as Parameters<typeof candleSeries.setData>[0]);
       volumeSeries.setData(volumes as Parameters<typeof volumeSeries.setData>[0]);
 
       chart.timeScale().fitContent();
 
-      // Resize observer
       const resizeObserver = new ResizeObserver(() => {
         if (containerRef.current && chartRef.current) {
           const { width, height } = containerRef.current.getBoundingClientRect();
@@ -170,11 +194,10 @@ export function TokenChart({ basePrice }: { basePrice: number }) {
         chartRef.current = null;
       }
     };
-  }, [tf, basePrice]);
+  }, [tf, candles, volumes]);
 
   return (
     <div>
-      {/* Timeframe selector */}
       <div className="flex items-center gap-0.5 sm:gap-1 mb-3 overflow-x-auto">
         {TIMEFRAMES.map((t) => (
           <button
@@ -190,7 +213,6 @@ export function TokenChart({ basePrice }: { basePrice: number }) {
           </button>
         ))}
       </div>
-      {/* Chart container — shorter on mobile */}
       <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] lg:h-[360px] rounded-lg overflow-hidden" />
     </div>
   );
