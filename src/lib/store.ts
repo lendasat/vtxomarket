@@ -3,17 +3,36 @@ import type { NDKUser, NDKUserProfile } from "@nostr-dev-kit/ndk";
 import type { BalanceInfo } from "./ark-wallet";
 
 export interface Token {
-  id: string;
-  assetId?: string;
+  id: string;                    // Nostr event id
+  assetId: string;               // Ark asset id
   name: string;
   ticker: string;
   description: string;
   image?: string;
-  creator: string;
+  creator: string;               // pubkey hex
+  creatorArkAddress: string;     // for trading
   createdAt: number;
   supply: number;
+  // Bonding curve
+  virtualTokenReserves: number;
+  virtualSatReserves: number;
+  realTokenReserves: number;
+  // Derived
+  price: number;
   marketCap: number;
+  curveProgress: number;
+  // Social
   replies: number;
+  tradeCount: number;
+  // Links
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+}
+
+export interface HeldAsset {
+  assetId: string;
+  amount: number;
 }
 
 interface AppState {
@@ -36,6 +55,11 @@ interface AppState {
 
   // Tokens
   tokens: Token[];
+  tokensLoading: boolean;
+  tokensLoaded: boolean;
+
+  // Held assets
+  heldAssets: HeldAsset[];
 
   // Actions
   setMnemonic: (mnemonic: string | null) => void;
@@ -51,6 +75,10 @@ interface AppState {
   setAddresses: (addresses: { offchainAddr: string; boardingAddr: string } | null) => void;
   setTokens: (tokens: Token[]) => void;
   addToken: (token: Token) => void;
+  upsertToken: (token: Token) => void;
+  setTokensLoading: (loading: boolean) => void;
+  setTokensLoaded: (loaded: boolean) => void;
+  setHeldAssets: (assets: HeldAsset[]) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -65,6 +93,9 @@ export const useAppStore = create<AppState>((set) => ({
   balance: null,
   addresses: null,
   tokens: [],
+  tokensLoading: false,
+  tokensLoaded: false,
+  heldAssets: [],
   setMnemonic: (mnemonic) => set({ mnemonic }),
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
@@ -77,4 +108,19 @@ export const useAppStore = create<AppState>((set) => ({
   setAddresses: (addresses) => set({ addresses }),
   setTokens: (tokens) => set({ tokens }),
   addToken: (token) => set((state) => ({ tokens: [token, ...state.tokens] })),
+  upsertToken: (token) =>
+    set((state) => {
+      const idx = state.tokens.findIndex(
+        (t) => t.ticker === token.ticker || t.id === token.id
+      );
+      if (idx >= 0) {
+        const updated = [...state.tokens];
+        updated[idx] = token;
+        return { tokens: updated };
+      }
+      return { tokens: [...state.tokens, token] };
+    }),
+  setTokensLoading: (tokensLoading) => set({ tokensLoading }),
+  setTokensLoaded: (tokensLoaded) => set({ tokensLoaded }),
+  setHeldAssets: (heldAssets) => set({ heldAssets }),
 }));
