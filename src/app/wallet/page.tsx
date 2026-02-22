@@ -334,8 +334,8 @@ export default function WalletPage() {
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
             <AssetRow
               icon={<BoxIcon className="size-4" />}
-              name="Arkade"
-              description="Available"
+              name="Bitcoin"
+              description="Arkade"
               value={balance?.available ?? 0}
             />
             {balance && balance.onchain > 0 && (
