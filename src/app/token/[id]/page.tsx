@@ -542,8 +542,12 @@ export default function TokenPage() {
             {/* Modal header */}
             <div className="flex items-center justify-between px-5 pt-3 sm:pt-5 pb-3">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-muted/60 flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                  {token.ticker.slice(0, 2)}
+                <div className="h-8 w-8 rounded-lg bg-muted/60 flex items-center justify-center overflow-hidden">
+                  {token.image ? (
+                    <img src={token.image} alt={token.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-[10px] font-bold text-muted-foreground">{token.ticker.slice(0, 2)}</span>
+                  )}
                 </div>
                 <div>
                   <p className="text-sm font-semibold">{token.name}</p>
