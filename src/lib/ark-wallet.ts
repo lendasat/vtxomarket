@@ -400,34 +400,44 @@ export async function sendAsset(
   return txid;
 }
 
-/** Get all assets held by this wallet */
+/** Get all assets held by this wallet (from balance aggregation, not assetManager) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAssets(wallet: any): Promise<AssetInfo[]> {
-  try {
-    const assets = await wallet.assetManager.getAssets();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return assets.map((a: any) => ({
-      assetId: a.assetId,
-      amount: a.amount ?? a.balance ?? 0,
-    }));
-  } catch {
-    return [];
-  }
+  const balance = await wallet.getBalance();
+  if (!balance.assets || !Array.isArray(balance.assets)) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return balance.assets.map((a: any) => ({
+    assetId: a.assetId,
+    amount: Number(a.amount ?? 0),
+  }));
 }
 
-/** Get details for a specific asset */
+/** Get details for a specific asset (balance from getBalance, metadata from indexer) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAssetDetails(wallet: any, assetId: string): Promise<AssetDetails | null> {
   try {
-    const assets = await wallet.assetManager.getAssets();
+    // Get amount from balance
+    const balance = await wallet.getBalance();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const asset = assets.find((a: any) => a.assetId === assetId);
-    if (!asset) return null;
+    const held = balance.assets?.find((a: any) => a.assetId === assetId);
+    if (!held) return null;
+
+    // Try to get metadata from the indexer
+    let name: string | undefined;
+    let ticker: string | undefined;
+    try {
+      const details = await wallet.assetManager.getAssetDetails(assetId);
+      name = details?.metadata?.name;
+      ticker = details?.metadata?.ticker;
+    } catch {
+      // Indexer metadata is optional
+    }
+
     return {
-      assetId: asset.assetId,
-      amount: asset.amount ?? asset.balance ?? 0,
-      name: asset.metadata?.name,
-      ticker: asset.metadata?.ticker,
+      assetId,
+      amount: Number(held.amount ?? 0),
+      name,
+      ticker,
     };
   } catch {
     return null;
