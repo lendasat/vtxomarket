@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { deleteMnemonic, deleteAllWalletData } from "@/lib/wallet-storage";
+import { deleteAllWalletData } from "@/lib/wallet-storage";
 import {
   mnemonicToNostrPrivateKeyHex,
   mnemonicToArkPrivateKeyHex,
@@ -15,6 +15,7 @@ export default function SettingsPage() {
 
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -33,14 +34,8 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDelete = async () => {
-    if (
-      !confirm(
-        "This will delete your wallet from this browser. Make sure you backed up your seed phrase!"
-      )
-    )
-      return;
-    await deleteMnemonic();
+  const handleLogout = async () => {
+    await deleteAllWalletData();
     sessionStorage.clear();
     window.location.reload();
   };
@@ -223,11 +218,7 @@ export default function SettingsPage() {
             </p>
           </div>
           <button
-            onClick={async () => {
-              await deleteAllWalletData();
-              sessionStorage.clear();
-              window.location.reload();
-            }}
+            onClick={() => setShowLogoutConfirm(true)}
             className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-semibold transition-all hover:bg-white/[0.12] hover:border-white/[0.14]"
           >
             Logout
@@ -235,18 +226,53 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Danger Zone */}
-      <div className="rounded-2xl bg-red-500/[0.04] border border-red-500/[0.12] overflow-hidden">
-        <div className="p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-red-400">Danger Zone</h2>
-          <button
-            onClick={handleDelete}
-            className="w-full h-10 rounded-xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30"
-          >
-            Delete Wallet
-          </button>
+      {/* Logout confirmation overlay */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowLogoutConfirm(false)}
+          />
+
+          {/* Sheet */}
+          <div className="relative w-full sm:max-w-sm mx-auto sm:mx-4 rounded-t-2xl sm:rounded-2xl bg-[oklch(0.15_0.004_260)] border border-white/[0.08] overflow-hidden animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+            {/* Drag handle (mobile) */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="h-1 w-10 rounded-full bg-white/[0.15]" />
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-center space-y-2">
+                <div className="mx-auto h-12 w-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-red-400">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <h3 className="text-base font-semibold">Sign out?</h3>
+                <p className="text-xs text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
+                  This will remove your wallet from this browser. You&apos;ll need your seed phrase to sign back in.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={handleLogout}
+                  className="w-full h-11 rounded-xl bg-red-500/15 border border-red-500/25 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/25 hover:border-red-500/35"
+                >
+                  Logout
+                </button>
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="w-full h-11 rounded-xl bg-white/[0.06] border border-white/[0.08] text-sm font-medium transition-all hover:bg-white/[0.1]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

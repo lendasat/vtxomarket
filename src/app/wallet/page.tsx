@@ -4,7 +4,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
-import { getBalance, getReceivingAddresses, sendPayment, ONCHAIN_FEE_SATS } from "@/lib/ark-wallet";
+import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, ONCHAIN_FEE_SATS } from "@/lib/ark-wallet";
+import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
 import {
   isLnurlOrLightningAddress,
@@ -23,6 +24,7 @@ type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
 type StableCoin = "USDC" | "USDT";
 type StableChain = "arbitrum" | "ethereum" | "polygon";
 type Mode = null | "send" | "receive" | "debug";
+type WalletView = "overview" | "history";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -97,6 +99,9 @@ export default function WalletPage() {
   const [mode, setMode] = useState<Mode>(null);
   const [tab, setTab] = useState<Tab>("arkade");
   const [copied, setCopied] = useState(false);
+  const [walletView, setWalletView] = useState<WalletView>("overview");
+  const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
 
   // Send state
   const [sendAddress, setSendAddress] = useState("");
@@ -143,6 +148,27 @@ export default function WalletPage() {
     setBalance(bal);
     setAddresses(addrs);
   }, [arkWallet, setBalance, setAddresses]);
+
+  const loadHistory = useCallback(async () => {
+    if (!arkWallet) return;
+    setTxLoading(true);
+    try {
+      const history = await getTransactionHistory(arkWallet);
+      // Sort newest first
+      history.sort((a, b) => b.createdAt - a.createdAt);
+      setTxHistory(history);
+    } catch (e) {
+      console.error("[wallet] Failed to load tx history:", e);
+    } finally {
+      setTxLoading(false);
+    }
+  }, [arkWallet]);
+
+  useEffect(() => {
+    if (walletView === "history" && walletReady) {
+      loadHistory();
+    }
+  }, [walletView, walletReady, loadHistory]);
 
   const handleReceive = async () => {
     if (arkWallet && !addresses) {
@@ -270,6 +296,33 @@ export default function WalletPage() {
           </div>
         </div>
 
+        {/* ── View toggle ── */}
+        <div className="flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+          {(["overview", "history"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setWalletView(v)}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                walletView === v
+                  ? "bg-white/[0.1] text-foreground shadow-sm"
+                  : "text-muted-foreground/50 hover:text-muted-foreground/70"
+              }`}
+            >
+              {v === "overview" ? "Overview" : "History"}
+            </button>
+          ))}
+        </div>
+
+        {walletView === "history" ? (
+          /* ── Transaction History ── */
+          <TransactionHistoryView
+            txHistory={txHistory}
+            txLoading={txLoading}
+            walletReady={walletReady}
+            onRefresh={loadHistory}
+          />
+        ) : (
+        <>
         {/* ── Assets breakdown ── */}
         <div className="space-y-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
@@ -377,6 +430,8 @@ export default function WalletPage() {
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
 
       {/* ── Floating Send / Receive buttons ── */}
@@ -614,6 +669,151 @@ export default function WalletPage() {
         </div>
       )}
     </>
+  );
+}
+
+// ===================== Transaction History =====================
+
+function TransactionHistoryView({
+  txHistory,
+  txLoading,
+  walletReady,
+  onRefresh,
+}: {
+  txHistory: TxHistoryItem[];
+  txLoading: boolean;
+  walletReady: boolean;
+  onRefresh: () => void;
+}) {
+  if (!walletReady) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
+        <p className="text-xs text-muted-foreground/40">Connecting to wallet...</p>
+      </div>
+    );
+  }
+
+  if (txLoading && txHistory.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
+        <p className="text-xs text-muted-foreground/40">Loading transactions...</p>
+      </div>
+    );
+  }
+
+  if (txHistory.length === 0) {
+    return (
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] p-8 text-center">
+        <HistoryIcon className="size-8 text-muted-foreground/20 mx-auto" />
+        <p className="mt-3 text-sm text-muted-foreground/40">No transactions yet</p>
+        <p className="mt-1 text-[11px] text-muted-foreground/30">
+          Send or receive sats to see your history
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
+          Transactions
+        </p>
+        <button
+          onClick={onRefresh}
+          disabled={txLoading}
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-30"
+        >
+          <RefreshIcon className={`size-3 ${txLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
+        {txHistory.map((tx, i) => (
+          <TxRow key={`${tx.arkTxid || tx.boardingTxid || tx.commitmentTxid}-${i}`} tx={tx} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TxRow({ tx }: { tx: TxHistoryItem }) {
+  const isSent = tx.type === "SENT";
+  const date = new Date(tx.createdAt * 1000);
+  const timeStr = formatTxTime(date);
+  const txid = tx.arkTxid || tx.commitmentTxid || tx.boardingTxid;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <div
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+          isSent
+            ? "bg-red-500/[0.08] text-red-400/70"
+            : "bg-emerald-500/[0.08] text-emerald-400/70"
+        }`}
+      >
+        {isSent ? (
+          <ArrowUpIcon className="size-4" />
+        ) : (
+          <ArrowDownIcon className="size-4" />
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{isSent ? "Sent" : "Received"}</p>
+          {!tx.settled && (
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400/80 border border-yellow-500/20">
+              Pending
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground/35 mt-0.5">
+          {timeStr}
+          {txid && (
+            <>
+              <span className="mx-1.5 text-white/[0.06]">&middot;</span>
+              <span className="font-mono">{txid.slice(0, 8)}...{txid.slice(-4)}</span>
+            </>
+          )}
+        </p>
+      </div>
+
+      <span
+        className={`text-sm font-semibold tabular-nums ${
+          isSent ? "text-red-400/80" : "text-emerald-400/80"
+        }`}
+      >
+        {isSent ? "-" : "+"}{tx.amount.toLocaleString()}
+        <span className="text-[10px] text-muted-foreground/30 ml-1">sats</span>
+      </span>
+    </div>
+  );
+}
+
+function formatTxTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function HistoryIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-3.75V6Z" clipRule="evenodd" />
+    </svg>
   );
 }
 

@@ -150,6 +150,33 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   };
 }
 
+// -- Transaction history --
+
+export interface TxHistoryItem {
+  type: "SENT" | "RECEIVED";
+  amount: number;
+  settled: boolean;
+  createdAt: number;
+  boardingTxid: string;
+  commitmentTxid: string;
+  arkTxid: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getTransactionHistory(wallet: any): Promise<TxHistoryItem[]> {
+  const history = await wallet.getTransactionHistory();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return history.map((tx: any) => ({
+    type: tx.type,
+    amount: tx.amount,
+    settled: tx.settled,
+    createdAt: tx.createdAt,
+    boardingTxid: tx.key?.boardingTxid ?? "",
+    commitmentTxid: tx.key?.commitmentTxid ?? "",
+    arkTxid: tx.key?.arkTxid ?? "",
+  }));
+}
+
 // -- Debug helpers --
 
 export interface WalletBalance {
