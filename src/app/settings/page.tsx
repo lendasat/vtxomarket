@@ -50,10 +50,28 @@ export default function SettingsPage() {
     setUploadingPicture(true);
     setUploadError("");
     try {
+      const uploadUrl = "https://nostr.build/api/v2/upload/files";
+
+      // NIP-98: sign a kind 27235 auth event
+      const { getNDK } = await import("@/lib/nostr");
+      const ndk = getNDK();
+      const { NDKEvent } = await import("@nostr-dev-kit/ndk");
+      const authEvent = new NDKEvent(ndk);
+      authEvent.kind = 27235;
+      authEvent.created_at = Math.floor(Date.now() / 1000);
+      authEvent.tags = [
+        ["u", uploadUrl],
+        ["method", "POST"],
+      ];
+      authEvent.content = "";
+      await authEvent.sign();
+      const authHeader = "Nostr " + btoa(JSON.stringify(authEvent.rawEvent()));
+
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("https://nostr.build/api/v2/upload/files", {
+      const res = await fetch(uploadUrl, {
         method: "POST",
+        headers: { Authorization: authHeader },
         body: formData,
       });
       if (!res.ok) throw new Error(`Upload failed (${res.status})`);
