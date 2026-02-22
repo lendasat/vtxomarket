@@ -333,7 +333,7 @@ export default function WalletPage() {
           </p>
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
             <AssetRow
-              icon={<BoxIcon className="size-4" />}
+              icon={<BitcoinIcon className="size-4" />}
               name="Bitcoin"
               description="Arkade"
               value={balance?.available ?? 0}
@@ -1445,6 +1445,14 @@ function LinkIcon({ className }: { className?: string }) {
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={className}>
       <path fillRule="evenodd" d="M8.914 6.025a.75.75 0 0 1 1.06 0 3.5 3.5 0 0 1 0 4.95l-2 2a3.5 3.5 0 0 1-5.95-2.475.75.75 0 0 1 1.5 0 2 2 0 0 0 3.41 1.414l2-2a2 2 0 0 0 0-2.828.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
       <path fillRule="evenodd" d="M7.086 9.975a.75.75 0 0 1-1.06 0 3.5 3.5 0 0 1 0-4.95l2-2a3.5 3.5 0 0 1 5.95 2.475.75.75 0 0 1-1.5 0 2 2 0 0 0-3.41-1.414l-2 2a2 2 0 0 0 0 2.828.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function BitcoinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 64 64" fill="currentColor" className={className}>
+      <path d="M42.47 28.85c.87-5.8-3.55-8.92-9.6-11l1.96-7.87-4.8-1.2-1.91 7.66c-1.26-.31-2.55-.61-3.84-.9l1.93-7.72-4.8-1.2-1.97 7.87c-1.04-.24-2.07-.47-3.06-.72l.01-.03-6.62-1.65-1.28 5.13s3.55.81 3.48.87c1.94.48 2.29 1.77 2.23 2.79l-2.23 8.96c.13.03.3.08.49.16l-.5-.12-3.13 12.56c-.24.59-.83 1.47-2.18 1.14.05.07-3.48-.87-3.48-.87L2 48.2l6.24 1.56c1.16.29 2.3.6 3.42.88l-1.98 7.95 4.79 1.2 1.97-7.88c1.31.36 2.59.68 3.83 1l-1.96 7.83 4.8 1.2 1.98-7.94c8.16 1.54 14.3.92 16.88-6.46 2.08-5.95-.1-9.38-4.4-11.62 3.13-.72 5.49-2.78 6.12-7.03l-.22-.04ZM34.7 39.02c-1.48 5.95-11.49 2.73-14.73 1.93l2.63-10.53c3.24.81 13.66 2.41 12.1 8.6Zm1.48-14.88c-1.35 5.41-9.68 2.66-12.38 1.99l2.38-9.55c2.7.67 12.42 1.93 10 7.56Z" />
     </svg>
   );
 }
