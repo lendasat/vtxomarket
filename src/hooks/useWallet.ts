@@ -90,18 +90,38 @@ export function useWallet() {
     init();
   }, []);
 
-  // Auto-refresh balance
+  // Track whether we're already settling to avoid concurrent settle calls
+  const settlingRef = useRef(false);
+
+  // Auto-refresh balance + auto-settle confirmed boarding UTXOs
   const refreshData = useCallback(async () => {
     const w = useAppStore.getState().arkWallet;
     if (!w) return;
     try {
-      const { getBalance, getReceivingAddresses } = await import("@/lib/ark-wallet");
+      const { getBalance, getReceivingAddresses, settleVtxos } = await import("@/lib/ark-wallet");
       const [bal, addrs] = await Promise.all([
         getBalance(w),
         getReceivingAddresses(w),
       ]);
       useAppStore.getState().setBalance(bal);
       useAppStore.getState().setAddresses(addrs);
+
+      // Auto-settle confirmed on-chain funds into off-chain Arkade balance
+      if (bal.onchainConfirmed > 0 && !settlingRef.current) {
+        settlingRef.current = true;
+        console.log(`[wallet] Auto-settling ${bal.onchainConfirmed} confirmed boarding sats...`);
+        try {
+          const txid = await settleVtxos(w);
+          console.log("[wallet] Auto-settle complete, txid:", txid);
+          // Refresh balance after settling
+          const newBal = await getBalance(w);
+          useAppStore.getState().setBalance(newBal);
+        } catch (e) {
+          console.warn("[wallet] Auto-settle failed:", e instanceof Error ? e.message : e);
+        } finally {
+          settlingRef.current = false;
+        }
+      }
     } catch (e) {
       console.error("[wallet] Refresh failed:", e);
     }

@@ -270,19 +270,13 @@ export default function WalletPage() {
             </>
           )}
 
-          {/* Balance breakdown chips */}
-          {balance && (balance.offchain > 0 || balance.onchain > 0) && (
-            <div className="flex justify-center gap-3 mt-5">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/[0.07]">
-                <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <span className="text-xs tabular-nums font-medium">{balance.offchain.toLocaleString()}</span>
-                <span className="text-[10px] text-muted-foreground/40">off-chain</span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/[0.07]">
-                <div className="h-1.5 w-1.5 rounded-full bg-orange-400" />
-                <span className="text-xs tabular-nums font-medium">{balance.onchain.toLocaleString()}</span>
-                <span className="text-[10px] text-muted-foreground/40">on-chain</span>
-              </div>
+          {/* Boarding settlement notice */}
+          {balance && balance.onchain > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-5 px-3 py-2 rounded-full bg-orange-500/[0.08] border border-orange-500/[0.12] mx-auto w-fit">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-orange-400/40 border-t-orange-400" />
+              <span className="text-[11px] text-orange-400/80 font-medium">
+                Settling {balance.onchain.toLocaleString()} sats{balance.onchainConfirmed > 0 ? "..." : " (awaiting confirmation)"}
+              </span>
             </div>
           )}
 
@@ -341,21 +335,17 @@ export default function WalletPage() {
             <AssetRow
               icon={<BoxIcon className="size-4" />}
               name="Arkade"
-              description="Off-chain"
-              value={balance?.offchain ?? 0}
+              description="Available"
+              value={balance?.available ?? 0}
             />
-            <AssetRow
-              icon={<LinkIcon className="size-4" />}
-              name="On-chain"
-              description="Boarding"
-              value={balance?.onchain ?? 0}
-            />
-            <AssetRow
-              icon={<ClockIcon className="size-4" />}
-              name="Pending"
-              description="Preconfirmed"
-              value={balance?.preconfirmed ?? 0}
-            />
+            {balance && balance.onchain > 0 && (
+              <AssetRow
+                icon={<ClockIcon className="size-4 text-orange-400/80" />}
+                name="Settling"
+                description={balance.onchainConfirmed > 0 ? "Auto-boarding" : "Awaiting confirmation"}
+                value={balance.onchain}
+              />
+            )}
             {balance && balance.recoverable > 0 && (
               <AssetRow
                 icon={<AlertIcon className="size-4 text-yellow-400/80" />}
