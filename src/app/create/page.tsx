@@ -4,9 +4,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
-import { getNDK, loginWithPrivateKey, connectNDK, VTXO_TOKEN_KIND } from "@/lib/nostr";
+import { ensureNostrReady, VTXO_TOKEN_KIND } from "@/lib/nostr";
 import { issueToken, getDustAmount } from "@/lib/ark-wallet";
-import { mnemonicToNostrPrivateKeyHex } from "@/lib/wallet-crypto";
 import { NDKEvent } from "@nostr-dev-kit/ndk";
 
 const NAME_MAX = 32;
@@ -24,9 +23,9 @@ const SUPPLY_PRESETS = [
 export default function CreatePage() {
   const router = useRouter();
   const user = useAppStore((s) => s.user);
-  const mnemonic = useAppStore((s) => s.mnemonic);
   const arkWallet = useAppStore((s) => s.arkWallet);
   const walletReady = useAppStore((s) => s.walletReady);
+  const nostrReady = useAppStore((s) => s.nostrReady);
   const addToken = useAppStore((s) => s.addToken);
 
   const [dustAmount, setDustAmount] = useState<number>(0);
@@ -92,7 +91,7 @@ export default function CreatePage() {
 
   const supplyNum = parseInt(supply, 10);
   const validSupply = !isNaN(supplyNum) && supplyNum > 0;
-  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady;
+  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady && nostrReady;
 
   const handleCreate = async () => {
     if (!canCreate || !arkWallet) return;
@@ -115,10 +114,7 @@ export default function CreatePage() {
 
       // Step 2: Publish metadata to Nostr
       setStep("Publishing to Nostr...");
-      if (!mnemonic) throw new Error("Wallet not initialized");
-      const nostrKey = mnemonicToNostrPrivateKeyHex(mnemonic);
-      const ndk = await loginWithPrivateKey(nostrKey);
-      await connectNDK();
+      const ndk = ensureNostrReady();
       const event = new NDKEvent(ndk);
       event.kind = VTXO_TOKEN_KIND;
       event.content = JSON.stringify({

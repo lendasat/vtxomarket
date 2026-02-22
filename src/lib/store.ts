@@ -23,6 +23,7 @@ interface AppState {
   // Nostr
   user: NDKUser | null;
   connected: boolean;
+  nostrReady: boolean;
 
   // Wallet
   walletReady: boolean;
@@ -39,6 +40,7 @@ interface AppState {
   setMnemonic: (mnemonic: string | null) => void;
   setUser: (user: NDKUser | null) => void;
   setConnected: (connected: boolean) => void;
+  setNostrReady: (ready: boolean) => void;
   setWalletReady: (ready: boolean) => void;
   setWalletError: (error: string | null) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -53,6 +55,7 @@ export const useAppStore = create<AppState>((set) => ({
   mnemonic: null,
   user: null,
   connected: false,
+  nostrReady: false,
   walletReady: false,
   walletError: null,
   arkWallet: null,
@@ -62,6 +65,7 @@ export const useAppStore = create<AppState>((set) => ({
   setMnemonic: (mnemonic) => set({ mnemonic }),
   setUser: (user) => set({ user }),
   setConnected: (connected) => set({ connected }),
+  setNostrReady: (nostrReady) => set({ nostrReady }),
   setWalletReady: (walletReady) => set({ walletReady }),
   setWalletError: (walletError) => set({ walletError }),
   setArkWallet: (arkWallet) => set({ arkWallet }),

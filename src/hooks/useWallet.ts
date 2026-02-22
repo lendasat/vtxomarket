@@ -56,9 +56,17 @@ export function useWallet() {
         try {
           const override = await getNostrKeyOverride();
           const key = override || nostrKeyHex;
-          await loginWithPrivateKey(key);
+          const ndk = await loginWithPrivateKey(key);
           await connectNDK();
           console.log("[wallet] Nostr connected", override ? "(nsec override)" : "(derived)");
+
+          // Extract user from signer and update store
+          if (ndk.signer) {
+            const ndkUser = await ndk.signer.user();
+            useAppStore.getState().setUser(ndkUser);
+            useAppStore.getState().setConnected(true);
+          }
+          useAppStore.getState().setNostrReady(true);
         } catch (e) {
           console.error("[wallet] Nostr init failed:", e);
         }

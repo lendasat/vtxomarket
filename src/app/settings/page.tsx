@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { deleteAllWalletData } from "@/lib/wallet-storage";
+import { deleteAllWalletData, getNostrKeyOverride } from "@/lib/wallet-storage";
 import {
   mnemonicToNostrPrivateKeyHex,
   mnemonicToArkPrivateKeyHex,
@@ -16,6 +16,8 @@ export default function SettingsPage() {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [nostrPrivKeyHex, setNostrPrivKeyHex] = useState("");
+  const [hasNsecOverride, setHasNsecOverride] = useState(false);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -40,13 +42,26 @@ export default function SettingsPage() {
     window.location.reload();
   };
 
-  // Derive keys for display
-  let nostrPrivKeyHex = "";
+  // Derive keys for display — check for nsec override
   let arkPrivKeyHex = "";
   if (mnemonic) {
-    try { nostrPrivKeyHex = mnemonicToNostrPrivateKeyHex(mnemonic); } catch { /* */ }
     try { arkPrivKeyHex = mnemonicToArkPrivateKeyHex(mnemonic); } catch { /* */ }
   }
+
+  useEffect(() => {
+    async function loadNostrKey() {
+      const override = await getNostrKeyOverride();
+      if (override) {
+        setNostrPrivKeyHex(override);
+        setHasNsecOverride(true);
+      } else if (mnemonic) {
+        try {
+          setNostrPrivKeyHex(mnemonicToNostrPrivateKeyHex(mnemonic));
+        } catch { /* */ }
+      }
+    }
+    loadNostrKey();
+  }, [mnemonic]);
 
   const truncate = (s: string, chars = 16) => {
     if (s.length <= chars * 2 + 3) return s;
@@ -126,7 +141,7 @@ export default function SettingsPage() {
             <div>
               <h2 className="text-sm font-semibold">Nostr Identity</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground/40 font-mono">
-                m/44/0/0/0/0
+                {hasNsecOverride ? "imported nsec" : "m/44/0/0/0/0"}
               </p>
             </div>
             {user && (

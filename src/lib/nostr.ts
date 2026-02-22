@@ -8,6 +8,7 @@ const RELAYS = [
 ];
 
 let ndkInstance: NDK | null = null;
+let connected = false;
 
 export function getNDK(): NDK {
   if (!ndkInstance) {
@@ -18,7 +19,10 @@ export function getNDK(): NDK {
 
 export async function connectNDK(): Promise<NDK> {
   const ndk = getNDK();
-  await ndk.connect();
+  if (!connected) {
+    await ndk.connect();
+    connected = true;
+  }
   return ndk;
 }
 
@@ -26,6 +30,21 @@ export async function loginWithPrivateKey(privateKeyHex: string): Promise<NDK> {
   const ndk = getNDK();
   const signer = new NDKPrivateKeySigner(privateKeyHex);
   ndk.signer = signer;
+  return ndk;
+}
+
+/**
+ * Ensure the NDK singleton has a signer and is connected.
+ * Throws if no signer is set (call loginWithPrivateKey first).
+ */
+export function ensureNostrReady(): NDK {
+  const ndk = getNDK();
+  if (!ndk.signer) {
+    throw new Error("Nostr signer not initialized. Please wait for wallet setup.");
+  }
+  if (!connected) {
+    throw new Error("Nostr not connected to relays.");
+  }
   return ndk;
 }
 
