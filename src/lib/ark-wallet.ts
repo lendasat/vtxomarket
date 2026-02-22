@@ -167,10 +167,10 @@ export interface IssueTokenResult {
 /**
  * Issue a new token on Ark.
  *
- * We replicate the SDK's assetManager.issue() logic because the SDK has a bug:
- * Packet.txOut() returns amount=0, but the Ark server requires all outputs to
- * have amount >= 1 sat. We fix this by moving 1 sat from the main output to
- * the packet output.
+ * We replicate the SDK's assetManager.issue() logic manually because the
+ * mainnet Ark server requires ALL outputs to have amount >= dustAmount,
+ * including OP_RETURN. The SDK's Packet.txOut() returns amount=0 which
+ * the server rejects. We set the packet output to dustAmount instead.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function issueToken(wallet: any, params: IssueTokenParams): Promise<IssueTokenResult> {
@@ -179,9 +179,9 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
 
   const sdk = await getSDK();
   const { AssetGroup, AssetOutput, AssetId, Packet, Metadata } = sdk.asset;
+  const { ArkAddress } = sdk;
 
-  // Build metadata using proper Metadata.create(keyBytes, valueBytes) objects.
-  // The SDK's castMetadata() does the same conversion internally but isn't exported.
+  // Build metadata using proper Metadata.create(keyBytes, valueBytes) objects
   const enc = new TextEncoder();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const metadata: any[] = [
@@ -195,18 +195,22 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
     metadata.push(Metadata.create(enc.encode("icon"), enc.encode(icon)));
   }
 
-  // Select coins to cover 2*dustAmount (main output + packet output both need >= dust).
-  // Inlined from SDK's selectVirtualCoins which is not exported.
+  // Coin selection: need 2*dustAmount (main output + packet output both >= dust)
   const vtxos = await wallet.getVtxos({ withRecoverable: false });
   const dustAmt = Number(wallet.dustAmount);
   const minRequired = dustAmt * 2;
+
+  console.log("[ark] issueToken: dustAmount=%d, minRequired=%d, vtxos=%d", dustAmt, minRequired, vtxos.length);
+
+  // Sort by expiry (ascending), then value (descending) — same as SDK
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sorted = [...vtxos].sort((a: any, b: any) => {
-    const expiryA = a.virtualStatus.batchExpiry || Number.MAX_SAFE_INTEGER;
-    const expiryB = b.virtualStatus.batchExpiry || Number.MAX_SAFE_INTEGER;
+    const expiryA = a.virtualStatus?.batchExpiry || Number.MAX_SAFE_INTEGER;
+    const expiryB = b.virtualStatus?.batchExpiry || Number.MAX_SAFE_INTEGER;
     if (expiryA !== expiryB) return expiryA - expiryB;
     return b.value - a.value;
   });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const selectedInputs: any[] = [];
   let selectedAmount = 0;
@@ -215,8 +219,11 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
     selectedAmount += coin.value;
     if (selectedAmount >= minRequired) break;
   }
-  if (selectedAmount < minRequired) throw new Error(`Insufficient sats: need ${minRequired}, have ${selectedAmount}`);
-  const totalBtcSelected = BigInt(selectedAmount);
+  if (selectedAmount < minRequired) {
+    throw new Error(`Not enough sats: need ${minRequired}, have ${selectedAmount}`);
+  }
+
+  console.log("[ark] issueToken: selected %d inputs, total %d sats", selectedInputs.length, selectedAmount);
 
   // Build asset packet
   const issuedAssetOutput = AssetOutput.create(0, BigInt(amount));
@@ -224,17 +231,12 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   const packet = Packet.create([issuedAssetGroup]);
   const packetOut = packet.txOut();
 
-  // The Ark server requires ALL outputs to have amount >= dustAmount.
-  // The SDK's Packet.txOut() returns amount=0, but the server rejects that.
-  // Give the packet output dustAmount sats and keep the rest for the main output.
+  // Ark server requires amount >= dustAmount for ALL outputs (including OP_RETURN).
+  // Assign dustAmount to the packet output, rest to main output.
   const packetAmount = BigInt(dustAmt);
-  const mainAmount = totalBtcSelected - packetAmount;
-  if (mainAmount < BigInt(dustAmt)) {
-    throw new Error(`Insufficient sats: need at least ${dustAmt * 2} available (have ${totalBtcSelected})`);
-  }
+  const mainAmount = BigInt(selectedAmount) - packetAmount;
 
   const address = await wallet.getAddress();
-  const { ArkAddress } = await import("@arkade-os/sdk").then((m) => m);
   const outputAddress = ArkAddress.decode(address);
 
   const outputs = [
@@ -242,11 +244,14 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
     { ...packetOut, amount: packetAmount },
   ];
 
+  console.log("[ark] issueToken: submitting tx (main=%d, packet=%d)", Number(mainAmount), Number(packetAmount));
+
   const { arkTxid } = await wallet.buildAndSubmitOffchainTx(selectedInputs, outputs);
-  return {
-    arkTxId: arkTxid,
-    assetId: AssetId.create(arkTxid, 0).toString(),
-  };
+  const assetId = AssetId.create(arkTxid, 0).toString();
+
+  console.log("[ark] issueToken: success! txid=%s, assetId=%s", arkTxid, assetId);
+
+  return { arkTxId: arkTxid, assetId };
 }
 
 // -- Transaction history --

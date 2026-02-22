@@ -104,6 +104,8 @@ export function useWallet() {
 
   // Track whether we're already settling to avoid concurrent settle calls
   const settlingRef = useRef(false);
+  // Cooldown after settle failure — avoid spamming every 30s
+  const settleCooldownUntil = useRef(0);
 
   // Auto-refresh balance + auto-settle confirmed boarding UTXOs + finalize pending txs
   const refreshData = useCallback(async () => {
@@ -144,7 +146,8 @@ export function useWallet() {
       // settle() with no params grabs everything and joins the next Ark server round
       const shouldSettle =
         (bal.onchainConfirmed >= 1000 || bal.preconfirmed > 0) &&
-        !settlingRef.current;
+        !settlingRef.current &&
+        Date.now() > settleCooldownUntil.current;
 
       if (shouldSettle) {
         settlingRef.current = true;
@@ -155,10 +158,19 @@ export function useWallet() {
         try {
           const txid = await settleAll(w);
           console.log("[wallet] Auto-settle complete, txid:", txid);
+          settleCooldownUntil.current = 0; // Reset cooldown on success
           const newBal = await getBalance(w);
           useAppStore.getState().setBalance(newBal);
         } catch (e) {
-          console.warn("[wallet] Auto-settle failed:", e instanceof Error ? e.message : e);
+          const msg = e instanceof Error ? e.message : String(e);
+          // Suppress expected errors, only log unexpected ones
+          if (/minExpiryGap|expires after|no vtxos|nothing to settle/i.test(msg)) {
+            console.debug("[wallet] Auto-settle skipped:", msg.slice(0, 80));
+          } else {
+            console.warn("[wallet] Auto-settle failed:", msg);
+          }
+          // Back off for 5 minutes after any failure
+          settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
         } finally {
           settlingRef.current = false;
         }
