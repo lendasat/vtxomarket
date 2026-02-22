@@ -178,14 +178,22 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   if (amount <= 0) throw new Error("Amount must be greater than 0");
 
   const sdk = await getSDK();
-  const { AssetGroup, AssetOutput, AssetId, Packet } = sdk.asset;
+  const { AssetGroup, AssetOutput, AssetId, Packet, Metadata } = sdk.asset;
 
-  // Build metadata array matching SDK's castMetadata format:
-  // [["key", "value"], ...]
+  // Build metadata using proper Metadata.create(keyBytes, valueBytes) objects.
+  // The SDK's castMetadata() does the same conversion internally but isn't exported.
+  const enc = new TextEncoder();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const metadata: any[][] = [["name", name], ["ticker", ticker]];
-  if (decimals !== undefined) metadata.push(["decimals", String(decimals)]);
-  if (icon) metadata.push(["icon", icon]);
+  const metadata: any[] = [
+    Metadata.create(enc.encode("name"), enc.encode(name)),
+    Metadata.create(enc.encode("ticker"), enc.encode(ticker)),
+  ];
+  if (decimals !== undefined) {
+    metadata.push(Metadata.create(enc.encode("decimals"), enc.encode(String(decimals))));
+  }
+  if (icon) {
+    metadata.push(Metadata.create(enc.encode("icon"), enc.encode(icon)));
+  }
 
   // Select coins to cover dustAmount (inlined from SDK's selectVirtualCoins
   // which is not exported from the package entry point)
@@ -211,8 +219,7 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
 
   // Build asset packet
   const issuedAssetOutput = AssetOutput.create(0, BigInt(amount));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const issuedAssetGroup = AssetGroup.create(null, null, [], [issuedAssetOutput], metadata as any);
+  const issuedAssetGroup = AssetGroup.create(null, null, [], [issuedAssetOutput], metadata);
   const packet = Packet.create([issuedAssetGroup]);
   const packetOut = packet.txOut();
 
