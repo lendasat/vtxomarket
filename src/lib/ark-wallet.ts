@@ -252,6 +252,9 @@ export async function getVtxoDetails(wallet: any): Promise<VtxoInfo[]> {
   return results;
 }
 
+// Minimum sats required to attempt boarding settlement (dust + fee headroom)
+const MIN_SETTLE_SATS = 1_000;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function settleVtxos(wallet: any): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,12 +263,24 @@ export async function settleVtxos(wallet: any): Promise<string> {
   const inputs: any[] = [...boardingUtxos];
   if (inputs.length === 0) throw new Error("No confirmed UTXOs to settle");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const amount = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
-  const offchainAddr = await wallet.getAddress();
+  const total = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
+  if (total < MIN_SETTLE_SATS) {
+    throw new Error(`Boarding balance too low to settle: ${total} sats (need >= ${MIN_SETTLE_SATS})`);
+  }
+
+  // Use settle() without explicit outputs — let the SDK handle fee deduction
+  // and route all funds to our off-chain address automatically
   const txid = await wallet.settle(
-    { inputs, outputs: [{ address: offchainAddr, amount: BigInt(amount) }] },
+    { inputs },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (event: any) => console.log("[settle]", event)
   );
   return txid;
+}
+
+/** Finalize any pending (preconfirmed) transactions. Non-destructive no-op if none exist. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function finalizePending(wallet: any): Promise<{ finalized: string[]; pending: string[] }> {
+  if (typeof wallet.finalizePendingTxs !== "function") return { finalized: [], pending: [] };
+  return wallet.finalizePendingTxs();
 }
