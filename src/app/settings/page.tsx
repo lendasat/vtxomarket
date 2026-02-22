@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [nostrPrivKeyHex, setNostrPrivKeyHex] = useState("");
   const [hasNsecOverride, setHasNsecOverride] = useState(false);
+  const [revealedNostrKey, setRevealedNostrKey] = useState(false);
+  const [revealedArkKey, setRevealedArkKey] = useState(false);
 
   // Profile editing
   const [editingProfile, setEditingProfile] = useState(false);
@@ -322,18 +324,27 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {nostrPrivKeyHex && revealed && (
-            <>
-              <div className="h-px bg-white/[0.06]" />
-              <CopyableField
-                label="Private Key (hex)"
-                value={nostrPrivKeyHex}
-                displayValue={truncate(nostrPrivKeyHex)}
-                copied={copied === "nostr-key"}
-                onCopy={() => handleCopy(nostrPrivKeyHex, "nostr-key")}
-                sensitive
-              />
-            </>
+          {nostrPrivKeyHex && (
+            revealedNostrKey ? (
+              <>
+                <div className="h-px bg-white/[0.06]" />
+                <CopyableField
+                  label="Private Key (hex)"
+                  value={nostrPrivKeyHex}
+                  displayValue={truncate(nostrPrivKeyHex)}
+                  copied={copied === "nostr-key"}
+                  onCopy={() => handleCopy(nostrPrivKeyHex, "nostr-key")}
+                  sensitive
+                />
+              </>
+            ) : (
+              <button
+                onClick={() => setRevealedNostrKey(true)}
+                className="w-full h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[11px] font-medium text-muted-foreground/40 transition-all hover:bg-white/[0.08]"
+              >
+                Reveal Private Key
+              </button>
+            )
           )}
         </div>
       </div>
@@ -359,15 +370,24 @@ export default function SettingsPage() {
             </span>
           </div>
 
-          {arkPrivKeyHex && revealed && (
-            <CopyableField
-              label="Private Key (hex)"
-              value={arkPrivKeyHex}
-              displayValue={truncate(arkPrivKeyHex)}
-              copied={copied === "ark-key"}
-              onCopy={() => handleCopy(arkPrivKeyHex, "ark-key")}
-              sensitive
-            />
+          {arkPrivKeyHex && (
+            revealedArkKey ? (
+              <CopyableField
+                label="Private Key (hex)"
+                value={arkPrivKeyHex}
+                displayValue={truncate(arkPrivKeyHex)}
+                copied={copied === "ark-key"}
+                onCopy={() => handleCopy(arkPrivKeyHex, "ark-key")}
+                sensitive
+              />
+            ) : (
+              <button
+                onClick={() => setRevealedArkKey(true)}
+                className="w-full h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[11px] font-medium text-muted-foreground/40 transition-all hover:bg-white/[0.08]"
+              >
+                Reveal Private Key
+              </button>
+            )
           )}
 
           {!walletReady && (
