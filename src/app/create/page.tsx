@@ -154,7 +154,12 @@ export default function CreatePage() {
     } catch (err) {
       console.error("Failed to create token:", err);
       const msg = err instanceof Error ? err.message : "Failed to create token";
-      if (/insufficient|not enough|funds|AMOUNT_TOO_LOW/i.test(msg)) {
+      if (/duplicated offchain tx/i.test(msg)) {
+        // The tx was already submitted — token exists on Ark server.
+        // This happens when a previous attempt succeeded server-side
+        // but the client didn't get the response back.
+        setError("Token was already created (previous attempt succeeded). Check your wallet for the asset.");
+      } else if (/insufficient|not enough|funds|AMOUNT_TOO_LOW/i.test(msg)) {
         setError("__insufficient__");
       } else {
         setError(msg);
@@ -530,8 +535,8 @@ export default function CreatePage() {
             </div>
           )}
 
-          {/* Insufficient sats warning (before they click) */}
-          {walletReady && !hasEnoughSats && dustAmount > 0 && !error && (
+          {/* Insufficient sats warning (before they click, only after balance loaded) */}
+          {walletReady && balance && !hasEnoughSats && dustAmount > 0 && !error && (
             <div className="rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 space-y-2">
               <p className="text-xs text-orange-400 font-medium">
                 Minimum {minIssuanceCost.toLocaleString()} sats required to create a token
