@@ -4,21 +4,19 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
-import { ensureNostrReady, VTXO_TOKEN_KIND } from "@/lib/nostr";
-import { issueToken, getDustAmount } from "@/lib/ark-wallet";
-import { NDKEvent } from "@nostr-dev-kit/ndk";
+import { issueToken, getDustAmount, getReceivingAddresses, getBalance } from "@/lib/ark-wallet";
+import { publishTokenListing, publishCurveState } from "@/lib/nostr-market";
+import {
+  TOKEN_TOTAL_SUPPLY,
+  initialCurveState,
+  getPrice,
+  getMarketCap,
+  getCurveProgress,
+} from "@/lib/bonding-curve";
 
 const NAME_MAX = 32;
 const TICKER_MAX = 10;
 const DESC_MAX = 256;
-const DEFAULT_SUPPLY = 1_000_000;
-
-const SUPPLY_PRESETS = [
-  { label: "1M", value: 1_000_000 },
-  { label: "10M", value: 10_000_000 },
-  { label: "21M", value: 21_000_000 },
-  { label: "100M", value: 100_000_000 },
-];
 
 export default function CreatePage() {
   const router = useRouter();
@@ -26,11 +24,14 @@ export default function CreatePage() {
   const arkWallet = useAppStore((s) => s.arkWallet);
   const walletReady = useAppStore((s) => s.walletReady);
   const nostrReady = useAppStore((s) => s.nostrReady);
-  const addToken = useAppStore((s) => s.addToken);
+  const upsertToken = useAppStore((s) => s.upsertToken);
 
+  const balance = useAppStore((s) => s.balance);
   const [dustAmount, setDustAmount] = useState<number>(0);
+  // Real minimum: dust for token VTXO + dust for change VTXO
+  const minIssuanceCost = dustAmount * 2;
+  const hasEnoughSats = (balance?.available ?? 0) >= minIssuanceCost;
 
-  // Fetch issuance cost when wallet is ready
   useEffect(() => {
     if (!arkWallet) return;
     try {
@@ -41,7 +42,6 @@ export default function CreatePage() {
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [description, setDescription] = useState("");
-  const [supply, setSupply] = useState(String(DEFAULT_SUPPLY));
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
@@ -89,9 +89,7 @@ export default function CreatePage() {
 
   const resolvedImage = imagePreview || imageUrl || undefined;
 
-  const supplyNum = parseInt(supply, 10);
-  const validSupply = !isNaN(supplyNum) && supplyNum > 0;
-  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && validSupply && walletReady && nostrReady;
+  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && walletReady && nostrReady && hasEnoughSats;
 
   const handleCreate = async () => {
     if (!canCreate || !arkWallet) return;
@@ -105,43 +103,39 @@ export default function CreatePage() {
       // Step 1: Issue token on Arkade
       setStep("Issuing token on Arkade...");
       const result = await issueToken(arkWallet, {
-        amount: supplyNum,
+        amount: TOKEN_TOTAL_SUPPLY,
         name,
         ticker: tickerUp,
-        decimals: 8,
+        decimals: 0,
         icon: finalImage || undefined,
       });
 
-      // Step 2: Publish metadata to Nostr
+      // Get creator's Ark address for trading
+      const addrs = await getReceivingAddresses(arkWallet);
+      const creatorArkAddress = addrs.offchainAddr;
+
+      // Step 2: Publish token listing to Nostr
       setStep("Publishing to Nostr...");
-      const ndk = ensureNostrReady();
-      const event = new NDKEvent(ndk);
-      event.kind = VTXO_TOKEN_KIND;
-      event.content = JSON.stringify({
+      const event = await publishTokenListing({
         name,
         ticker: tickerUp,
         description,
-        image: finalImage,
+        image: finalImage || undefined,
         assetId: result.assetId,
         arkTxId: result.arkTxId,
-        supply: supplyNum,
+        creatorArkAddress,
         ...(website && { website }),
         ...(twitter && { twitter }),
         ...(telegram && { telegram }),
       });
-      event.tags = [
-        ["d", `vtxo-token-${result.assetId}`],
-        ["t", "vtxo-token"],
-        ["name", name],
-        ["ticker", tickerUp],
-        ["assetId", result.assetId],
-        ["supply", String(supplyNum)],
-      ];
 
-      await event.publish();
+      // Step 3: Publish initial curve state
+      setStep("Setting up bonding curve...");
+      const curve = initialCurveState();
+      await publishCurveState(tickerUp, curve);
 
-      // Step 3: Add to local state
-      addToken({
+      // Step 4: Add to local state
+      upsertToken({
         id: event.id,
         assetId: result.assetId,
         name,
@@ -149,17 +143,27 @@ export default function CreatePage() {
         description,
         image: finalImage || undefined,
         creator: user?.pubkey ?? "unknown",
+        creatorArkAddress,
         createdAt: Math.floor(Date.now() / 1000),
-        supply: supplyNum,
-        marketCap: 0,
+        supply: TOKEN_TOTAL_SUPPLY,
+        virtualTokenReserves: curve.virtualTokenReserves,
+        virtualSatReserves: curve.virtualSatReserves,
+        realTokenReserves: curve.realTokenReserves,
+        price: getPrice(curve),
+        marketCap: getMarketCap(curve),
+        curveProgress: getCurveProgress(curve),
         replies: 0,
+        tradeCount: 0,
+        ...(website && { website }),
+        ...(twitter && { twitter }),
+        ...(telegram && { telegram }),
       });
 
-      router.push("/");
+      router.push(`/token/${tickerUp}`);
     } catch (err) {
       console.error("Failed to create token:", err);
       const msg = err instanceof Error ? err.message : "Failed to create token";
-      if (/insufficient|not enough|funds/i.test(msg)) {
+      if (/insufficient|not enough|funds|AMOUNT_TOO_LOW/i.test(msg)) {
         setError("__insufficient__");
       } else {
         setError(msg);
@@ -177,7 +181,6 @@ export default function CreatePage() {
     <div className="mx-auto max-w-xl py-4 sm:py-8">
       {/* ── Hero header ── */}
       <div className="relative mb-8 sm:mb-10 text-center">
-        {/* Decorative glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 rounded-full bg-white/[0.03] blur-3xl pointer-events-none" />
 
         <div className="relative">
@@ -347,41 +350,19 @@ export default function CreatePage() {
             </div>
           </div>
 
-          {/* Supply */}
-          <div className="space-y-2">
+          {/* Fixed supply info */}
+          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
-                Total Supply <span className="text-red-400">*</span>
-              </label>
-              {validSupply && (
-                <span className="text-[10px] tabular-nums text-muted-foreground/40">
-                  {supplyNum.toLocaleString()} tokens
-                </span>
-              )}
+              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+                Total Supply
+              </span>
+              <span className="text-sm font-semibold tabular-nums">
+                {TOKEN_TOTAL_SUPPLY.toLocaleString()}
+              </span>
             </div>
-            <input
-              type="number"
-              placeholder="1000000"
-              value={supply}
-              onChange={(e) => setSupply(e.target.value)}
-              className={`${inputClass} h-11 tabular-nums`}
-            />
-            <div className="flex gap-2">
-              {SUPPLY_PRESETS.map(({ label, value }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSupply(String(value))}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                    supply === String(value)
-                      ? "bg-white/[0.1] text-foreground border border-white/[0.14]"
-                      : "bg-white/[0.04] text-muted-foreground/40 border border-white/[0.07] hover:bg-white/[0.07]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <p className="text-[11px] text-muted-foreground/40 mt-1">
+              Fixed at 1B tokens for all launches. Price is determined by the bonding curve.
+            </p>
           </div>
 
           {/* Description */}
@@ -496,7 +477,7 @@ export default function CreatePage() {
                 </div>
                 <div className="shrink-0 text-right">
                   <span className="text-[10px] text-muted-foreground/30 font-medium px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
-                    {validSupply ? supplyNum.toLocaleString() : "0"} supply
+                    {TOKEN_TOTAL_SUPPLY.toLocaleString()} supply
                   </span>
                 </div>
               </div>
@@ -518,10 +499,11 @@ export default function CreatePage() {
               />
             </svg>
             <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground/80">Issued as an Arkade Asset</p>
+              <p className="text-xs font-medium text-foreground/80">Bonding Curve Launch</p>
               <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                Your token is issued on Arkade as a native asset (tVTXO), then metadata
-                is published to Nostr. Name, ticker, and supply are permanent.
+                Your token launches with a bonding curve starting at 0.028 sat/token.
+                Price increases as people buy. All tokens are issued on Arkade and metadata
+                is published to Nostr.
               </p>
             </div>
           </div>
@@ -533,21 +515,43 @@ export default function CreatePage() {
             </div>
           )}
 
-          {/* Insufficient funds error */}
+          {/* Insufficient funds error (after failed attempt) */}
           {error === "__insufficient__" && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 space-y-2">
               <p className="text-xs text-red-400 font-medium">
                 Not enough sats to issue a token
               </p>
               <p className="text-[11px] text-red-400/70 leading-relaxed">
-                You need at least {dustAmount > 0 ? `${dustAmount.toLocaleString()} sats` : "a small amount of sats"} in
-                your Ark wallet. Deposit sats first, then try again.
+                You need at least {minIssuanceCost > 0 ? `${minIssuanceCost.toLocaleString()} sats` : "more sats"} available
+                in your Ark wallet. You currently have {(balance?.available ?? 0).toLocaleString()} sats.
               </p>
               <Link
                 href="/wallet"
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground transition-colors mt-1"
               >
                 Go to Wallet
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </Link>
+            </div>
+          )}
+
+          {/* Insufficient sats warning (before they click) */}
+          {walletReady && !hasEnoughSats && dustAmount > 0 && !error && (
+            <div className="rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 space-y-2">
+              <p className="text-xs text-orange-400 font-medium">
+                Minimum {minIssuanceCost.toLocaleString()} sats required to create a token
+              </p>
+              <p className="text-[11px] text-orange-400/70 leading-relaxed">
+                You have {(balance?.available ?? 0).toLocaleString()} sats available.
+                Deposit at least {(minIssuanceCost - (balance?.available ?? 0)).toLocaleString()} more sats to your Ark wallet.
+              </p>
+              <Link
+                href="/wallet"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-400 hover:text-orange-300 transition-colors mt-1"
+              >
+                Deposit sats
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                   <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                 </svg>
@@ -577,10 +581,10 @@ export default function CreatePage() {
             )}
           </button>
 
-          {/* Issuance cost note */}
-          {dustAmount > 0 && (
+          {/* Issuance cost note (when user has enough) */}
+          {dustAmount > 0 && hasEnoughSats && (
             <p className="text-center text-[11px] text-muted-foreground/30">
-              Issuance costs ~{dustAmount.toLocaleString()} sats
+              Issuance costs ~{minIssuanceCost.toLocaleString()} sats
             </p>
           )}
         </div>
