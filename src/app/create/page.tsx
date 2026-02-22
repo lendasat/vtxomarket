@@ -4,15 +4,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
-import { issueToken, getDustAmount, getReceivingAddresses, getBalance } from "@/lib/ark-wallet";
-import { publishTokenListing, publishCurveState } from "@/lib/nostr-market";
-import {
-  TOKEN_TOTAL_SUPPLY,
-  initialCurveState,
-  getPrice,
-  getMarketCap,
-  getCurveProgress,
-} from "@/lib/bonding-curve";
+import { issueToken, getDustAmount, getReceivingAddresses } from "@/lib/ark-wallet";
+import { publishTokenListing } from "@/lib/nostr-market";
 
 const NAME_MAX = 32;
 const TICKER_MAX = 10;
@@ -28,8 +21,8 @@ export default function CreatePage() {
 
   const balance = useAppStore((s) => s.balance);
   const [dustAmount, setDustAmount] = useState<number>(0);
-  // Real minimum: dust for token VTXO + dust for change VTXO
-  const minIssuanceCost = dustAmount * 2;
+  // Only need dustAmount sats (one VTXO) to issue a token
+  const minIssuanceCost = dustAmount;
   const hasEnoughSats = (balance?.available ?? 0) >= minIssuanceCost;
 
   useEffect(() => {
@@ -45,6 +38,8 @@ export default function CreatePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
+
+  const [supply, setSupply] = useState("1000000");
 
   const [showSocials, setShowSocials] = useState(false);
   const [website, setWebsite] = useState("");
@@ -99,18 +94,19 @@ export default function CreatePage() {
     try {
       const finalImage = imageUrl || imagePreview || "";
       const tickerUp = ticker.toUpperCase();
+      const supplyNum = parseInt(supply, 10) || 1_000_000;
 
       // Step 1: Issue token on Arkade
       setStep("Issuing token on Arkade...");
       const result = await issueToken(arkWallet, {
-        amount: TOKEN_TOTAL_SUPPLY,
+        amount: supplyNum,
         name,
         ticker: tickerUp,
         decimals: 0,
         icon: finalImage || undefined,
       });
 
-      // Get creator's Ark address for trading
+      // Get creator's Ark address
       const addrs = await getReceivingAddresses(arkWallet);
       const creatorArkAddress = addrs.offchainAddr;
 
@@ -129,12 +125,7 @@ export default function CreatePage() {
         ...(telegram && { telegram }),
       });
 
-      // Step 3: Publish initial curve state
-      setStep("Setting up bonding curve...");
-      const curve = initialCurveState();
-      await publishCurveState(tickerUp, curve);
-
-      // Step 4: Add to local state
+      // Step 3: Add to local state
       upsertToken({
         id: event.id,
         assetId: result.assetId,
@@ -145,13 +136,13 @@ export default function CreatePage() {
         creator: user?.pubkey ?? "unknown",
         creatorArkAddress,
         createdAt: Math.floor(Date.now() / 1000),
-        supply: TOKEN_TOTAL_SUPPLY,
-        virtualTokenReserves: curve.virtualTokenReserves,
-        virtualSatReserves: curve.virtualSatReserves,
-        realTokenReserves: curve.realTokenReserves,
-        price: getPrice(curve),
-        marketCap: getMarketCap(curve),
-        curveProgress: getCurveProgress(curve),
+        supply: supplyNum,
+        virtualTokenReserves: 0,
+        virtualSatReserves: 0,
+        realTokenReserves: 0,
+        price: 0,
+        marketCap: 0,
+        curveProgress: 0,
         replies: 0,
         tradeCount: 0,
         ...(website && { website }),
@@ -350,18 +341,21 @@ export default function CreatePage() {
             </div>
           </div>
 
-          {/* Fixed supply info */}
-          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
-                Total Supply
-              </span>
-              <span className="text-sm font-semibold tabular-nums">
-                {TOKEN_TOTAL_SUPPLY.toLocaleString()}
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground/40 mt-1">
-              Fixed at 1B tokens for all launches. Price is determined by the bonding curve.
+          {/* Supply */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+              Total Supply
+            </label>
+            <input
+              type="number"
+              min="1"
+              placeholder="1000000"
+              value={supply}
+              onChange={(e) => setSupply(e.target.value)}
+              className={`${inputClass} h-11 font-mono`}
+            />
+            <p className="text-[11px] text-muted-foreground/40">
+              Total number of tokens to issue on Arkade.
             </p>
           </div>
 
@@ -477,7 +471,7 @@ export default function CreatePage() {
                 </div>
                 <div className="shrink-0 text-right">
                   <span className="text-[10px] text-muted-foreground/30 font-medium px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
-                    {TOKEN_TOTAL_SUPPLY.toLocaleString()} supply
+                    {(parseInt(supply, 10) || 0).toLocaleString()} supply
                   </span>
                 </div>
               </div>
@@ -499,11 +493,10 @@ export default function CreatePage() {
               />
             </svg>
             <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground/80">Bonding Curve Launch</p>
+              <p className="text-xs font-medium text-foreground/80">Token Issuance</p>
               <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                Your token launches with a bonding curve starting at 0.028 sat/token.
-                Price increases as people buy. All tokens are issued on Arkade and metadata
-                is published to Nostr.
+                Your token is issued on Arkade (Ark protocol) and the listing metadata
+                is published to Nostr relays for discovery. Costs ~{minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats.
               </p>
             </div>
           </div>
@@ -584,7 +577,7 @@ export default function CreatePage() {
           {/* Issuance cost note (when user has enough) */}
           {dustAmount > 0 && hasEnoughSats && (
             <p className="text-center text-[11px] text-muted-foreground/30">
-              Issuance costs ~{minIssuanceCost.toLocaleString()} sats
+              Issuance costs ~{minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats
             </p>
           )}
         </div>
