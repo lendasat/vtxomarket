@@ -284,3 +284,87 @@ export async function finalizePending(wallet: any): Promise<{ finalized: string[
   if (typeof wallet.finalizePendingTxs !== "function") return { finalized: [], pending: [] };
   return wallet.finalizePendingTxs();
 }
+
+const SETTLE_TIMEOUT = 60_000; // 60s max wait for a round
+
+/**
+ * Settle ALL preconfirmed VTXOs (and boarding UTXOs) into an on-chain round.
+ * Calls wallet.settle() with NO params, which collects everything and joins
+ * the next Ark server round. This is a blocking call — it waits for the
+ * server to run a round, so we wrap it with a timeout.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function settleAll(wallet: any): Promise<string> {
+  const settlePromise = wallet.settle(
+    undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (event: any) => console.log("[settleAll]", event),
+  );
+
+  const txid = await withTimeout<string>(settlePromise, SETTLE_TIMEOUT, "settleAll");
+  return txid;
+}
+
+// -- Asset operations --
+
+export interface AssetInfo {
+  assetId: string;
+  amount: number;
+}
+
+export interface AssetDetails {
+  assetId: string;
+  amount: number;
+  name?: string;
+  ticker?: string;
+}
+
+/** Send asset tokens to a recipient Ark address */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function sendAsset(
+  wallet: any,
+  recipientAddress: string,
+  assetId: string,
+  assetAmount: number
+): Promise<string> {
+  const txid = await wallet.assetManager.send({
+    address: recipientAddress,
+    assetId,
+    amount: assetAmount,
+  });
+  return txid;
+}
+
+/** Get all assets held by this wallet */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getAssets(wallet: any): Promise<AssetInfo[]> {
+  try {
+    const assets = await wallet.assetManager.getAssets();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return assets.map((a: any) => ({
+      assetId: a.assetId,
+      amount: a.amount ?? a.balance ?? 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Get details for a specific asset */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getAssetDetails(wallet: any, assetId: string): Promise<AssetDetails | null> {
+  try {
+    const assets = await wallet.assetManager.getAssets();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const asset = assets.find((a: any) => a.assetId === assetId);
+    if (!asset) return null;
+    return {
+      assetId: asset.assetId,
+      amount: asset.amount ?? asset.balance ?? 0,
+      name: asset.metadata?.name,
+      ticker: asset.metadata?.ticker,
+    };
+  } catch {
+    return null;
+  }
+}
