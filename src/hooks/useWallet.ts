@@ -110,7 +110,7 @@ export function useWallet() {
     const w = useAppStore.getState().arkWallet;
     if (!w) return;
     try {
-      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending } = await import("@/lib/ark-wallet");
+      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, settleAll, getAssets } = await import("@/lib/ark-wallet");
       const [bal, addrs] = await Promise.all([
         getBalance(w),
         getReceivingAddresses(w),
@@ -118,7 +118,17 @@ export function useWallet() {
       useAppStore.getState().setBalance(bal);
       useAppStore.getState().setAddresses(addrs);
 
-      // Finalize any preconfirmed transactions (non-blocking)
+      // Fetch held assets
+      try {
+        const assets = await getAssets(w);
+        useAppStore.getState().setHeldAssets(
+          assets.map((a) => ({ assetId: a.assetId, amount: a.amount }))
+        );
+      } catch (e) {
+        console.warn("[wallet] Asset fetch failed:", e instanceof Error ? e.message : e);
+      }
+
+      // Finalize any pending checkpoint signatures (non-blocking)
       try {
         const { finalized } = await finalizePending(w);
         if (finalized.length > 0) {
@@ -130,12 +140,20 @@ export function useWallet() {
         console.warn("[wallet] Finalize pending failed:", e instanceof Error ? e.message : e);
       }
 
-      // Auto-settle confirmed on-chain boarding funds (>= 1000 sats)
-      if (bal.onchainConfirmed >= 1000 && !settlingRef.current) {
+      // Auto-settle: roll preconfirmed VTXOs and/or boarding UTXOs into an on-chain round
+      // settle() with no params grabs everything and joins the next Ark server round
+      const shouldSettle =
+        (bal.onchainConfirmed >= 1000 || bal.preconfirmed > 0) &&
+        !settlingRef.current;
+
+      if (shouldSettle) {
         settlingRef.current = true;
-        console.log(`[wallet] Auto-settling ${bal.onchainConfirmed} confirmed boarding sats...`);
+        const label = bal.onchainConfirmed >= 1000
+          ? `${bal.onchainConfirmed} boarding sats + ${bal.preconfirmed} preconfirmed`
+          : `${bal.preconfirmed} preconfirmed sats`;
+        console.log(`[wallet] Auto-settling ${label}...`);
         try {
-          const txid = await settleVtxos(w);
+          const txid = await settleAll(w);
           console.log("[wallet] Auto-settle complete, txid:", txid);
           const newBal = await getBalance(w);
           useAppStore.getState().setBalance(newBal);

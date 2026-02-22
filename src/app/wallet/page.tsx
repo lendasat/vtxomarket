@@ -18,7 +18,6 @@ import {
 } from "@/lib/lnurl";
 import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
-import { MOCK_TOKENS } from "@/lib/mock-tokens";
 
 type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
 type StableCoin = "USDC" | "USDT";
@@ -66,11 +65,6 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-// Mock user token holdings
-const USER_TOKENS = MOCK_TOKENS.slice(0, 3).map((t) => ({
-  ...t,
-  holding: Math.floor(Math.random() * 10000 + 500),
-}));
 
 function formatSats(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -86,6 +80,24 @@ export default function WalletPage() {
   const arkWallet = useAppStore((s) => s.arkWallet);
   const setBalance = useAppStore((s) => s.setBalance);
   const setAddresses = useAppStore((s) => s.setAddresses);
+  const heldAssets = useAppStore((s) => s.heldAssets);
+  const tokens = useAppStore((s) => s.tokens);
+
+  // Map held assets to token metadata
+  const userTokens = heldAssets
+    .filter((a) => a.amount > 0)
+    .map((a) => {
+      const token = tokens.find((t) => t.assetId === a.assetId);
+      return {
+        assetId: a.assetId,
+        amount: a.amount,
+        name: token?.name ?? "Unknown",
+        ticker: token?.ticker ?? "???",
+        image: token?.image,
+        price: token?.price ?? 0,
+        value: Math.floor(a.amount * (token?.price ?? 0)),
+      };
+    });
 
   const {
     ready: lnReady,
@@ -373,7 +385,7 @@ export default function WalletPage() {
             </Link>
           </div>
 
-          {USER_TOKENS.length === 0 ? (
+          {userTokens.length === 0 ? (
             <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] p-8 text-center">
               <p className="text-xs text-muted-foreground/40">No tokens yet</p>
               <Link
@@ -385,13 +397,10 @@ export default function WalletPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {USER_TOKENS.map((token) => {
-                const value = Math.floor(token.holding * token.price);
-                const isPositive = token.change24h >= 0;
-                return (
+              {userTokens.map((token) => (
                   <Link
-                    key={token.id}
-                    href={`/token/${token.id}`}
+                    key={token.assetId}
+                    href={`/token/${token.ticker}`}
                     className="glass-card flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/[0.07] hover:bg-white/[0.07] hover:border-white/[0.1] transition-all group"
                   >
                     {/* Token icon */}
@@ -410,23 +419,22 @@ export default function WalletPage() {
                         <span className="text-[10px] font-mono text-muted-foreground/40">${token.ticker}</span>
                       </div>
                       <p className="text-[11px] text-muted-foreground/40 tabular-nums">
-                        {token.holding.toLocaleString()} tokens
+                        {token.amount.toLocaleString()} tokens
                       </p>
                     </div>
 
-                    {/* Value + change */}
+                    {/* Value */}
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold tabular-nums">
-                        {formatSats(value)}
+                        {formatSats(token.value)}
                         <span className="text-[10px] text-muted-foreground/30 ml-0.5">sat</span>
                       </p>
-                      <p className={`text-[10px] font-medium tabular-nums ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
-                        {isPositive ? "+" : ""}{token.change24h.toFixed(1)}%
+                      <p className="text-[10px] text-muted-foreground/40 tabular-nums">
+                        {token.price < 0.01 ? token.price.toFixed(4) : token.price.toFixed(2)} sat/token
                       </p>
                     </div>
                   </Link>
-                );
-              })}
+                ))}
             </div>
           )}
         </div>
