@@ -187,18 +187,27 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   if (decimals !== undefined) metadata.push(["decimals", String(decimals)]);
   if (icon) metadata.push(["icon", icon]);
 
-  // Select coins (same as SDK: select coins to reach dustAmount)
+  // Select coins to cover dustAmount (inlined from SDK's selectVirtualCoins
+  // which is not exported from the package entry point)
   const vtxos = await wallet.getVtxos({ withRecoverable: false });
   const dustAmt = Number(wallet.dustAmount);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { selectVirtualCoins } = await import("@arkade-os/sdk").then((m: any) => m);
-
+  const sorted = [...vtxos].sort((a: any, b: any) => {
+    const expiryA = a.virtualStatus.batchExpiry || Number.MAX_SAFE_INTEGER;
+    const expiryB = b.virtualStatus.batchExpiry || Number.MAX_SAFE_INTEGER;
+    if (expiryA !== expiryB) return expiryA - expiryB;
+    return b.value - a.value;
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const coinSelection: any = selectVirtualCoins(vtxos, dustAmt);
-  let totalBtcSelected = BigInt(0);
-  for (const coin of coinSelection.inputs) {
-    totalBtcSelected += BigInt(coin.value);
+  const selectedInputs: any[] = [];
+  let selectedAmount = 0;
+  for (const coin of sorted) {
+    selectedInputs.push(coin);
+    selectedAmount += coin.value;
+    if (selectedAmount >= dustAmt) break;
   }
+  if (selectedAmount < dustAmt) throw new Error(`Insufficient VTXOs: need ${dustAmt}, have ${selectedAmount}`);
+  const totalBtcSelected = BigInt(selectedAmount);
 
   // Build asset packet
   const issuedAssetOutput = AssetOutput.create(0, BigInt(amount));
@@ -224,7 +233,7 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
     { ...packetOut, amount: packetAmount },
   ];
 
-  const { arkTxid } = await wallet.buildAndSubmitOffchainTx(coinSelection.inputs, outputs);
+  const { arkTxid } = await wallet.buildAndSubmitOffchainTx(selectedInputs, outputs);
   return {
     arkTxId: arkTxid,
     assetId: AssetId.create(arkTxid, 0).toString(),
