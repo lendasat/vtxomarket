@@ -21,8 +21,8 @@ export default function CreatePage() {
 
   const balance = useAppStore((s) => s.balance);
   const [dustAmount, setDustAmount] = useState<number>(0);
-  // Only need dustAmount sats (one VTXO) to issue a token
-  const minIssuanceCost = dustAmount;
+  // Need 2x dustAmount: main output (dust) + packet output (dust)
+  const minIssuanceCost = dustAmount * 2;
   const hasEnoughSats = (balance?.available ?? 0) >= minIssuanceCost;
 
   useEffect(() => {

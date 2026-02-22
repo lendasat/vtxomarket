@@ -195,10 +195,11 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
     metadata.push(Metadata.create(enc.encode("icon"), enc.encode(icon)));
   }
 
-  // Select coins to cover dustAmount (inlined from SDK's selectVirtualCoins
-  // which is not exported from the package entry point)
+  // Select coins to cover 2*dustAmount (main output + packet output both need >= dust).
+  // Inlined from SDK's selectVirtualCoins which is not exported.
   const vtxos = await wallet.getVtxos({ withRecoverable: false });
   const dustAmt = Number(wallet.dustAmount);
+  const minRequired = dustAmt * 2;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sorted = [...vtxos].sort((a: any, b: any) => {
     const expiryA = a.virtualStatus.batchExpiry || Number.MAX_SAFE_INTEGER;
@@ -212,9 +213,9 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   for (const coin of sorted) {
     selectedInputs.push(coin);
     selectedAmount += coin.value;
-    if (selectedAmount >= dustAmt) break;
+    if (selectedAmount >= minRequired) break;
   }
-  if (selectedAmount < dustAmt) throw new Error(`Insufficient VTXOs: need ${dustAmt}, have ${selectedAmount}`);
+  if (selectedAmount < minRequired) throw new Error(`Insufficient sats: need ${minRequired}, have ${selectedAmount}`);
   const totalBtcSelected = BigInt(selectedAmount);
 
   // Build asset packet
@@ -223,12 +224,13 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   const packet = Packet.create([issuedAssetGroup]);
   const packetOut = packet.txOut();
 
-  // Fix: give the packet output 1 sat (server rejects 0)
-  // and subtract it from the main output
-  const packetAmount = BigInt(1);
+  // The Ark server requires ALL outputs to have amount >= dustAmount.
+  // The SDK's Packet.txOut() returns amount=0, but the server rejects that.
+  // Give the packet output dustAmount sats and keep the rest for the main output.
+  const packetAmount = BigInt(dustAmt);
   const mainAmount = totalBtcSelected - packetAmount;
   if (mainAmount < BigInt(dustAmt)) {
-    throw new Error(`Insufficient sats: need at least ${dustAmt + 1} available (have ${totalBtcSelected})`);
+    throw new Error(`Insufficient sats: need at least ${dustAmt * 2} available (have ${totalBtcSelected})`);
   }
 
   const address = await wallet.getAddress();
@@ -404,6 +406,22 @@ export async function sendAsset(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAssets(wallet: any): Promise<AssetInfo[]> {
   const balance = await wallet.getBalance();
+  console.log("[ark] getBalance().assets:", JSON.stringify(balance.assets));
+
+  // Also inspect raw VTXOs to see if any have .assets
+  try {
+    const vtxos = await wallet.getVtxos();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const withAssets = vtxos.filter((v: any) => v.assets && v.assets.length > 0);
+    console.log(`[ark] VTXOs: ${vtxos.length} total, ${withAssets.length} with assets`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const v of vtxos.slice(0, 5)) {
+      console.log(`[ark]   VTXO ${v.txid}:${v.vout} value=${v.value} spent=${v.isSpent} assets=`, v.assets);
+    }
+  } catch (e) {
+    console.warn("[ark] VTXO inspection failed:", e);
+  }
+
   if (!balance.assets || !Array.isArray(balance.assets)) return [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return balance.assets.map((a: any) => ({
