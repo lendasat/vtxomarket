@@ -19,17 +19,49 @@ async function getSDK() {
   return _sdk;
 }
 
+const WALLET_CONNECT_TIMEOUT = 30_000;
+const WALLET_MAX_RETRIES = 2;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
   const { SingleKey, Wallet } = await getSDK();
   console.log("[ark] SDK loaded, creating wallet...");
   const identity = SingleKey.fromHex(privateKeyHex);
-  const wallet = await Wallet.create({
-    identity,
-    arkServerUrl: ARK_SERVER_URL,
-    esploraUrl: ESPLORA_URL,
-  });
-  console.log("[ark] Wallet created successfully");
-  return wallet;
+
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= WALLET_MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[ark] Wallet.create attempt ${attempt}/${WALLET_MAX_RETRIES}...`);
+      const wallet = await withTimeout(
+        Wallet.create({
+          identity,
+          arkServerUrl: ARK_SERVER_URL,
+          esploraUrl: ESPLORA_URL,
+        }),
+        WALLET_CONNECT_TIMEOUT,
+        "Wallet.create",
+      );
+      console.log("[ark] Wallet created successfully");
+      return wallet;
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`[ark] Attempt ${attempt} failed:`, lastError.message);
+      if (attempt < WALLET_MAX_RETRIES) {
+        console.log("[ark] Retrying in 2s...");
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+  throw lastError ?? new Error("Ark wallet connection failed");
 }
 
 export interface BalanceInfo {

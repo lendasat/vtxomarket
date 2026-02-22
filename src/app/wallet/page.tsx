@@ -251,7 +251,16 @@ export default function WalletPage() {
                 —
               </p>
               {walletError ? (
-                <p className="mt-2 text-xs text-red-400/80">{walletError}</p>
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-red-400/80">{walletError}</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.07] border border-white/[0.1] text-xs font-medium transition-all hover:bg-white/[0.12]"
+                  >
+                    <RefreshIcon className="size-3" />
+                    Retry
+                  </button>
+                </div>
               ) : (
                 <div className="flex items-center justify-center gap-2 mt-3">
                   <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
