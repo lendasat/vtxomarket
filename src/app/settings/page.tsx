@@ -31,7 +31,10 @@ export default function SettingsPage() {
   const [profileAbout, setProfileAbout] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const profileInitRef = useRef(false);
+  const pictureInputRef = useRef<HTMLInputElement>(null);
 
   // Sync form fields when profile loads
   useEffect(() => {
@@ -42,6 +45,29 @@ export default function SettingsPage() {
       setProfileAbout(profile.about || "");
     }
   }, [profile]);
+
+  const handlePictureUpload = async (file: File) => {
+    setUploadingPicture(true);
+    setUploadError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("https://nostr.build/api/v2/upload/files", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+      const data = await res.json();
+      const url = data?.data?.[0]?.url;
+      if (!url) throw new Error("No URL returned from upload");
+      setProfilePicture(url);
+    } catch (e) {
+      console.error("[settings] Picture upload failed:", e);
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingPicture(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!nostrReady) return;
@@ -184,13 +210,44 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[11px] text-muted-foreground/50 font-medium">Profile Picture URL</label>
-                <input
-                  value={profilePicture}
-                  onChange={(e) => setProfilePicture(e.target.value)}
-                  placeholder="https://nostr.build/i/..."
-                  className="w-full h-10 px-3.5 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
-                />
+                <label className="text-[11px] text-muted-foreground/50 font-medium">Profile Picture</label>
+                <div className="flex gap-2">
+                  <input
+                    value={profilePicture}
+                    onChange={(e) => setProfilePicture(e.target.value)}
+                    placeholder="https://nostr.build/i/..."
+                    className="flex-1 h-10 px-3.5 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                  />
+                  <input
+                    ref={pictureInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePictureUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => pictureInputRef.current?.click()}
+                    disabled={uploadingPicture}
+                    className="shrink-0 h-10 px-3 rounded-xl bg-white/[0.07] border border-white/[0.1] text-xs font-medium transition-all hover:bg-white/[0.12] disabled:opacity-40"
+                  >
+                    {uploadingPicture ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
+                        Uploading
+                      </span>
+                    ) : (
+                      "Upload"
+                    )}
+                  </button>
+                </div>
+                {uploadError && (
+                  <p className="text-[11px] text-red-400">{uploadError}</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] text-muted-foreground/50 font-medium">About</label>
