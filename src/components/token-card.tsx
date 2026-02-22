@@ -4,14 +4,7 @@ import Link from "next/link";
 import type { Token } from "@/lib/store";
 
 interface TokenCardProps {
-  token: Token & {
-    price: number;
-    change24h: number;
-    volume24h: number;
-    holders: number;
-    curveProgress: number;
-    creatorShort: string;
-  };
+  token: Token;
 }
 
 function formatSats(n: number): string {
@@ -21,10 +14,8 @@ function formatSats(n: number): string {
 }
 
 export function TokenCard({ token }: TokenCardProps) {
-  const isPositive = token.change24h >= 0;
-
   return (
-    <Link href={`/token/${token.id}`} className="block group">
+    <Link href={`/token/${token.ticker}`} className="block group">
       <div className="glass-card relative rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden transition-all duration-300 hover:bg-white/[0.07] hover:border-white/[0.12] hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]">
         <div className="p-4 space-y-3">
           {/* Top row: avatar + name + price */}
@@ -52,19 +43,9 @@ export function TokenCard({ token }: TokenCardProps) {
 
             <div className="shrink-0 text-right">
               <p className="text-sm font-semibold tabular-nums">
-                {token.price.toFixed(2)}
+                {token.price < 0.01 ? token.price.toFixed(4) : token.price.toFixed(2)}
                 <span className="text-[10px] text-muted-foreground/30 ml-0.5">sat</span>
               </p>
-              {token.change24h !== 0 && (
-                <p
-                  className={`text-[11px] font-medium tabular-nums ${
-                    isPositive ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {isPositive ? "+" : ""}
-                  {token.change24h.toFixed(1)}%
-                </p>
-              )}
             </div>
           </div>
 
@@ -76,11 +57,11 @@ export function TokenCard({ token }: TokenCardProps) {
             />
           </div>
 
-          {/* Mcap + volume */}
+          {/* Mcap + trades */}
           <div className="flex items-center text-[10px] text-muted-foreground/35 tabular-nums">
             <span>mcap {formatSats(token.marketCap)}</span>
             <span className="mx-2 text-white/[0.06]">/</span>
-            <span>vol {formatSats(token.volume24h)}</span>
+            <span>{token.tradeCount} trades</span>
           </div>
         </div>
       </div>

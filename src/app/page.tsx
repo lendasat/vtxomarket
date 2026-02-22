@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { TokenCard } from "@/components/token-card";
-import { MOCK_TOKENS } from "@/lib/mock-tokens";
+import { useTokens } from "@/hooks/useTokens";
 
 type SortMode = "trending" | "new" | "top" | "finishing";
 
@@ -15,15 +15,16 @@ const SORT_TABS: { key: SortMode; label: string }[] = [
 ];
 
 export default function Home() {
+  const { tokens, loading } = useTokens();
   const [sort, setSort] = useState<SortMode>("trending");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
-    let tokens = [...MOCK_TOKENS];
+    let list = [...tokens];
 
     if (search.trim()) {
       const q = search.toLowerCase();
-      tokens = tokens.filter(
+      list = list.filter(
         (t) =>
           t.name.toLowerCase().includes(q) ||
           t.ticker.toLowerCase().includes(q) ||
@@ -33,35 +34,33 @@ export default function Home() {
 
     switch (sort) {
       case "trending":
-        tokens.sort((a, b) => b.volume24h - a.volume24h);
+        list.sort((a, b) => b.tradeCount - a.tradeCount);
         break;
       case "new":
-        tokens.sort((a, b) => b.createdAt - a.createdAt);
+        list.sort((a, b) => b.createdAt - a.createdAt);
         break;
       case "top":
-        tokens.sort((a, b) => b.marketCap - a.marketCap);
+        list.sort((a, b) => b.marketCap - a.marketCap);
         break;
       case "finishing":
-        tokens.sort((a, b) => b.curveProgress - a.curveProgress);
+        list.sort((a, b) => b.curveProgress - a.curveProgress);
         break;
     }
 
-    return tokens;
-  }, [sort, search]);
+    return list;
+  }, [tokens, sort, search]);
 
   const topMovers = useMemo(
     () =>
-      [...MOCK_TOKENS]
-        .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
+      [...tokens]
+        .sort((a, b) => b.marketCap - a.marketCap)
         .slice(0, 5),
-    []
+    [tokens]
   );
 
-  // Top 2 for hero
   const heroTokens = topMovers.slice(0, 2);
 
-  const totalMcap = MOCK_TOKENS.reduce((s, t) => s + t.marketCap, 0);
-  const totalVolume = MOCK_TOKENS.reduce((s, t) => s + t.volume24h, 0);
+  const totalMcap = tokens.reduce((s, t) => s + t.marketCap, 0);
 
   function formatSats(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -73,7 +72,6 @@ export default function Home() {
     <div className="space-y-5">
       {/* ── Hero: Top Movers ── */}
       <div className="relative">
-        {/* Decorative glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-40 rounded-full bg-white/[0.02] blur-3xl pointer-events-none" />
 
         <div className="relative space-y-4">
@@ -81,7 +79,7 @@ export default function Home() {
             <div className="flex items-center gap-2.5">
               <h1 className="text-2xl font-bold tracking-tight">Marketplace</h1>
               <span className="text-[10px] text-muted-foreground/30 tabular-nums font-medium mt-1">
-                {MOCK_TOKENS.length} tokens
+                {tokens.length} tokens
               </span>
             </div>
             <Link href="/create">
@@ -91,23 +89,35 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Hero cards — top 2 movers */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {heroTokens.map((t, i) => {
-              const up = t.change24h >= 0;
-              return (
+          {/* Loading state */}
+          {loading && tokens.length === 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[0, 1].map((i) => (
+                <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5 space-y-3 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="h-11 w-11 rounded-xl bg-white/[0.06]" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 w-24 rounded bg-white/[0.06]" />
+                      <div className="h-3 w-16 rounded bg-white/[0.04]" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hero cards — top 2 by market cap */}
+          {heroTokens.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {heroTokens.map((t, i) => (
                 <Link
                   key={t.id}
-                  href={`/token/${t.id}`}
+                  href={`/token/${t.ticker}`}
                   className="group glass-card relative rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden transition-all hover:bg-white/[0.06] hover:border-white/[0.1]"
                 >
-                  {/* Subtle colored glow */}
-                  <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl pointer-events-none ${
-                    up ? "bg-emerald-500/[0.04]" : "bg-red-500/[0.04]"
-                  }`} />
+                  <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl pointer-events-none bg-emerald-500/[0.04]" />
 
                   <div className="relative p-4 sm:p-5 space-y-3">
-                    {/* Token identity row */}
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold bg-white/[0.06] border border-white/[0.08] text-muted-foreground/50">
                         {t.image ? (
@@ -121,13 +131,12 @@ export default function Home() {
                         <p className="text-[11px] font-mono text-muted-foreground/40">${t.ticker}</p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span className={`text-lg sm:text-xl font-bold tabular-nums ${up ? "text-emerald-400" : "text-red-400"}`}>
-                          {up ? "+" : ""}{t.change24h.toFixed(1)}%
+                        <span className="text-lg sm:text-xl font-bold tabular-nums text-emerald-400">
+                          {formatSats(t.marketCap)}
                         </span>
                       </div>
                     </div>
 
-                    {/* Stats row */}
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-[9px] uppercase tracking-[0.2em] font-medium px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.07] text-muted-foreground/40">
                         {i === 0 ? "#1" : "#2"}
@@ -135,12 +144,12 @@ export default function Home() {
                       <div className="h-5 w-px bg-white/[0.06]" />
                       <div>
                         <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Price</p>
-                        <p className="text-xs font-semibold tabular-nums">{t.price.toFixed(2)} <span className="text-muted-foreground/30">sat</span></p>
+                        <p className="text-xs font-semibold tabular-nums">{t.price.toFixed(4)} <span className="text-muted-foreground/30">sat</span></p>
                       </div>
                       <div className="h-5 w-px bg-white/[0.06]" />
                       <div>
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Vol</p>
-                        <p className="text-xs font-semibold tabular-nums">{formatSats(t.volume24h)}</p>
+                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Curve</p>
+                        <p className="text-xs font-semibold tabular-nums">{t.curveProgress.toFixed(1)}%</p>
                       </div>
                       <div className="h-5 w-px bg-white/[0.06] hidden sm:block" />
                       <div className="hidden sm:block">
@@ -150,31 +159,30 @@ export default function Home() {
                     </div>
                   </div>
                 </Link>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Remaining movers as chips */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-            <span className="shrink-0 text-[10px] uppercase tracking-widest text-muted-foreground/40 font-medium">
-              Also moving
-            </span>
-            {topMovers.slice(2).map((t) => {
-              const up = t.change24h >= 0;
-              return (
+          {topMovers.length > 2 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+              <span className="shrink-0 text-[10px] uppercase tracking-widest text-muted-foreground/40 font-medium">
+                Also listed
+              </span>
+              {topMovers.slice(2).map((t) => (
                 <Link
                   key={t.id}
-                  href={`/token/${t.id}`}
+                  href={`/token/${t.ticker}`}
                   className="shrink-0 flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.07] px-2.5 py-1.5 text-[11px] transition-all hover:bg-white/[0.09] hover:border-white/[0.1]"
                 >
                   <span className="font-mono font-medium text-muted-foreground/70">${t.ticker}</span>
-                  <span className={`font-medium tabular-nums ${up ? "text-emerald-400" : "text-red-400"}`}>
-                    {up ? "+" : ""}{t.change24h.toFixed(1)}%
+                  <span className="font-medium tabular-nums text-muted-foreground/50">
+                    {formatSats(t.marketCap)}
                   </span>
                 </Link>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -209,25 +217,62 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Loading skeleton grid */}
+      {loading && tokens.length === 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 space-y-3 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-white/[0.06]" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-20 rounded bg-white/[0.06]" />
+                  <div className="h-3 w-12 rounded bg-white/[0.04]" />
+                </div>
+              </div>
+              <div className="h-1 rounded-full bg-white/[0.06]" />
+              <div className="h-3 w-32 rounded bg-white/[0.04]" />
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Token grid */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((token) => (
-          <TokenCard key={token.id} token={token} />
-        ))}
-      </div>
+      {filtered.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((token) => (
+            <TokenCard key={token.id} token={token} />
+          ))}
+        </div>
+      )}
 
       {/* Empty state */}
-      {filtered.length === 0 && (
+      {!loading && filtered.length === 0 && (
         <div className="text-center py-16 space-y-3">
-          <p className="text-sm text-muted-foreground/50">
-            No tokens found for &ldquo;{search}&rdquo;
-          </p>
-          <button
-            onClick={() => setSearch("")}
-            className="text-xs text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-          >
-            Clear search
-          </button>
+          {search ? (
+            <>
+              <p className="text-sm text-muted-foreground/50">
+                No tokens found for &ldquo;{search}&rdquo;
+              </p>
+              <button
+                onClick={() => setSearch("")}
+                className="text-xs text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+              >
+                Clear search
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground/50">
+                No tokens yet. Be the first to create one!
+              </p>
+              <Link
+                href="/create"
+                className="inline-block text-xs text-foreground/60 hover:text-foreground transition-colors"
+              >
+                + Create Token
+              </Link>
+            </>
+          )}
         </div>
       )}
 
