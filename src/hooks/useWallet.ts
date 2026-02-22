@@ -56,8 +56,9 @@ export function useWallet() {
         try {
           const override = await getNostrKeyOverride();
           const key = override || nostrKeyHex;
-          const ndk = await loginWithPrivateKey(key);
+          // Connect first, then set signer (avoids user-relay lookup before connection)
           await connectNDK();
+          const ndk = await loginWithPrivateKey(key);
           console.log("[wallet] Nostr connected", override ? "(nsec override)" : "(derived)");
 
           // Extract user from signer and update store
