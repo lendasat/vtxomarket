@@ -8,7 +8,61 @@ export type ArkWallet = any;
 export const ARK_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 
-export const ONCHAIN_FEE_SATS = 200;
+// Fallback fee if Esplora is unreachable
+const FALLBACK_FEE_SATS = 500;
+const MIN_FEE_RATE = 1; // sat/vbyte minimum (matches Arkade SDK)
+
+// -- Dynamic fee estimation --
+
+/**
+ * Fetch the recommended fee rate from Esplora.
+ * Targets next-block confirmation (key "1"), same as Arkade SDK.
+ * Falls back to a conservative 2 sat/vbyte if unavailable.
+ */
+export async function getFeeRate(): Promise<number> {
+  try {
+    const resp = await fetch(`${ESPLORA_URL}/fee-estimates`);
+    if (!resp.ok) return 2;
+    const fees = await resp.json() as Record<string, number>;
+    // Next-block target (key "1"), fallback to "6" (half-hour), then default
+    const rate = fees["1"] ?? fees["6"] ?? 2;
+    return Math.max(rate, MIN_FEE_RATE);
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Estimate the on-chain fee for a collaborative exit transaction.
+ * Uses simplified vbyte estimation matching the Arkade SDK's TxWeightEstimator logic:
+ * - Base tx: 10 bytes (version + locktime)
+ * - VarInt for input/output counts: ~1 byte each
+ * - Each P2TR (taproot key-spend) input: ~57.5 vbytes (41 non-witness + 66 witness / 4)
+ * - Each P2TR output: ~43 vbytes (9 base + 34 script)
+ * - Witness header: 0.5 vbytes
+ */
+export async function estimateCollaborativeExitFee(
+  numInputs: number,
+  numOutputs: number,
+): Promise<number> {
+  const feeRate = await getFeeRate();
+
+  // Simplified vbyte calculation (taproot key-spend inputs, taproot outputs)
+  const baseTx = 10.5; // version(4) + locktime(4) + witness header(0.5) + varints(2)
+  const inputVbytes = 57.5 * numInputs; // 41 non-witness + 66 witness bytes / 4
+  const outputVbytes = 43 * numOutputs; // 9 base + 34 P2TR script
+  const totalVbytes = Math.ceil(baseTx + inputVbytes + outputVbytes);
+
+  const fee = Math.ceil(totalVbytes * feeRate);
+  console.log(
+    "[ark] Fee estimate: %d inputs, %d outputs, %d vbytes, %d sat/vB = %d sats",
+    numInputs, numOutputs, totalVbytes, feeRate, fee
+  );
+  return Math.max(fee, FALLBACK_FEE_SATS > fee ? fee : fee); // never below calculated
+}
+
+// VTXO renewal: default 3 days before expiry (matches Arkade SDK default)
+const DEFAULT_RENEWAL_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
 
 let _sdk: typeof import("@arkade-os/sdk") | null = null;
 
@@ -109,28 +163,53 @@ export function isBtcAddress(addr: string): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function sendPayment(wallet: any, address: string, amountSats: number): Promise<string> {
   if (isBtcAddress(address)) {
-    const totalNeeded = amountSats + ONCHAIN_FEE_SATS;
+    // First pass: estimate inputs needed with a rough fee to determine tx shape
     const vtxos = await wallet.getVtxos();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sorted = [...vtxos].sort((a: any, b: any) => (a.virtualStatus.batchExpiry ?? 0) - (b.virtualStatus.batchExpiry ?? 0));
+
+    // Iterative fee estimation (matches Arkade SDK's approach, up to 5 rounds)
+    let fee = FALLBACK_FEE_SATS; // start with a rough estimate
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const selected: any[] = [];
+    let selected: any[] = [];
     let total = 0;
-    for (const v of sorted) {
-      selected.push(v);
-      total += v.value;
-      if (total >= totalNeeded) break;
+
+    for (let i = 0; i < 5; i++) {
+      const totalNeeded = amountSats + fee;
+      selected = [];
+      total = 0;
+      for (const v of sorted) {
+        selected.push(v);
+        total += v.value;
+        if (total >= totalNeeded) break;
+      }
+      if (total < totalNeeded) {
+        throw new Error(`Insufficient balance: need ${totalNeeded} sats (${amountSats} + ${fee} fee), have ${total}`);
+      }
+
+      // Determine output count: 1 for recipient + 1 for change (if any)
+      const change = total - totalNeeded;
+      const numOutputs = change > 0 ? 2 : 1;
+      const newFee = await estimateCollaborativeExitFee(selected.length, numOutputs);
+
+      // Converged if fee didn't increase
+      if (newFee <= fee) {
+        fee = newFee;
+        break;
+      }
+      fee = newFee;
     }
-    if (total < totalNeeded) throw new Error("Insufficient balance (amount + 200 sats network fee)");
 
     const outputs: { address: string; amount: bigint }[] = [
       { address, amount: BigInt(amountSats) },
     ];
-    const change = total - totalNeeded;
+    const change = total - amountSats - fee;
     if (change > 0) {
       const changeAddr = await wallet.getAddress();
       outputs.push({ address: changeAddr, amount: BigInt(change) });
     }
+
+    console.log("[ark] Collaborative exit: %d sats to %s, fee %d sats, %d inputs", amountSats, address.slice(0, 12), fee, selected.length);
 
     const txid = await wallet.settle(
       { inputs: selected, outputs },
@@ -465,4 +544,304 @@ export async function getAssetDetails(wallet: any, assetId: string): Promise<Ass
   } catch {
     return null;
   }
+}
+
+// -- VTXO auto-renewal --
+
+/** Check if a VTXO is expiring within the threshold */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isVtxoExpiringSoon(vtxo: any, thresholdMs: number): boolean {
+  const batchExpiry = vtxo.virtualStatus?.batchExpiry;
+  if (!batchExpiry) return false;
+  const now = Date.now();
+  if (batchExpiry <= now) return false; // already expired
+  return batchExpiry - now <= thresholdMs;
+}
+
+/** Check if a VTXO is swept but still recoverable */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isRecoverable(vtxo: any): boolean {
+  return vtxo.virtualStatus?.state === "swept";
+}
+
+/** Check if a VTXO is expired (past its batchExpiry) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isExpired(vtxo: any): boolean {
+  if (vtxo.virtualStatus?.state === "swept") return true;
+  const expiry = vtxo.virtualStatus?.batchExpiry;
+  if (!expiry) return false;
+  return expiry <= Date.now();
+}
+
+/**
+ * Compute a dynamic renewal threshold based on actual batch lifetime.
+ * Uses 10% of the batch lifetime (same as the Arkade wallet).
+ * Falls back to DEFAULT_RENEWAL_THRESHOLD_MS (3 days) if we can't determine lifetime.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function computeRenewalThreshold(wallet: any): Promise<number> {
+  try {
+    const vtxos = await wallet.getVtxos({ withRecoverable: true });
+    // Find a settled VTXO with batchExpiry and commitment txids to estimate batch lifetime
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sample = vtxos.find((v: any) =>
+      v.virtualStatus?.batchExpiry &&
+      v.virtualStatus?.commitmentTxIds?.length > 0 &&
+      v.virtualStatus?.state === "settled"
+    );
+    if (!sample) return DEFAULT_RENEWAL_THRESHOLD_MS;
+
+    // Estimate batch start from the commitment tx timestamp via esplora
+    const commitTxId = sample.virtualStatus.commitmentTxIds[0];
+    const resp = await fetch(`${ESPLORA_URL}/tx/${commitTxId}`);
+    if (!resp.ok) return DEFAULT_RENEWAL_THRESHOLD_MS;
+    const txData = await resp.json();
+    const blockTime = txData.status?.block_time;
+    if (!blockTime) return DEFAULT_RENEWAL_THRESHOLD_MS;
+
+    const batchStartMs = blockTime * 1000;
+    const batchExpiryMs = sample.virtualStatus.batchExpiry;
+    const batchLifetimeMs = batchExpiryMs - batchStartMs;
+
+    if (batchLifetimeMs <= 0) return DEFAULT_RENEWAL_THRESHOLD_MS;
+
+    // 10% of batch lifetime
+    const threshold = Math.floor(batchLifetimeMs * 0.1);
+    console.log(
+      "[ark] Renewal threshold: %dh (10%% of %dd batch lifetime)",
+      Math.round(threshold / 3600000),
+      Math.round(batchLifetimeMs / 86400000)
+    );
+    return threshold;
+  } catch (e) {
+    console.warn("[ark] Could not compute dynamic threshold, using default 3 days:", e);
+    return DEFAULT_RENEWAL_THRESHOLD_MS;
+  }
+}
+
+/**
+ * Find VTXOs that need renewal: expiring soon, swept/recoverable, or expired-but-unspent.
+ * Mirrors the Arkade wallet's getExpiringAndRecoverableVtxos().
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getVtxosNeedingRenewal(wallet: any, thresholdMs?: number): Promise<any[]> {
+  const threshold = thresholdMs ?? DEFAULT_RENEWAL_THRESHOLD_MS;
+  const vtxos = await wallet.getVtxos({ withRecoverable: true });
+  const dustAmount = Number(wallet.dustAmount ?? 0);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return vtxos.filter((vtxo: any) => {
+    // Expiring soon
+    if (isVtxoExpiringSoon(vtxo, threshold)) return true;
+    // Swept but recoverable
+    if (isRecoverable(vtxo)) return true;
+    // Expired but somehow still unspent
+    if (isExpired(vtxo) && vtxo.virtualStatus?.state !== "spent") return true;
+    // Subdust — consolidate if possible
+    if (vtxo.value < dustAmount && vtxo.value > 0) return true;
+    return false;
+  });
+}
+
+/**
+ * Renew expiring/recoverable VTXOs by settling them back to our own Ark address.
+ * This gives them a fresh batchExpiry. Also consolidates subdust VTXOs and
+ * includes confirmed boarding UTXOs to roll everything into the next round.
+ *
+ * Returns the settlement txid, or null if nothing needed renewal.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function renewVtxos(wallet: any, thresholdMs?: number): Promise<string | null> {
+  const threshold = thresholdMs ?? DEFAULT_RENEWAL_THRESHOLD_MS;
+  const expiringVtxos = await getVtxosNeedingRenewal(wallet, threshold);
+
+  // Also grab confirmed boarding UTXOs to consolidate in the same round
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inputs: any[] = [...expiringVtxos, ...boardingUtxos];
+  if (inputs.length === 0) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const totalAmount = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
+  const dustAmount = Number(wallet.dustAmount ?? 0);
+
+  if (totalAmount < dustAmount) {
+    console.log("[ark] Renewal skipped: total %d sats below dust %d", totalAmount, dustAmount);
+    return null;
+  }
+
+  const arkAddress = await wallet.getAddress();
+  console.log(
+    "[ark] Renewing %d VTXOs + %d boarding UTXOs (%d sats total)",
+    expiringVtxos.length, boardingUtxos.length, totalAmount
+  );
+
+  const txid = await wallet.settle(
+    {
+      inputs,
+      outputs: [{ address: arkAddress, amount: BigInt(totalAmount) }],
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (event: any) => console.log("[renewal]", event),
+  );
+
+  console.log("[ark] Renewal complete, txid:", txid);
+  return txid;
+}
+
+// -- Unilateral exit (emergency escape hatch) --
+
+export type UnilateralExitStep =
+  | { type: "unroll"; txid: string }
+  | { type: "wait"; txid: string }
+  | { type: "done"; vtxoTxid: string };
+
+/**
+ * Check if the ASP server is reachable.
+ * If not, unilateral exit may be necessary.
+ */
+export async function isAspReachable(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${ARK_SERVER_URL}/v1/info`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get VTXOs eligible for unilateral exit.
+ * Only settled VTXOs with full transaction trees can be unrolled.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getUnilateralExitEligibleVtxos(wallet: any): Promise<VtxoInfo[]> {
+  const vtxos = await wallet.getVtxos({ withRecoverable: true, withUnrolled: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return vtxos
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((v: any) => v.virtualStatus?.state === "settled" && !v.isUnrolled)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((v: any) => ({
+      type: "vtxo" as const,
+      value: v.value,
+      confirmed: true,
+      state: v.virtualStatus.state,
+      batchExpiry: v.virtualStatus.batchExpiry,
+    }));
+}
+
+/**
+ * Perform a unilateral exit for a specific VTXO.
+ * This broadcasts the off-chain transaction tree onto Bitcoin,
+ * bypassing the ASP entirely.
+ *
+ * Requires on-chain BTC for P2A anchor fees (the OnchainWallet).
+ * The process involves multiple on-chain transactions and confirmations.
+ *
+ * @param wallet - The Ark wallet instance
+ * @param privateKeyHex - Private key for the OnchainWallet (fee bumping)
+ * @param vtxoTxid - The txid of the VTXO to unilaterally exit
+ * @param vtxoVout - The vout of the VTXO (default 0)
+ * @param onStep - Callback for progress updates
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function unilateralExit(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wallet: any,
+  privateKeyHex: string,
+  vtxoTxid: string,
+  vtxoVout: number = 0,
+  onStep?: (step: UnilateralExitStep) => void,
+): Promise<string> {
+  const sdk = await getSDK();
+  const { Unroll, OnchainWallet, SingleKey } = sdk;
+
+  // Determine network name from ARK_SERVER_URL
+  const networkName = ARK_SERVER_URL.includes("mutinynet") ? "mutinynet"
+    : ARK_SERVER_URL.includes("signet") ? "signet"
+    : "bitcoin";
+
+  // Create OnchainWallet for P2A anchor fee bumping
+  const identity = SingleKey.fromHex(privateKeyHex);
+  const onchainWallet = await OnchainWallet.create(identity, networkName);
+
+  // Create unroll session for this VTXO
+  const outpoint = { txid: vtxoTxid, vout: vtxoVout };
+  const session = await Unroll.Session.create(
+    outpoint,
+    onchainWallet,            // AnchorBumper
+    onchainWallet.provider,   // OnchainProvider (esplora)
+    wallet.indexerProvider,   // IndexerProvider
+  );
+
+  let lastVtxoTxid = vtxoTxid;
+
+  // Iterate through all unroll steps
+  for await (const step of session) {
+    switch (step.type) {
+      case Unroll.StepType.WAIT:
+        console.log("[ark] Unilateral exit: waiting for tx confirmation:", step.txid);
+        onStep?.({ type: "wait", txid: step.txid });
+        break;
+      case Unroll.StepType.UNROLL:
+        console.log("[ark] Unilateral exit: broadcasting tx:", step.tx?.id);
+        onStep?.({ type: "unroll", txid: step.tx?.id ?? "" });
+        break;
+      case Unroll.StepType.DONE:
+        console.log("[ark] Unilateral exit: unroll complete, vtxoTxid:", step.vtxoTxid);
+        lastVtxoTxid = step.vtxoTxid;
+        onStep?.({ type: "done", vtxoTxid: step.vtxoTxid });
+        break;
+    }
+  }
+
+  return lastVtxoTxid;
+}
+
+/**
+ * Complete a unilateral exit after the CSV timelock has expired.
+ * This spends the unrolled VTXO to a regular on-chain address.
+ *
+ * @param wallet - The Ark wallet instance
+ * @param vtxoTxids - Array of unrolled VTXO txids
+ * @param destinationAddress - On-chain Bitcoin address to receive funds
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function completeUnilateralExit(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wallet: any,
+  vtxoTxids: string[],
+  destinationAddress: string,
+): Promise<string> {
+  const sdk = await getSDK();
+  const { Unroll } = sdk;
+
+  console.log("[ark] Completing unilateral exit for %d VTXOs to %s", vtxoTxids.length, destinationAddress);
+  const txid = await Unroll.completeUnroll(wallet, vtxoTxids, destinationAddress);
+  console.log("[ark] Unilateral exit complete, final txid:", txid);
+  return txid;
+}
+
+/**
+ * Get VTXOs that have been fully unrolled and may be ready for completion.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getUnrolledVtxos(wallet: any): Promise<VtxoInfo[]> {
+  const vtxos = await wallet.getVtxos({ withUnrolled: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return vtxos
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((v: any) => v.isUnrolled === true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((v: any) => ({
+      type: "vtxo" as const,
+      value: v.value,
+      confirmed: true,
+      state: "unrolled",
+      batchExpiry: v.virtualStatus?.batchExpiry,
+    }));
 }

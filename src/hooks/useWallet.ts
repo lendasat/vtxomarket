@@ -106,13 +106,18 @@ export function useWallet() {
   const settlingRef = useRef(false);
   // Cooldown after settle failure — avoid spamming every 30s
   const settleCooldownUntil = useRef(0);
+  // Cached renewal threshold (recomputed periodically)
+  const renewalThresholdRef = useRef<number | null>(null);
+  const renewalThresholdComputedAt = useRef(0);
+  // Separate flag for renewal vs regular settle
+  const renewingRef = useRef(false);
 
   // Auto-refresh balance + auto-settle confirmed boarding UTXOs + finalize pending txs
   const refreshData = useCallback(async () => {
     const w = useAppStore.getState().arkWallet;
     if (!w) return;
     try {
-      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, settleAll, getAssets } = await import("@/lib/ark-wallet");
+      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, settleAll, getAssets, renewVtxos, computeRenewalThreshold } = await import("@/lib/ark-wallet");
       const [bal, addrs] = await Promise.all([
         getBalance(w),
         getReceivingAddresses(w),
@@ -142,37 +147,87 @@ export function useWallet() {
         console.warn("[wallet] Finalize pending failed:", e instanceof Error ? e.message : e);
       }
 
-      // Auto-settle: roll preconfirmed VTXOs and/or boarding UTXOs into an on-chain round
-      // settle() with no params grabs everything and joins the next Ark server round
+      // Auto-settle: roll boarding UTXOs and/or preconfirmed VTXOs into the next round
+      const hasBoarding = bal.onchainConfirmed >= 1000;
+      const hasPreconfirmed = bal.preconfirmed > 0;
       const shouldSettle =
-        (bal.onchainConfirmed >= 1000 || bal.preconfirmed > 0) &&
+        (hasBoarding || hasPreconfirmed) &&
         !settlingRef.current &&
         Date.now() > settleCooldownUntil.current;
 
       if (shouldSettle) {
         settlingRef.current = true;
-        const label = bal.onchainConfirmed >= 1000
-          ? `${bal.onchainConfirmed} boarding sats + ${bal.preconfirmed} preconfirmed`
-          : `${bal.preconfirmed} preconfirmed sats`;
-        console.log(`[wallet] Auto-settling ${label}...`);
         try {
-          const txid = await settleAll(w);
-          console.log("[wallet] Auto-settle complete, txid:", txid);
-          settleCooldownUntil.current = 0; // Reset cooldown on success
+          if (hasBoarding && !hasPreconfirmed) {
+            // Only boarding UTXOs — use settleVtxos() which targets only boarding inputs
+            // This avoids minExpiryGap errors from mixing with existing VTXOs
+            console.log(`[wallet] Auto-settling ${bal.onchainConfirmed} boarding sats...`);
+            const txid = await settleVtxos(w);
+            console.log("[wallet] Boarding settle complete, txid:", txid);
+          } else {
+            // Preconfirmed VTXOs present (possibly + boarding) — use settleAll()
+            const label = hasBoarding
+              ? `${bal.onchainConfirmed} boarding + ${bal.preconfirmed} preconfirmed`
+              : `${bal.preconfirmed} preconfirmed sats`;
+            console.log(`[wallet] Auto-settling ${label}...`);
+            const txid = await settleAll(w);
+            console.log("[wallet] Auto-settle complete, txid:", txid);
+          }
+          settleCooldownUntil.current = 0;
           const newBal = await getBalance(w);
           useAppStore.getState().setBalance(newBal);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          // Suppress expected errors, only log unexpected ones
           if (/minExpiryGap|expires after|no vtxos|nothing to settle/i.test(msg)) {
             console.debug("[wallet] Auto-settle skipped:", msg.slice(0, 80));
           } else {
             console.warn("[wallet] Auto-settle failed:", msg);
           }
-          // Back off for 5 minutes after any failure
           settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
         } finally {
           settlingRef.current = false;
+        }
+      }
+      // VTXO auto-renewal: renew VTXOs approaching expiry (separate from regular settle)
+      if (!renewingRef.current && !settlingRef.current && Date.now() > settleCooldownUntil.current) {
+        // Recompute threshold every 30 minutes (not on every refresh)
+        const THRESHOLD_TTL = 30 * 60 * 1000;
+        if (!renewalThresholdRef.current || Date.now() - renewalThresholdComputedAt.current > THRESHOLD_TTL) {
+          try {
+            renewalThresholdRef.current = await computeRenewalThreshold(w);
+            renewalThresholdComputedAt.current = Date.now();
+          } catch {
+            // Fall back to default (3 days) — computeRenewalThreshold handles this internally
+          }
+        }
+
+        try {
+          const { getVtxosNeedingRenewal } = await import("@/lib/ark-wallet");
+          const expiring = await getVtxosNeedingRenewal(w, renewalThresholdRef.current ?? undefined);
+          if (expiring.length > 0) {
+            renewingRef.current = true;
+            console.log("[wallet] %d VTXOs need renewal, starting...", expiring.length);
+            try {
+              const txid = await renewVtxos(w, renewalThresholdRef.current ?? undefined);
+              if (txid) {
+                console.log("[wallet] VTXO renewal complete, txid:", txid);
+                const newBal = await getBalance(w);
+                useAppStore.getState().setBalance(newBal);
+              }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              if (/minExpiryGap|expires after|no vtxos|nothing to settle/i.test(msg)) {
+                console.debug("[wallet] Renewal skipped:", msg.slice(0, 80));
+              } else {
+                console.warn("[wallet] VTXO renewal failed:", msg);
+                settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
+              }
+            } finally {
+              renewingRef.current = false;
+            }
+          }
+        } catch (e) {
+          console.warn("[wallet] Renewal check failed:", e);
         }
       }
     } catch (e) {

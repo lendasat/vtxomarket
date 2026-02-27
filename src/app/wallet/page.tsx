@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
-import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, ONCHAIN_FEE_SATS } from "@/lib/ark-wallet";
+import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, estimateCollaborativeExitFee } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
 import {
@@ -121,6 +121,7 @@ export default function WalletPage() {
   const [sendLoading, setSendLoading] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [sendError, setSendError] = useState("");
+  const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
 
   // Lightning receive state
   const [lnReceiveAmount, setLnReceiveAmount] = useState("");
@@ -160,6 +161,20 @@ export default function WalletPage() {
     setBalance(bal);
     setAddresses(addrs);
   }, [arkWallet, setBalance, setAddresses]);
+
+  // Dynamic fee estimation for on-chain sends
+  useEffect(() => {
+    if (tab !== "onchain" || !sendAmount || parseInt(sendAmount, 10) <= 0) {
+      setEstimatedFee(null);
+      return;
+    }
+    let cancelled = false;
+    // Estimate with 1 input, 2 outputs (recipient + change) as a reasonable default
+    estimateCollaborativeExitFee(1, 2).then((fee) => {
+      if (!cancelled) setEstimatedFee(fee);
+    });
+    return () => { cancelled = true; };
+  }, [tab, sendAmount]);
 
   const loadHistory = useCallback(async () => {
     if (!arkWallet) return;
@@ -649,9 +664,9 @@ export default function WalletPage() {
                                 </button>
                               )}
                             </div>
-                            {tab === "onchain" && sendAmount && parseInt(sendAmount) > 0 && (
+                            {tab === "onchain" && sendAmount && parseInt(sendAmount) > 0 && estimatedFee !== null && (
                               <p className="text-[11px] text-muted-foreground/40">
-                                Network fee: {ONCHAIN_FEE_SATS} sats &middot; Total: {(parseInt(sendAmount) + ONCHAIN_FEE_SATS).toLocaleString()} sats
+                                Est. fee: ~{estimatedFee} sats &middot; Total: ~{(parseInt(sendAmount) + estimatedFee).toLocaleString()} sats
                               </p>
                             )}
                             {sendError && <p className="text-xs text-red-400/80">{sendError}</p>}

@@ -7,8 +7,12 @@ import {
   getLightningFees,
   calcSendFee as calcSendFeeFn,
   calcReceiveFee as calcReceiveFeeFn,
+  getSwapHistory as getSwapHistoryFn,
+  refundSwap as refundSwapFn,
+  restoreSwaps,
   type FeesResponse,
   type PendingReverseSwap,
+  type SwapHistoryItem,
 } from "@/lib/lightning";
 
 export function useLightning() {
@@ -37,6 +41,8 @@ export function useLightning() {
           setFees(f);
           setReady(true);
         }
+        // Restore any pending swaps from Boltz API (non-blocking)
+        restoreSwaps(ln).catch(() => {});
       })
       .catch((err) => {
         console.error("[lightning] init failed:", err);
@@ -93,6 +99,24 @@ export function useLightning() {
     []
   );
 
+  const getSwapHistory = useCallback(
+    async (): Promise<SwapHistoryItem[]> => {
+      const ln = lightningRef.current;
+      if (!ln) return [];
+      return getSwapHistoryFn(ln);
+    },
+    []
+  );
+
+  const refundSwap = useCallback(
+    async (swapId: string): Promise<void> => {
+      const ln = lightningRef.current;
+      if (!ln) throw new Error("Lightning not ready");
+      await refundSwapFn(ln, swapId);
+    },
+    []
+  );
+
   return {
     ready,
     fees,
@@ -101,5 +125,7 @@ export function useLightning() {
     sendLightning,
     receiveLightning,
     waitForReceive,
+    getSwapHistory,
+    refundSwap,
   };
 }
