@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
-import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, estimateCollaborativeExitFee } from "@/lib/ark-wallet";
+import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, getAspOnchainFee } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
 import {
@@ -162,19 +162,18 @@ export default function WalletPage() {
     setAddresses(addrs);
   }, [arkWallet, setBalance, setAddresses]);
 
-  // Dynamic fee estimation for on-chain sends
+  // Fetch ASP's onchain output fee (flat service fee, not mining fee)
   useEffect(() => {
-    if (tab !== "onchain" || !sendAmount || parseInt(sendAmount, 10) <= 0) {
+    if (tab !== "onchain") {
       setEstimatedFee(null);
       return;
     }
     let cancelled = false;
-    // Estimate with 1 input, 2 outputs (recipient + change) as a reasonable default
-    estimateCollaborativeExitFee(1, 2).then((fee) => {
+    getAspOnchainFee().then((fee) => {
       if (!cancelled) setEstimatedFee(fee);
     });
     return () => { cancelled = true; };
-  }, [tab, sendAmount]);
+  }, [tab]);
 
   const loadHistory = useCallback(async () => {
     if (!arkWallet) return;
@@ -666,7 +665,7 @@ export default function WalletPage() {
                             </div>
                             {tab === "onchain" && sendAmount && parseInt(sendAmount) > 0 && estimatedFee !== null && (
                               <p className="text-[11px] text-muted-foreground/40">
-                                Est. fee: ~{estimatedFee} sats &middot; Total: ~{(parseInt(sendAmount) + estimatedFee).toLocaleString()} sats
+                                Network fee: {estimatedFee} sats &middot; Total: {(parseInt(sendAmount) + estimatedFee).toLocaleString()} sats
                               </p>
                             )}
                             {sendError && <p className="text-xs text-red-400/80">{sendError}</p>}

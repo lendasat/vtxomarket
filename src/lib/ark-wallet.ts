@@ -8,57 +8,39 @@ export type ArkWallet = any;
 export const ARK_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 
-// Fallback fee if Esplora is unreachable
-const FALLBACK_FEE_SATS = 500;
-const MIN_FEE_RATE = 1; // sat/vbyte minimum (matches Arkade SDK)
+// Fallback fee if ASP info is unreachable
+const FALLBACK_ONCHAIN_FEE = 200;
 
-// -- Dynamic fee estimation --
+// -- ASP fee fetching --
+
+// Cache the ASP's onchain output fee (refreshed every 10 minutes)
+let _cachedAspFee: number | null = null;
+let _aspFeeFetchedAt = 0;
+const ASP_FEE_TTL = 10 * 60 * 1000;
 
 /**
- * Fetch the recommended fee rate from Esplora.
- * Targets next-block confirmation (key "1"), same as Arkade SDK.
- * Falls back to a conservative 2 sat/vbyte if unavailable.
+ * Get the ASP's collaborative exit fee (per on-chain output).
+ * The ASP defines this via CEL expressions in its fee config.
+ * The ASP pays mining fees — the user only pays this service fee.
  */
-export async function getFeeRate(): Promise<number> {
-  try {
-    const resp = await fetch(`${ESPLORA_URL}/fee-estimates`);
-    if (!resp.ok) return 2;
-    const fees = await resp.json() as Record<string, number>;
-    // Next-block target (key "1"), fallback to "6" (half-hour), then default
-    const rate = fees["1"] ?? fees["6"] ?? 2;
-    return Math.max(rate, MIN_FEE_RATE);
-  } catch {
-    return 2;
+export async function getAspOnchainFee(): Promise<number> {
+  if (_cachedAspFee !== null && Date.now() - _aspFeeFetchedAt < ASP_FEE_TTL) {
+    return _cachedAspFee;
   }
-}
-
-/**
- * Estimate the on-chain fee for a collaborative exit transaction.
- * Uses simplified vbyte estimation matching the Arkade SDK's TxWeightEstimator logic:
- * - Base tx: 10 bytes (version + locktime)
- * - VarInt for input/output counts: ~1 byte each
- * - Each P2TR (taproot key-spend) input: ~57.5 vbytes (41 non-witness + 66 witness / 4)
- * - Each P2TR output: ~43 vbytes (9 base + 34 script)
- * - Witness header: 0.5 vbytes
- */
-export async function estimateCollaborativeExitFee(
-  numInputs: number,
-  numOutputs: number,
-): Promise<number> {
-  const feeRate = await getFeeRate();
-
-  // Simplified vbyte calculation (taproot key-spend inputs, taproot outputs)
-  const baseTx = 10.5; // version(4) + locktime(4) + witness header(0.5) + varints(2)
-  const inputVbytes = 57.5 * numInputs; // 41 non-witness + 66 witness bytes / 4
-  const outputVbytes = 43 * numOutputs; // 9 base + 34 P2TR script
-  const totalVbytes = Math.ceil(baseTx + inputVbytes + outputVbytes);
-
-  const fee = Math.ceil(totalVbytes * feeRate);
-  console.log(
-    "[ark] Fee estimate: %d inputs, %d outputs, %d vbytes, %d sat/vB = %d sats",
-    numInputs, numOutputs, totalVbytes, feeRate, fee
-  );
-  return Math.max(fee, FALLBACK_FEE_SATS > fee ? fee : fee); // never below calculated
+  try {
+    const resp = await fetch(`${ARK_SERVER_URL}/v1/info`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) return _cachedAspFee ?? FALLBACK_ONCHAIN_FEE;
+    const info = await resp.json();
+    const feeExpr = info.fees?.intentFee?.onchainOutput;
+    const fee = feeExpr ? Math.ceil(parseFloat(feeExpr)) : FALLBACK_ONCHAIN_FEE;
+    _cachedAspFee = fee;
+    _aspFeeFetchedAt = Date.now();
+    return fee;
+  } catch {
+    return _cachedAspFee ?? FALLBACK_ONCHAIN_FEE;
+  }
 }
 
 // VTXO renewal: default 3 days before expiry (matches Arkade SDK default)
@@ -163,47 +145,30 @@ export function isBtcAddress(addr: string): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function sendPayment(wallet: any, address: string, amountSats: number): Promise<string> {
   if (isBtcAddress(address)) {
-    // First pass: estimate inputs needed with a rough fee to determine tx shape
+    // Get the ASP's flat service fee for on-chain outputs
+    const fee = await getAspOnchainFee();
+    const totalNeeded = amountSats + fee;
+
     const vtxos = await wallet.getVtxos();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sorted = [...vtxos].sort((a: any, b: any) => (a.virtualStatus.batchExpiry ?? 0) - (b.virtualStatus.batchExpiry ?? 0));
 
-    // Iterative fee estimation (matches Arkade SDK's approach, up to 5 rounds)
-    let fee = FALLBACK_FEE_SATS; // start with a rough estimate
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let selected: any[] = [];
+    const selected: any[] = [];
     let total = 0;
-
-    for (let i = 0; i < 5; i++) {
-      const totalNeeded = amountSats + fee;
-      selected = [];
-      total = 0;
-      for (const v of sorted) {
-        selected.push(v);
-        total += v.value;
-        if (total >= totalNeeded) break;
-      }
-      if (total < totalNeeded) {
-        throw new Error(`Insufficient balance: need ${totalNeeded} sats (${amountSats} + ${fee} fee), have ${total}`);
-      }
-
-      // Determine output count: 1 for recipient + 1 for change (if any)
-      const change = total - totalNeeded;
-      const numOutputs = change > 0 ? 2 : 1;
-      const newFee = await estimateCollaborativeExitFee(selected.length, numOutputs);
-
-      // Converged if fee didn't increase
-      if (newFee <= fee) {
-        fee = newFee;
-        break;
-      }
-      fee = newFee;
+    for (const v of sorted) {
+      selected.push(v);
+      total += v.value;
+      if (total >= totalNeeded) break;
+    }
+    if (total < totalNeeded) {
+      throw new Error(`Insufficient balance: need ${totalNeeded} sats (${amountSats} + ${fee} fee), have ${total}`);
     }
 
     const outputs: { address: string; amount: bigint }[] = [
       { address, amount: BigInt(amountSats) },
     ];
-    const change = total - amountSats - fee;
+    const change = total - totalNeeded;
     if (change > 0) {
       const changeAddr = await wallet.getAddress();
       outputs.push({ address: changeAddr, amount: BigInt(change) });
@@ -439,15 +404,39 @@ export async function finalizePending(wallet: any): Promise<{ finalized: string[
 const SETTLE_TIMEOUT = 60_000; // 60s max wait for a round
 
 /**
- * Settle ALL preconfirmed VTXOs (and boarding UTXOs) into an on-chain round.
- * Calls wallet.settle() with NO params, which collects everything and joins
- * the next Ark server round. This is a blocking call — it waits for the
- * server to run a round, so we wrap it with a timeout.
+ * Settle boarding UTXOs + preconfirmed VTXOs into the next Ark round.
+ * Does NOT include settled VTXOs with long expiry — the ASP rejects those
+ * with minExpiryGap errors. Only grabs what actually needs settling.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function settleAll(wallet: any): Promise<string> {
+  // Collect confirmed boarding UTXOs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+
+  // Collect preconfirmed VTXOs only (NOT settled ones — those have long expiry)
+  const vtxos = await wallet.getVtxos({ withRecoverable: false });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const preconfirmed = vtxos.filter((v: any) => v.virtualStatus?.state === "preconfirmed");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inputs: any[] = [...boardingUtxos, ...preconfirmed];
+  if (inputs.length === 0) throw new Error("Nothing to settle");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const total = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
+  if (total < MIN_SETTLE_SATS) {
+    throw new Error(`Balance too low to settle: ${total} sats (need >= ${MIN_SETTLE_SATS})`);
+  }
+
+  const arkAddress = await wallet.getAddress();
+  console.log("[settleAll] %d boarding + %d preconfirmed = %d sats", boardingUtxos.length, preconfirmed.length, total);
+
   const settlePromise = wallet.settle(
-    undefined,
+    {
+      inputs,
+      outputs: [{ address: arkAddress, amount: BigInt(total) }],
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (event: any) => console.log("[settleAll]", event),
   );
