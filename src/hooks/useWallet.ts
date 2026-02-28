@@ -117,7 +117,7 @@ export function useWallet() {
     const w = useAppStore.getState().arkWallet;
     if (!w) return;
     try {
-      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, settleAll, getAssets, renewVtxos, computeRenewalThreshold } = await import("@/lib/ark-wallet");
+      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, getAssets, renewVtxos, computeRenewalThreshold } = await import("@/lib/ark-wallet");
       const [bal, addrs] = await Promise.all([
         getBalance(w),
         getReceivingAddresses(w),
@@ -147,32 +147,22 @@ export function useWallet() {
         console.warn("[wallet] Finalize pending failed:", e instanceof Error ? e.message : e);
       }
 
-      // Auto-settle: roll boarding UTXOs and/or preconfirmed VTXOs into the next round
+      // Auto-settle: roll confirmed boarding UTXOs into the Ark round.
+      // Only boarding UTXOs are settled here — preconfirmed VTXOs are included
+      // in the next round automatically by the ASP (every ~60s sessionDuration).
+      // We NEVER mix boarding with existing VTXOs to avoid minExpiryGap rejections.
       const hasBoarding = bal.onchainConfirmed >= 1000;
-      const hasPreconfirmed = bal.preconfirmed > 0;
       const shouldSettle =
-        (hasBoarding || hasPreconfirmed) &&
+        hasBoarding &&
         !settlingRef.current &&
         Date.now() > settleCooldownUntil.current;
 
       if (shouldSettle) {
         settlingRef.current = true;
         try {
-          if (hasBoarding && !hasPreconfirmed) {
-            // Only boarding UTXOs — use settleVtxos() which targets only boarding inputs
-            // This avoids minExpiryGap errors from mixing with existing VTXOs
-            console.log(`[wallet] Auto-settling ${bal.onchainConfirmed} boarding sats...`);
-            const txid = await settleVtxos(w);
-            console.log("[wallet] Boarding settle complete, txid:", txid);
-          } else {
-            // Preconfirmed VTXOs present (possibly + boarding) — use settleAll()
-            const label = hasBoarding
-              ? `${bal.onchainConfirmed} boarding + ${bal.preconfirmed} preconfirmed`
-              : `${bal.preconfirmed} preconfirmed sats`;
-            console.log(`[wallet] Auto-settling ${label}...`);
-            const txid = await settleAll(w);
-            console.log("[wallet] Auto-settle complete, txid:", txid);
-          }
+          console.log(`[wallet] Auto-settling ${bal.onchainConfirmed} boarding sats...`);
+          const txid = await settleVtxos(w);
+          console.log("[wallet] Boarding settle complete, txid:", txid);
           settleCooldownUntil.current = 0;
           const newBal = await getBalance(w);
           useAppStore.getState().setBalance(newBal);
@@ -180,10 +170,15 @@ export function useWallet() {
           const msg = e instanceof Error ? e.message : String(e);
           if (/minExpiryGap|expires after|no vtxos|nothing to settle/i.test(msg)) {
             console.debug("[wallet] Auto-settle skipped:", msg.slice(0, 80));
+            settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
+          } else if (/timed out/i.test(msg)) {
+            // Timeout just means we missed this round — retry soon
+            console.warn("[wallet] Auto-settle timed out, will retry next cycle");
+            settleCooldownUntil.current = Date.now() + 30_000;
           } else {
             console.warn("[wallet] Auto-settle failed:", msg);
+            settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
           }
-          settleCooldownUntil.current = Date.now() + 5 * 60 * 1000;
         } finally {
           settlingRef.current = false;
         }

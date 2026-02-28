@@ -788,8 +788,8 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{isSent ? "Sent" : "Received"}</p>
           {!tx.settled && tx.boardingTxid && (
-            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-white/[0.05] text-muted-foreground/50 border border-white/[0.08]">
-              Pending
+            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/[0.06] text-orange-400/60 border border-orange-500/[0.1]">
+              Settling...
             </span>
           )}
         </div>

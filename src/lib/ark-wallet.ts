@@ -11,36 +11,44 @@ const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.spac
 // Fallback fee if ASP info is unreachable
 const FALLBACK_ONCHAIN_FEE = 200;
 
-// -- ASP fee fetching --
+// -- ASP info & fee caching --
 
-// Cache the ASP's onchain output fee (refreshed every 10 minutes)
-let _cachedAspFee: number | null = null;
-let _aspFeeFetchedAt = 0;
-const ASP_FEE_TTL = 10 * 60 * 1000;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _cachedAspInfo: any | null = null;
+let _aspInfoFetchedAt = 0;
+const ASP_INFO_TTL = 10 * 60 * 1000;
 
 /**
- * Get the ASP's collaborative exit fee (per on-chain output).
- * The ASP defines this via CEL expressions in its fee config.
- * The ASP pays mining fees — the user only pays this service fee.
+ * Fetch full ASP info (fees, session config, etc).
+ * Cached for 10 minutes. Used by both fee display and Ramps operations.
  */
-export async function getAspOnchainFee(): Promise<number> {
-  if (_cachedAspFee !== null && Date.now() - _aspFeeFetchedAt < ASP_FEE_TTL) {
-    return _cachedAspFee;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getAspInfo(): Promise<any> {
+  if (_cachedAspInfo && Date.now() - _aspInfoFetchedAt < ASP_INFO_TTL) {
+    return _cachedAspInfo;
   }
   try {
     const resp = await fetch(`${ARK_SERVER_URL}/v1/info`, {
       signal: AbortSignal.timeout(10_000),
     });
-    if (!resp.ok) return _cachedAspFee ?? FALLBACK_ONCHAIN_FEE;
+    if (!resp.ok) return _cachedAspInfo;
     const info = await resp.json();
-    const feeExpr = info.fees?.intentFee?.onchainOutput;
-    const fee = feeExpr ? Math.ceil(parseFloat(feeExpr)) : FALLBACK_ONCHAIN_FEE;
-    _cachedAspFee = fee;
-    _aspFeeFetchedAt = Date.now();
-    return fee;
+    _cachedAspInfo = info;
+    _aspInfoFetchedAt = Date.now();
+    return info;
   } catch {
-    return _cachedAspFee ?? FALLBACK_ONCHAIN_FEE;
+    return _cachedAspInfo;
   }
+}
+
+/**
+ * Get the ASP's collaborative exit fee (per on-chain output) for UI display.
+ * The ASP pays mining fees — the user only pays this service fee.
+ */
+export async function getAspOnchainFee(): Promise<number> {
+  const info = await getAspInfo();
+  const feeExpr = info?.fees?.intentFee?.onchainOutput;
+  return feeExpr ? Math.ceil(parseFloat(feeExpr)) : FALLBACK_ONCHAIN_FEE;
 }
 
 // VTXO renewal: default 3 days before expiry (matches Arkade SDK default)
@@ -142,46 +150,80 @@ export function isBtcAddress(addr: string): boolean {
   );
 }
 
+/**
+ * Collaborative exit: send sats to an on-chain Bitcoin address via Ramps.offboard().
+ * Uses the SDK's official method which properly handles fee deduction via CEL expressions.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function collaborativeExit(wallet: any, address: string, amountSats: number): Promise<string> {
+  const { Ramps } = await getSDK();
+  const ramps = new Ramps(wallet);
+  const info = await wallet.arkProvider.getInfo();
+
+  console.log("[ark] Collaborative exit: %d sats to %s", amountSats, address.slice(0, 12));
+
+  // Ramps.offboard() handles coin selection, fee deduction (per-input + per-output),
+  // and calls wallet.settle() with the correct inputs/outputs.
+  // The `amount` param is the PRE-fee amount — offboard deducts the output fee internally.
+  // So the recipient receives (amountSats - outputFee). To send exactly amountSats,
+  // we need to add the output fee ourselves.
+  const fee = await getAspOnchainFee();
+  const txid = await ramps.offboard(
+    address,
+    info.fees,
+    BigInt(amountSats + fee), // offboard deducts outputFee internally → recipient gets ~amountSats
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (event: any) => console.log("[collaborative-exit]", event),
+  );
+  return txid;
+}
+
+/**
+ * Compute the actual wait time from VTXO expiry data and the minExpiryGap error.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function computeMinExpiryWait(wallet: any, errorMsg: string): Promise<number> {
+  // Parse minExpiryGap from error (e.g., "695h53m36s")
+  const hoursMatch = errorMsg.match(/minExpiryGap:\s*(\d+)h/);
+  const gapHours = hoursMatch ? parseInt(hoursMatch[1], 10) : 0;
+  if (!gapHours) return 24; // fallback
+
+  // Get the earliest VTXO expiry to compute actual wait
+  try {
+    const vtxos = await wallet.getVtxos();
+    if (vtxos.length === 0) return 24;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const earliestExpiry = Math.min(...vtxos.map((v: any) => v.virtualStatus?.batchExpiry ?? Infinity));
+    if (!earliestExpiry || earliestExpiry === Infinity) return 24;
+
+    const expiresInHours = (earliestExpiry * 1000 - Date.now()) / (3600 * 1000);
+    const waitHours = Math.max(1, Math.ceil(expiresInHours - gapHours));
+    return waitHours;
+  } catch {
+    return 24;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function sendPayment(wallet: any, address: string, amountSats: number): Promise<string> {
   if (isBtcAddress(address)) {
-    // Get the ASP's flat service fee for on-chain outputs
-    const fee = await getAspOnchainFee();
-    const totalNeeded = amountSats + fee;
-
-    const vtxos = await wallet.getVtxos();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sorted = [...vtxos].sort((a: any, b: any) => (a.virtualStatus.batchExpiry ?? 0) - (b.virtualStatus.batchExpiry ?? 0));
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const selected: any[] = [];
-    let total = 0;
-    for (const v of sorted) {
-      selected.push(v);
-      total += v.value;
-      if (total >= totalNeeded) break;
+    try {
+      return await collaborativeExit(wallet, address, amountSats);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // The ASP enforces a minExpiryGap: recently-settled VTXOs (with nearly
+      // full expiry) cannot participate in a new round until they age past
+      // the threshold. Compute actual wait time and show a clear message.
+      if (msg.includes("minExpiryGap")) {
+        const waitHours = await computeMinExpiryWait(wallet, msg);
+        throw new Error(
+          `On-chain sends are temporarily unavailable — your funds were recently settled ` +
+          `and the server requires ~${waitHours}h of aging before they can be spent on-chain. ` +
+          `You can send via Lightning or Ark (off-chain) in the meantime.`
+        );
+      }
+      throw err;
     }
-    if (total < totalNeeded) {
-      throw new Error(`Insufficient balance: need ${totalNeeded} sats (${amountSats} + ${fee} fee), have ${total}`);
-    }
-
-    const outputs: { address: string; amount: bigint }[] = [
-      { address, amount: BigInt(amountSats) },
-    ];
-    const change = total - totalNeeded;
-    if (change > 0) {
-      const changeAddr = await wallet.getAddress();
-      outputs.push({ address: changeAddr, amount: BigInt(change) });
-    }
-
-    console.log("[ark] Collaborative exit: %d sats to %s, fee %d sats, %d inputs", amountSats, address.slice(0, 12), fee, selected.length);
-
-    const txid = await wallet.settle(
-      { inputs: selected, outputs },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (event: any) => console.log("[collaborative-exit]", event)
-    );
-    return txid;
   }
 
   const txid = await wallet.sendBitcoin({ address, amount: amountSats });
@@ -375,21 +417,31 @@ const MIN_SETTLE_SATS = 1_000;
 export async function settleVtxos(wallet: any): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+  if (boardingUtxos.length === 0) throw new Error("No confirmed UTXOs to settle");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const inputs: any[] = [...boardingUtxos];
-  if (inputs.length === 0) throw new Error("No confirmed UTXOs to settle");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const total = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
+  const total = boardingUtxos.reduce((sum: number, u: any) => sum + u.value, 0);
   if (total < MIN_SETTLE_SATS) {
     throw new Error(`Boarding balance too low to settle: ${total} sats (need >= ${MIN_SETTLE_SATS})`);
   }
 
-  // Use settle() without explicit outputs — let the SDK handle fee deduction
-  // and route all funds to our off-chain address automatically
-  const txid = await wallet.settle(
-    { inputs },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (event: any) => console.log("[settle]", event)
+  console.log("[settleVtxos] %d boarding UTXOs = %d sats", boardingUtxos.length, total);
+
+  // Use SDK's Ramps.onboard() — it properly handles fee deduction via the
+  // Estimator (CEL expressions) and filters out UTXOs where fee >= value.
+  const { Ramps } = await getSDK();
+  const ramps = new Ramps(wallet);
+  const info = await wallet.arkProvider.getInfo();
+
+  const txid = await withTimeout(
+    ramps.onboard(
+      info.fees,
+      boardingUtxos,
+      undefined, // onboard full amount
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (event: any) => console.log("[onboard]", event),
+    ),
+    SETTLE_TIMEOUT,
+    "settleVtxos (onboard)",
   );
   return txid;
 }
