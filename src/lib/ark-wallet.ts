@@ -59,8 +59,21 @@ let _sdk: typeof import("@arkade-os/sdk") | null = null;
 async function getSDK() {
   if (!_sdk) {
     _sdk = await import("@arkade-os/sdk");
+    await registerArkadeOpcodes();
   }
   return _sdk;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const result = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return result;
 }
 
 const WALLET_CONNECT_TIMEOUT = 30_000;
@@ -520,6 +533,434 @@ export async function settleAll(wallet: any): Promise<string> {
 
   const txid = await withTimeout<string>(settlePromise, SETTLE_TIMEOUT, "settleAll");
   return txid;
+}
+
+// ── Non-interactive swap offers (Arkade Script) ──────────────────────────────
+//
+// WHY THIS IS HAND-ASSEMBLED:
+//
+// Arkade provides a high-level contract language (docs.arkadeos.com/experimental/arkade-syntax)
+// that compiles to Bitcoin Taproot scripts via the `arkadec` CLI compiler. The swap contract
+// we need looks like this in Arkade Script:
+//
+//   contract Swap(pubkey maker, int amount, int expiryTime) {
+//     function swap(sig takerSig, pubkey taker) {
+//       require(tx.outputs[0].value >= amount);
+//       require(tx.outputs[0].scriptPubKey == new P2PKH(maker));
+//       require(checkSig(takerSig, taker));
+//     }
+//     function cancel(sig makerSig) {
+//       require(tx.time >= expiryTime);
+//       require(checkSig(makerSig, maker));
+//     }
+//   }
+//
+// However, the compiler (`arkadec`) is currently a CLI-only tool — there is no TypeScript API
+// to compile contracts at runtime. The compiler translates `tx.outputs[0].value` into the
+// OP_INSPECTOUTPUTVALUE (0xCF) opcode, etc., but we can't call it from the browser.
+//
+// Additionally, the SDK's `VtxoScript` constructor calls `@scure/btc-signer`'s `p2tr()`,
+// which internally runs `Script.decode()` on the leaf bytes. That parser doesn't recognise
+// Arkade's custom OP_SUCCESS opcodes (0xCF, 0xD1, 0xDF) and throws "Unknown opcode=cf".
+//
+// So we:
+//   1. Hand-assemble the swap leaf bytes (the same output `arkadec` would produce)
+//   2. Build the Taproot tree manually using low-level crypto primitives (tapLeafHash,
+//      taprootTweakPubkey) instead of going through VtxoScript/p2tr
+//
+// DEPRECATION: Once the Arkade compiler is available as a TypeScript library, this entire
+// section (opcode constants, manual byte assembly, manual taproot tree construction) should
+// be replaced with:
+//   const compiled = arkadec.compile(swapContract, { maker, amount, expiryTime });
+//   const vtxoScript = new VtxoScript(compiled.scripts);
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Arkade introspection opcodes — confirmed at docs.arkadeos.com/experimental/arkade-script
+// These map to the OP_SUCCESS range in Tapscript (BIP 342). Standard Bitcoin nodes treat them
+// as unconditional success; the Arkade ASP's custom interpreter actually evaluates them.
+// @deprecated — remove when arkadec TypeScript compiler is available
+const OP_INSPECTOUTPUTVALUE        = 0xCF; // OP_SUCCESS207 — push output[i].value as 8-byte LE64
+const OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xD1; // OP_SUCCESS209 — push output[i].scriptPubKey (34 bytes P2TR)
+const OP_GREATERTHANOREQUAL64      = 0xDF; // OP_SUCCESS223 — pop two LE64, push 1 if b >= a
+const OP_VERIFY                    = 0x69; // standard Bitcoin opcode
+const OP_EQUAL                     = 0x87; // standard Bitcoin opcode
+const OP_CHECKSIG                  = 0xAC; // standard Tapscript CHECKSIG (BIP 342)
+
+// Register Arkade opcodes with @scure/btc-signer so Script.decode() doesn't throw
+// "Unknown opcode=cf" when the SDK's VtxoScript.decode() parses our swap leaf scripts.
+// OPNames is a plain JS object (reverse map of OP) — adding entries makes Script.decode
+// return opcode name strings instead of throwing. OP entries enable Script.encode round-trip.
+// @deprecated — remove when the SDK natively handles Arkade Script opcodes
+let _arkadeOpcodesRegistered = false;
+async function registerArkadeOpcodes(): Promise<void> {
+  if (_arkadeOpcodesRegistered) return;
+  const { OP: btcOP, OPNames: btcOPNames } = await import("@scure/btc-signer/script.js");
+  const arkadeOps: Record<string, number> = {
+    OP_INSPECTINPUTVALUE:         0xCA,
+    OP_INSPECTINPUTSCRIPTPUBKEY:  0xCB,
+    OP_INSPECTINPUTASSET:         0xCC,
+    OP_INSPECTINPUTNONCE:         0xCD,
+    OP_INSPECTOUTPUTASSET:        0xCE,
+    OP_INSPECTOUTPUTVALUE:        0xCF,
+    OP_INSPECTOUTPUTNONCE:        0xD0,
+    OP_INSPECTOUTPUTSCRIPTPUBKEY: 0xD1,
+    OP_ADD64:                     0xDC,
+    OP_SUB64:                     0xDD,
+    OP_LESSTHAN64:                0xDE,
+    OP_GREATERTHANOREQUAL64:      0xDF,
+  };
+  for (const [name, byte] of Object.entries(arkadeOps)) {
+    (btcOP as Record<string, number>)[name] = byte;
+    (btcOPNames as Record<number, string>)[byte] = name;
+  }
+  _arkadeOpcodesRegistered = true;
+}
+
+// @deprecated — remove when arkadec TypeScript compiler is available
+export function encodeLE64(n: number | bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  let v = BigInt(n);
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return buf;
+}
+
+interface SwapScriptParams {
+  makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
+  makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf
+  satAmount: number;
+  expiresAt: number;             // unix seconds, CLTV absolute locktime
+}
+
+// Manual taproot tree result — replaces VtxoScript which can't handle Arkade opcodes.
+// @deprecated — replace with VtxoScript once the SDK supports custom opcodes or the
+// arkadec compiler provides a TypeScript API.
+interface SwapScriptResult {
+  leaves: [TapLeafScript, TapLeafScript]; // [swapLeaf, cancelLeaf]
+  tweakedPublicKey: Uint8Array;
+  scripts: [Uint8Array, Uint8Array];      // raw script bytes
+  encode(): Uint8Array;                   // TapTree serialization for wallet.settle
+  address(prefix: string, serverPubKey: Uint8Array): ArkAddress;
+}
+
+type TapLeafScript = [
+  { version: number; internalKey: Uint8Array; merklePath: Uint8Array[] },
+  Uint8Array,
+];
+type ArkAddress = { encode(): string };
+
+/**
+ * Build a 2-leaf taproot script for non-interactive swap.
+ *
+ * This is the hand-assembled equivalent of what the Arkade compiler (`arkadec`) would
+ * produce from the Swap contract above. We construct the swap leaf as raw bytes because
+ * @scure/btc-signer's Script.encode/decode doesn't support the Arkade opcodes, and we
+ * build the taproot tree manually because VtxoScript's constructor calls p2tr() which
+ * internally validates scripts through Script.decode().
+ *
+ * @deprecated — replace with arkadec TypeScript compiler when available
+ */
+async function buildSwapScript(params: SwapScriptParams): Promise<SwapScriptResult> {
+  const sdk = await getSDK();
+  const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
+  const btc = await import("@scure/btc-signer");
+  const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
+  const { makerPkScript, makerXOnlyPubkey, satAmount, expiresAt } = params;
+
+  const satAmountLE64 = encodeLE64(satAmount);
+
+  // ── Swap leaf (hand-assembled) ──────────────────────────────────────────
+  // This is what `arkadec` would compile from:
+  //   function swap(sig takerSig, pubkey taker) {
+  //     require(tx.outputs[0].value >= amount);         → OP_0 OP_INSPECTOUTPUTVALUE <amount> OP_GTE64 OP_VERIFY
+  //     require(tx.outputs[0].scriptPubKey == maker);   → OP_0 OP_INSPECTOUTPUTSCRIPTPUBKEY <pkScript> OP_EQUAL OP_VERIFY
+  //     require(checkSig(takerSig, taker));             → OP_CHECKSIG
+  //   }
+  const swapLeafBytes = new Uint8Array([
+    0x00,                            // OP_0 — push output index 0
+    OP_INSPECTOUTPUTVALUE,           // 0xCF — pushes output[0].value as 8-byte LE64 onto stack
+    0x08,                            // push next 8 bytes (the required sat amount)
+    ...satAmountLE64,                // required sat amount as 8-byte little-endian
+    OP_GREATERTHANOREQUAL64,         // 0xDF — pops two LE64 values, pushes 1 if output >= required
+    OP_VERIFY,                       // 0x69 — abort if top of stack is not truthy
+    0x00,                            // OP_0 — push output index 0
+    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // 0xD1 — pushes output[0].scriptPubKey (34 bytes P2TR)
+    0x22,                            // push next 34 bytes (the maker's P2TR scriptPubKey)
+    ...makerPkScript,                // maker's P2TR scriptPubKey (0x5120 + 32-byte x-only pubkey)
+    OP_EQUAL,                        // 0x87 — check that the output goes to the maker
+    OP_VERIFY,                       // 0x69 — abort if not equal
+    OP_CHECKSIG,                     // 0xAC — taker provides [sig, pubkey] in witness; sig binds
+                                     //        to the full transaction, preventing front-running
+  ]);
+
+  // ── Cancel leaf (standard Bitcoin opcodes — can use Script.encode) ─────
+  // This is what `arkadec` would compile from:
+  //   function cancel(sig makerSig) {
+  //     require(tx.time >= expiryTime);       → <expiryTime> CHECKLOCKTIMEVERIFY DROP
+  //     require(checkSig(makerSig, maker));   → <makerPubkey> CHECKSIG
+  //   }
+  const cancelLeafBytes = btc.Script.encode([
+    expiresAt,
+    "CHECKLOCKTIMEVERIFY",
+    "DROP",
+    makerXOnlyPubkey,
+    "CHECKSIG",
+  ]);
+
+  // ── Manual taproot tree construction ────────────────────────────────────
+  // We can't use `new VtxoScript([swapLeaf, cancelLeaf])` because its constructor
+  // calls `p2tr()` → `taprootHashTree()` → `checkTaprootScript()` → `Script.decode()`
+  // which throws "Unknown opcode=cf" on the Arkade opcodes.
+  //
+  // Instead we compute the taproot tree directly:
+  //   1. tapLeafHash — just a tagged SHA256, doesn't parse opcodes
+  //   2. tapBranchHash — tagged SHA256 of sorted leaf hashes
+  //   3. taprootTweakPubkey — tweaks the unspendable internal key with the merkle root
+  //
+  // @deprecated — replace with `new VtxoScript(scripts)` once the SDK supports custom opcodes
+
+  const scripts: [Uint8Array, Uint8Array] = [swapLeafBytes, cancelLeafBytes];
+  const version = TAP_LEAF_VERSION; // 0xC0
+  const internalKey = TAPROOT_UNSPENDABLE_KEY;
+
+  const leafHash0 = tapLeafHash(swapLeafBytes, version);
+  const leafHash1 = tapLeafHash(cancelLeafBytes, version);
+
+  let [lH, rH] = [leafHash0, leafHash1];
+  if (compareBytes(rH, lH) === -1) [lH, rH] = [rH, lH];
+  const branchHash = tagSchnorr("TapBranch", lH, rH);
+
+  const [tweakedPubkey, parity] = taprootTweakPubkey(internalKey, branchHash);
+
+  const leaf0: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash1] },
+    concatBytes(swapLeafBytes, new Uint8Array([version])),
+  ];
+  const leaf1: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash0] },
+    concatBytes(cancelLeafBytes, new Uint8Array([version])),
+  ];
+
+  return {
+    leaves: [leaf0, leaf1],
+    tweakedPublicKey: tweakedPubkey,
+    scripts,
+    encode(): Uint8Array {
+      return TapTreeCoder.encode(
+        scripts.map((s) => ({ depth: 1, version, script: s }))
+      );
+    },
+    address(prefix: string, serverPubKey: Uint8Array): ArkAddress {
+      return new ArkAddr(serverPubKey, tweakedPubkey, prefix);
+    },
+  };
+}
+
+/**
+ * Decode a serialized TapTree (from offer.swapScriptHex) back into a SwapScriptResult.
+ * Same manual taproot construction as buildSwapScript, same reason — bypasses VtxoScript.
+ *
+ * @deprecated — replace with `VtxoScript.decode(bytes)` once the SDK supports custom opcodes
+ */
+async function decodeSwapScript(tapTreeBytes: Uint8Array): Promise<SwapScriptResult> {
+  const sdk = await getSDK();
+  const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
+  const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
+
+  const leaves = TapTreeCoder.decode(tapTreeBytes);
+  if (leaves.length !== 2) throw new Error(`Expected 2 leaves, got ${leaves.length}`);
+
+  const scripts: [Uint8Array, Uint8Array] = [leaves[0].script, leaves[1].script];
+  const version = TAP_LEAF_VERSION;
+  const internalKey = TAPROOT_UNSPENDABLE_KEY;
+
+  const leafHash0 = tapLeafHash(scripts[0], version);
+  const leafHash1 = tapLeafHash(scripts[1], version);
+
+  let [lH, rH] = [leafHash0, leafHash1];
+  if (compareBytes(rH, lH) === -1) [lH, rH] = [rH, lH];
+  const branchHash = tagSchnorr("TapBranch", lH, rH);
+
+  const [tweakedPubkey, parity] = taprootTweakPubkey(internalKey, branchHash);
+
+  const leaf0: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash1] },
+    concatBytes(scripts[0], new Uint8Array([version])),
+  ];
+  const leaf1: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash0] },
+    concatBytes(scripts[1], new Uint8Array([version])),
+  ];
+
+  return {
+    leaves: [leaf0, leaf1],
+    tweakedPublicKey: tweakedPubkey,
+    scripts,
+    encode(): Uint8Array {
+      return TapTreeCoder.encode(
+        scripts.map((s) => ({ depth: 1, version, script: s }))
+      );
+    },
+    address(prefix: string, serverPubKey: Uint8Array): ArkAddress {
+      return new ArkAddr(serverPubKey, tweakedPubkey, prefix);
+    },
+  };
+}
+
+export interface SwapOfferParams {
+  assetId: string;
+  tokenAmount: number;
+  satAmount: number;
+  expiresInSeconds?: number;  // default 3600
+}
+
+export interface SwapOffer {
+  offerOutpoint: string;    // "txid:vout" — the swap VTXO IS the offer identity
+  assetId: string;
+  tokenAmount: number;
+  satAmount: number;
+  vtxoSatsValue: number;    // sats value of the swap VTXO (dust amount, e.g. 330)
+  makerArkAddress: string;
+  makerPkScript: string;    // hex 34 bytes
+  makerXOnlyPubkey: string; // hex 32 bytes
+  swapScriptHex: string;    // hex of VtxoScript.encode() — taker reconstructs from this
+  expiresAt: number;
+}
+
+/**
+ * Create a non-interactive swap offer by sending tokens to a swap script VTXO.
+ * The swap script encodes conditions via Arkade Script introspection opcodes.
+ * Any taker can fill by satisfying the script — no ASP coordination needed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function createSwapOffer(wallet: any, params: SwapOfferParams): Promise<SwapOffer> {
+  const { ArkAddress } = await getSDK();
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + (params.expiresInSeconds ?? 3600);
+
+  const makerArkAddress = await wallet.getAddress();
+  const decodedAddr = ArkAddress.decode(makerArkAddress);
+  const makerPkScript: Uint8Array = decodedAddr.pkScript; // 34-byte P2TR scriptPubKey
+
+  // Extract x-only pubkey from wallet identity (SingleKey.xOnlyPublicKey() is async)
+  const makerXOnlyPubkey: Uint8Array = await wallet.identity.xOnlyPublicKey();
+
+  const vtxoScript = await buildSwapScript({ makerPkScript, makerXOnlyPubkey, satAmount: params.satAmount, expiresAt });
+
+  // Derive the swap script's Ark address
+  const aspInfo = await wallet.arkProvider.getInfo();
+  const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
+  let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
+  if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1); // x-only
+  const network: string = aspInfo.network ?? "tb";
+  const swapArkAddress = vtxoScript.address(network, aspPubkeyBytes).encode();
+
+  // Transfer tokens to the swap script address (wallet handles coin selection)
+  const arkTxId = await wallet.send({
+    address: swapArkAddress,
+    amount: 0,
+    assets: [{ assetId: params.assetId, amount: params.tokenAmount }],
+  });
+
+  const offerOutpoint = `${arkTxId}:0`;
+  // The VTXO's sats value is the ASP's dust amount (e.g. 330 sats)
+  const vtxoSatsValue = Number(wallet.dustAmount ?? 330);
+
+  return {
+    offerOutpoint,
+    assetId: params.assetId,
+    tokenAmount: params.tokenAmount,
+    satAmount: params.satAmount,
+    vtxoSatsValue,
+    makerArkAddress,
+    makerPkScript: bytesToHex(makerPkScript),
+    makerXOnlyPubkey: bytesToHex(makerXOnlyPubkey),
+    swapScriptHex: bytesToHex(vtxoScript.encode()),
+    expiresAt,
+  };
+}
+
+/**
+ * Fill a swap offer as taker.
+ * Spends the swap VTXO via the introspection leaf — sends sats to maker, receives tokens.
+ * Arkade opcodes are registered in OPNames (via registerArkadeOpcodes) so the SDK's
+ * VtxoScript.decode() → p2tr() → Script.decode() chain works without throwing.
+ */
+export async function fillSwapOffer(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wallet: any,
+  offer: SwapOffer,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  eventCallback?: (event: any) => void
+): Promise<string> {
+  await registerArkadeOpcodes();
+  const vtxoScript = await decodeSwapScript(hexToBytes(offer.swapScriptHex));
+  const swapLeaf = vtxoScript.leaves[0];   // swap leaf (introspection + taker CHECKSIG)
+  const cancelLeaf = vtxoScript.leaves[1]; // cancel leaf (CLTV + maker sig)
+
+  const [txid, voutStr] = offer.offerOutpoint.split(":");
+  const vout = parseInt(voutStr, 10);
+  const vtxoSatsValue = offer.vtxoSatsValue || 330; // dust amount from offer
+
+  const swapVtxo = {
+    txid,
+    vout,
+    value: vtxoSatsValue,
+    assets: [{ assetId: offer.assetId, amount: offer.tokenAmount }],
+    tapTree: vtxoScript.encode(),
+    intentTapLeafScript: swapLeaf,    // the spend path for taker
+    forfeitTapLeafScript: cancelLeaf, // fallback for ASP
+  };
+
+  return wallet.settle(
+    {
+      inputs: [swapVtxo],
+      outputs: [{ address: offer.makerArkAddress, amount: BigInt(offer.satAmount) }],
+    },
+    eventCallback ?? ((event: unknown) => console.log("[fillSwapOffer]", event)),
+  );
+}
+
+/**
+ * Cancel a swap offer as maker (after expiry). Spends via the CLTV cancel leaf.
+ */
+export async function cancelSwapOffer(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  wallet: any,
+  offer: SwapOffer,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  eventCallback?: (event: any) => void
+): Promise<string> {
+  await registerArkadeOpcodes();
+  const vtxoScript = await decodeSwapScript(hexToBytes(offer.swapScriptHex));
+  const swapLeaf = vtxoScript.leaves[0];
+  const cancelLeaf = vtxoScript.leaves[1];
+
+  const [txid, voutStr] = offer.offerOutpoint.split(":");
+  const vout = parseInt(voutStr, 10);
+  const vtxoSatsValue = offer.vtxoSatsValue || 330;
+
+  const swapVtxo = {
+    txid,
+    vout,
+    value: vtxoSatsValue,
+    assets: [{ assetId: offer.assetId, amount: offer.tokenAmount }],
+    tapTree: vtxoScript.encode(),
+    intentTapLeafScript: cancelLeaf,  // maker uses cancel leaf
+    forfeitTapLeafScript: swapLeaf,
+  };
+
+  return wallet.settle(
+    {
+      inputs: [swapVtxo],
+      outputs: [{ address: offer.makerArkAddress, amount: BigInt(vtxoSatsValue) }],
+    },
+    eventCallback ?? ((event: unknown) => console.log("[cancelSwapOffer]", event)),
+  );
 }
 
 // -- Asset operations --

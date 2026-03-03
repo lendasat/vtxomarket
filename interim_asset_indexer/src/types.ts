@@ -33,7 +33,9 @@ export interface SpendableVtxoRef {
 
 /** Normalized transaction event — used for both arkTx and commitmentTx */
 export interface TxNotification {
+  eventType: 'arkTx' | 'commitmentTx';
   txid: string;
+  tx?: string;  // raw hex (optional, for future decoding)
   spentVtxos: Array<{ outpoint: { txid: string; vout: number } }>;
   spendableVtxos: SpendableVtxoRef[];
 }

@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
+import { useTokens } from "@/hooks/useTokens";
 import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, getAspOnchainFee } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
@@ -81,6 +82,8 @@ export default function WalletPage() {
   const setBalance = useAppStore((s) => s.setBalance);
   const setAddresses = useAppStore((s) => s.setAddresses);
   const heldAssets = useAppStore((s) => s.heldAssets);
+  // Load token metadata from Nostr (needed if user navigates here directly)
+  useTokens();
   const tokens = useAppStore((s) => s.tokens);
 
   // Map held assets to token metadata

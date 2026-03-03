@@ -46,6 +46,23 @@ export interface HolderRow {
   totalAmount: string;
 }
 
+export interface OfferRow {
+  offerOutpoint: string;    // PRIMARY KEY: "txid:vout" of the swap VTXO
+  assetId: string;
+  tokenAmount: string;
+  satAmount: string;
+  vtxoSatsValue: string;    // sats value of the swap VTXO (dust, e.g. "330")
+  makerArkAddress: string;
+  makerPkScript: string;
+  makerXOnlyPubkey: string;
+  swapScriptHex: string;
+  expiresAt: number;
+  status: 'open' | 'filled' | 'expired' | 'cancelled';
+  filledInTxid: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ── Singleton DB ───────────────────────────────────────────────────────────────
 
 let _db: Database | null = null;
@@ -110,6 +127,39 @@ function migrate(db: Database): void {
       processedAt INTEGER NOT NULL
     )
   `);
+
+  // Migrate offers table: if old schema (has intentId column), drop and recreate
+  const offerTableInfo = db.query("PRAGMA table_info(offers)").all() as { name: string }[];
+  if (offerTableInfo.length > 0 && offerTableInfo.some((col) => col.name === "intentId")) {
+    db.run("DROP TABLE IF EXISTS offers");
+    log.info("Database: dropped old offers table (intentId schema), recreating");
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS offers (
+      offerOutpoint   TEXT PRIMARY KEY,
+      assetId         TEXT NOT NULL,
+      tokenAmount     TEXT NOT NULL,
+      satAmount       TEXT NOT NULL,
+      vtxoSatsValue   TEXT NOT NULL DEFAULT '330',
+      makerArkAddress TEXT NOT NULL DEFAULT '',
+      makerPkScript   TEXT NOT NULL DEFAULT '',
+      makerXOnlyPubkey TEXT NOT NULL DEFAULT '',
+      swapScriptHex   TEXT NOT NULL DEFAULT '',
+      expiresAt       INTEGER NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'open',
+      filledInTxid    TEXT,
+      createdAt       INTEGER NOT NULL,
+      updatedAt       INTEGER NOT NULL
+    )
+  `);
+
+  // Add vtxoSatsValue column if missing (migration for existing DBs)
+  const offerCols = db.query("PRAGMA table_info(offers)").all() as { name: string }[];
+  if (!offerCols.some((col) => col.name === "vtxoSatsValue")) {
+    db.run("ALTER TABLE offers ADD COLUMN vtxoSatsValue TEXT NOT NULL DEFAULT '330'");
+    log.info("Database: added vtxoSatsValue column to offers table");
+  }
 }
 
 // ── Query helpers ──────────────────────────────────────────────────────────────
@@ -231,4 +281,96 @@ export function getStats() {
   const vtxoCount = (db.query("SELECT COUNT(*) AS n FROM vtxos").get() as { n: number }).n;
   const txCount = (db.query("SELECT COUNT(*) AS n FROM processed_txs").get() as { n: number }).n;
   return { assetCount, vtxoCount, txCount };
+}
+
+// ── Offer query helpers ─────────────────────────────────────────────────────
+
+export function upsertOffer(
+  offer: Omit<OfferRow, 'status' | 'filledInTxid' | 'createdAt' | 'updatedAt'>
+): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.run(
+    `INSERT INTO offers (offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt, status, filledInTxid, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)
+     ON CONFLICT(offerOutpoint) DO UPDATE SET
+       tokenAmount = excluded.tokenAmount,
+       satAmount = excluded.satAmount,
+       vtxoSatsValue = excluded.vtxoSatsValue,
+       makerArkAddress = excluded.makerArkAddress,
+       makerPkScript = excluded.makerPkScript,
+       makerXOnlyPubkey = excluded.makerXOnlyPubkey,
+       swapScriptHex = excluded.swapScriptHex,
+       expiresAt = excluded.expiresAt,
+       updatedAt = excluded.updatedAt`,
+    [
+      offer.offerOutpoint,
+      offer.assetId,
+      offer.tokenAmount,
+      offer.satAmount,
+      offer.vtxoSatsValue ?? '330',
+      offer.makerArkAddress,
+      offer.makerPkScript,
+      offer.makerXOnlyPubkey,
+      offer.swapScriptHex,
+      offer.expiresAt,
+      now,
+      now,
+    ]
+  );
+}
+
+/** Look up an offer by its offerOutpoint (the swap VTXO's "txid:vout") */
+export function getOffer(offerOutpoint: string): OfferRow | null {
+  const db = getDb();
+  return db.query("SELECT * FROM offers WHERE offerOutpoint = ?").get(offerOutpoint) as OfferRow | null;
+}
+
+export function getOpenOffersForAsset(assetId: string): OfferRow[] {
+  const db = getDb();
+  return db
+    .query(
+      `SELECT * FROM offers
+       WHERE assetId = ? AND status = 'open'
+       ORDER BY CAST(satAmount AS REAL) / CAST(tokenAmount AS REAL) ASC`
+    )
+    .all(assetId) as OfferRow[];
+}
+
+export function getAllOpenOffers(): OfferRow[] {
+  const db = getDb();
+  return db
+    .query(
+      `SELECT * FROM offers
+       WHERE status = 'open'
+       ORDER BY CAST(satAmount AS REAL) / CAST(tokenAmount AS REAL) ASC`
+    )
+    .all() as OfferRow[];
+}
+
+export function markOfferFilled(offerOutpoint: string, filledInTxid: string): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.run(
+    "UPDATE offers SET status = 'filled', filledInTxid = ?, updatedAt = ? WHERE offerOutpoint = ?",
+    [filledInTxid, now, offerOutpoint]
+  );
+}
+
+export function markOfferCancelled(offerOutpoint: string): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.run(
+    "UPDATE offers SET status = 'cancelled', updatedAt = ? WHERE offerOutpoint = ?",
+    [now, offerOutpoint]
+  );
+}
+
+export function expireStaleOffers(): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.run(
+    "UPDATE offers SET status = 'expired', updatedAt = ? WHERE expiresAt < ? AND status = 'open'",
+    [now, now]
+  );
 }

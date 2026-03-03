@@ -19,6 +19,11 @@ import {
   getVtxosForAsset,
   getHoldersForAsset,
   getStats,
+  upsertOffer,
+  getOffer,
+  getOpenOffersForAsset,
+  getAllOpenOffers,
+  markOfferCancelled,
 } from "./db";
 import { getRecentLogs } from "./log-buffer";
 
@@ -101,6 +106,39 @@ export function buildApp(): Hono {
         amount: h.totalAmount,
       })),
     });
+  });
+
+  // ── Offers ─────────────────────────────────────────────────────────────────
+
+  // Maker self-reports after creating the swap VTXO
+  app.post("/offers", async (c) => {
+    const body = await c.req.json();
+    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt } = body;
+    if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
+      return c.json({ error: "missing required fields" }, 400);
+    }
+    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt });
+    return c.json({ ok: true }, 201);
+  });
+
+  // List open offers (optional ?assetId= filter)
+  app.get("/offers", (c) => {
+    const assetId = c.req.query("assetId");
+    const offers = assetId ? getOpenOffersForAsset(assetId) : getAllOpenOffers();
+    return c.json({ count: offers.length, offers });
+  });
+
+  // Single offer (outpoint URL-encoded: %3A for the colon)
+  app.get("/offers/:outpoint", (c) => {
+    const offer = getOffer(c.req.param("outpoint"));
+    if (!offer) return c.json({ error: "not found" }, 404);
+    return c.json({ offer });
+  });
+
+  // Maker cancels their offer
+  app.delete("/offers/:outpoint", (c) => {
+    markOfferCancelled(c.req.param("outpoint"));
+    return c.body(null, 204);
   });
 
   return app;

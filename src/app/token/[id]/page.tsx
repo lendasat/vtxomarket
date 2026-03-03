@@ -8,11 +8,14 @@ import { useAppStore } from "@/lib/store";
 import { useComments } from "@/hooks/useComments";
 import { useTrades } from "@/hooks/useTrades";
 import { fetchTokenByTicker, publishTokenListing } from "@/lib/nostr-market";
-import { reissueToken } from "@/lib/ark-wallet";
+import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer } from "@/lib/ark-wallet";
 import { TokenChart } from "@/components/token-chart";
+import { useOffers } from "@/hooks/useOffers";
 import type { Token } from "@/lib/store";
 
-type InfoTab = "thread" | "trades" | "manage";
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
+
+type InfoTab = "thread" | "trades" | "trade" | "manage";
 
 function timeAgo(ts: number): string {
   const s = Math.floor(Date.now() / 1000) - ts;
@@ -80,6 +83,9 @@ export default function TokenPage() {
   const { comments, loading: commentsLoading, postComment } = useComments(token?.id ?? null, ticker);
   const { trades, loading: tradesLoading } = useTrades(ticker);
 
+  // Swap offers
+  const { offers, loading: offersLoading, refetch: refetchOffers } = useOffers(token?.assetId ?? null);
+
   // User holding for this token
   const userHolding = useMemo(() => {
     if (!token?.assetId || heldAssets.length === 0) return 0;
@@ -95,6 +101,25 @@ export default function TokenPage() {
   const [reissueLoading, setReissueLoading] = useState(false);
   const [reissueError, setReissueError] = useState("");
   const [reissueSuccess, setReissueSuccess] = useState("");
+
+  // Trade tab state
+  const [offerTokenAmount, setOfferTokenAmount] = useState("");
+  const [offerSatAmount, setOfferSatAmount] = useState("");
+  const [offerExpiry, setOfferExpiry] = useState<3600 | 21600 | 86400>(3600);
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerError, setOfferError] = useState("");
+  const [offerSuccess, setOfferSuccess] = useState("");
+  const [fillLoading, setFillLoading] = useState<string | null>(null); // offerOutpoint being filled
+  const [fillError, setFillError] = useState("");
+  const [cancelLoading, setCancelLoading] = useState<string | null>(null); // offerOutpoint being cancelled
+  const [cancelError, setCancelError] = useState("");
+  const [userArkAddress, setUserArkAddress] = useState("");
+
+  // Fetch user's Ark address (for identifying own offers)
+  useEffect(() => {
+    if (!arkWallet) return;
+    arkWallet.getAddress().then(setUserArkAddress).catch(() => {});
+  }, [arkWallet]);
 
   // Only creator who holds the control asset can manage
   const isCreator = user?.pubkey === token?.creator;
@@ -143,6 +168,80 @@ export default function TokenPage() {
       setReissueError(err instanceof Error ? err.message : "Reissue failed");
     } finally {
       setReissueLoading(false);
+    }
+  };
+
+  // Create swap offer handler
+  const handleCreateOffer = async () => {
+    if (!arkWallet || !token) return;
+    const tokenAmt = parseInt(offerTokenAmount, 10);
+    const satAmt = parseInt(offerSatAmount, 10);
+    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
+    if (tokenAmt > userHolding) {
+      setOfferError(`Insufficient balance: you hold ${userHolding} ${token.ticker}`);
+      return;
+    }
+
+    setOfferLoading(true);
+    setOfferError("");
+    setOfferSuccess("");
+
+    try {
+      // wallet.send() handles coin selection — no need to manually find a VTXO
+      const offer = await createSwapOffer(arkWallet, {
+        assetId: token.assetId,
+        tokenAmount: tokenAmt,
+        satAmount: satAmt,
+        expiresInSeconds: offerExpiry,
+      });
+
+      // Self-report to indexer
+      await fetch(`${INDEXER_URL}/offers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(offer),
+      });
+
+      setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
+      setOfferTokenAmount("");
+      setOfferSatAmount("");
+      refetchOffers();
+    } catch (err) {
+      setOfferError(err instanceof Error ? err.message : "Failed to create offer");
+    } finally {
+      setOfferLoading(false);
+    }
+  };
+
+  // Fill swap offer handler
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleFill = async (offer: any) => {
+    if (!arkWallet) return;
+    setFillLoading(offer.offerOutpoint);
+    setFillError("");
+    try {
+      await fillSwapOffer(arkWallet, offer);
+      refetchOffers();
+    } catch (err) {
+      setFillError(err instanceof Error ? err.message : "Fill failed");
+    } finally {
+      setFillLoading(null);
+    }
+  };
+
+  // Cancel own swap offer handler (maker only)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleCancelOffer = async (offer: any) => {
+    if (!arkWallet) return;
+    setCancelLoading(offer.offerOutpoint);
+    setCancelError("");
+    try {
+      await cancelSwapOffer(arkWallet, offer);
+      refetchOffers();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancelLoading(null);
     }
   };
 
@@ -240,6 +339,19 @@ export default function TokenPage() {
                   )}
                 </button>
               ))}
+              <button
+                onClick={() => setInfoTab("trade")}
+                className={`flex-1 py-3 text-xs font-medium transition-colors ${
+                  infoTab === "trade"
+                    ? "text-foreground border-b-2 border-primary"
+                    : "text-muted-foreground/60 hover:text-muted-foreground"
+                }`}
+              >
+                Trade
+                {offers.length > 0 && (
+                  <span className="ml-1.5 text-[10px] text-muted-foreground/40">{offers.length}</span>
+                )}
+              </button>
               {canManage && (
                 <button
                   onClick={() => setInfoTab("manage")}
@@ -351,6 +463,179 @@ export default function TokenPage() {
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Trade */}
+              {infoTab === "trade" && token && (
+                <div className="space-y-4">
+                  {/* Order book */}
+                  <div>
+                    <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em] mb-3">
+                      Open Offers
+                    </p>
+                    {offersLoading && offers.length === 0 && (
+                      <p className="text-xs text-muted-foreground/40 text-center py-4">Loading offers...</p>
+                    )}
+                    {!offersLoading && offers.length === 0 && (
+                      <p className="text-xs text-muted-foreground/40 text-center py-4">No open offers yet.</p>
+                    )}
+                    {offers.length > 0 && (
+                      <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
+                        {/* Header */}
+                        <div className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 px-3 py-2 border-b border-white/[0.05]">
+                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Amount</span>
+                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Price</span>
+                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Total</span>
+                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase w-16 text-right">Action</span>
+                        </div>
+                        {offers.map((offer) => {
+                          const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
+                          return (
+                            <div key={offer.offerOutpoint} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
+                              <span className="text-xs tabular-nums">
+                                {offer.tokenAmount.toLocaleString()}
+                                <span className="text-muted-foreground/35 text-[10px] ml-0.5">${token.ticker}</span>
+                              </span>
+                              <span className="text-xs tabular-nums text-muted-foreground/70">
+                                {offer.price.toFixed(1)} <span className="text-[10px] text-muted-foreground/35">sat/t</span>
+                              </span>
+                              <span className="text-xs tabular-nums text-muted-foreground/70">
+                                {formatSats(offer.satAmount)}
+                                <span className="text-[10px] text-muted-foreground/35 ml-0.5">sat</span>
+                              </span>
+                              {isOwn ? (
+                                <button
+                                  onClick={() => handleCancelOffer(offer)}
+                                  disabled={!walletReady || cancelLoading === offer.offerOutpoint}
+                                  className="w-16 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  {cancelLoading === offer.offerOutpoint ? (
+                                    <span className="flex items-center justify-center">
+                                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" />
+                                    </span>
+                                  ) : "Cancel"}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleFill(offer)}
+                                  disabled={!walletReady || fillLoading === offer.offerOutpoint}
+                                  className="w-16 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  {fillLoading === offer.offerOutpoint ? (
+                                    <span className="flex items-center justify-center">
+                                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-400/50 border-t-transparent" />
+                                    </span>
+                                  ) : "Buy"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {fillError && (
+                      <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                        <p className="text-xs text-red-400">{fillError}</p>
+                      </div>
+                    )}
+                    {cancelError && (
+                      <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                        <p className="text-xs text-red-400">{cancelError}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Make offer — only if user holds this token */}
+                  {userHolding > 0 && (
+                    <>
+                      <div className="h-px bg-white/[0.06]" />
+                      <div className="space-y-3">
+                        <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em]">
+                          Create Offer
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-muted-foreground/40 mb-1 block">Token amount</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={userHolding}
+                              value={offerTokenAmount}
+                              onChange={(e) => setOfferTokenAmount(e.target.value)}
+                              placeholder={`Max ${userHolding}`}
+                              className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to receive</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={offerSatAmount}
+                              onChange={(e) => setOfferSatAmount(e.target.value)}
+                              placeholder="Sats"
+                              className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
+                          <p className="text-[11px] text-muted-foreground/50 tabular-nums">
+                            Price: {(Number(offerSatAmount) / Number(offerTokenAmount)).toFixed(2)} sat / token
+                          </p>
+                        )}
+
+                        <div className="flex gap-1">
+                          {([["1h", 3600], ["6h", 21600], ["24h", 86400]] as const).map(([label, val]) => (
+                            <button
+                              key={val}
+                              onClick={() => setOfferExpiry(val)}
+                              className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                                offerExpiry === val
+                                  ? "bg-white/[0.1] border-white/[0.2] text-foreground"
+                                  : "bg-white/[0.03] border-white/[0.06] text-muted-foreground/50 hover:text-muted-foreground"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {offerError && (
+                          <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                            <p className="text-xs text-red-400">{offerError}</p>
+                          </div>
+                        )}
+                        {offerSuccess && (
+                          <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+                            <p className="text-xs text-emerald-400">{offerSuccess}</p>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleCreateOffer}
+                          disabled={
+                            !offerTokenAmount || !offerSatAmount ||
+                            parseInt(offerTokenAmount, 10) <= 0 || parseInt(offerSatAmount, 10) <= 0 ||
+                            offerLoading || !walletReady
+                          }
+                          className="w-full py-2.5 rounded-xl bg-white/[0.1] border border-white/[0.14] text-sm font-semibold transition-all hover:bg-white/[0.15] disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          {offerLoading ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-foreground/50 border-t-transparent" />
+                              Creating offer...
+                            </span>
+                          ) : "Create Offer"}
+                        </button>
+
+                        <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
+                          Your tokens are locked in a script VTXO. Any taker can fill directly — no ASP coordination needed. You can cancel after expiry.
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

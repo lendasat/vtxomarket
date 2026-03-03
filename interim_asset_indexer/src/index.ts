@@ -4,7 +4,7 @@
 
 import { config } from "./config";
 import { log, setLogLevel } from "./logger";
-import { getDb } from "./db";
+import { getDb, expireStaleOffers } from "./db";
 import { startStream, stopStream } from "./stream";
 import { handleTxNotification } from "./indexer";
 import { buildApp } from "./api";
@@ -21,6 +21,7 @@ log.info("Starting interim-asset-indexer", {
 
 // ── Initialize DB ─────────────────────────────────────────────────────────────
 getDb(); // ensures schema is created
+setInterval(expireStaleOffers, 60_000); // sweep expired offers every minute
 
 // ── Start SSE stream ──────────────────────────────────────────────────────────
 startStream(handleTxNotification);

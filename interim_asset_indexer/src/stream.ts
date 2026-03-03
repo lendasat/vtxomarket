@@ -138,7 +138,9 @@ function processEvent(data: string, onTx: TxHandler): void {
 
   const eventType = envelope.arkTx ? "arkTx" : "commitmentTx";
   const txNotification: TxNotification = {
+    eventType,
     txid: rawTx.txid as string,
+    tx: rawTx.tx as string | undefined,
     spentVtxos: (rawTx.spentVtxos as Array<{ outpoint: { txid: string; vout: number } }>) ?? [],
     spendableVtxos: (rawTx.spendableVtxos as Array<{ outpoint: { txid: string; vout: number } }>) ?? [],
   };

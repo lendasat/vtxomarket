@@ -16,6 +16,8 @@ import {
   upsertAsset,
   upsertVtxo,
   markVtxosSpent,
+  getOffer,
+  markOfferFilled,
 } from "./db";
 import { fetchVtxosByOutpoints, fetchAssetMetadata } from "./ark-client";
 import type { TxNotification } from "./types";
@@ -38,6 +40,18 @@ export async function handleTxNotification(notification: TxNotification): Promis
     );
     markVtxosSpent(spentOutpoints, txid);
     log.debug("indexer: marked VTXOs spent", { txid, count: spentOutpoints.length });
+
+    // Detect filled offers from commitmentTx events
+    if (notification.eventType === 'commitmentTx') {
+      for (const spent of spentVtxos) {
+        const outpoint = `${spent.outpoint.txid}:${spent.outpoint.vout}`;
+        const offer = getOffer(outpoint);
+        if (offer && offer.status === 'open') {
+          markOfferFilled(offer.offerOutpoint, txid);
+          log.info('indexer: offer filled', { offerOutpoint: offer.offerOutpoint, txid });
+        }
+      }
+    }
   }
 
   // ── Step 2: fetch full VTXO data for spendable outpoints ───────────────────
