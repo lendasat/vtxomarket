@@ -9,6 +9,7 @@ import { useComments } from "@/hooks/useComments";
 import { useTrades } from "@/hooks/useTrades";
 import { fetchTokenByTicker, publishTokenListing } from "@/lib/nostr-market";
 import { reissueToken } from "@/lib/ark-wallet";
+import { TokenChart } from "@/components/token-chart";
 import type { Token } from "@/lib/store";
 
 type InfoTab = "thread" | "trades" | "manage";
@@ -207,8 +208,16 @@ export default function TokenPage() {
 
       {/* Main layout */}
       <div className="grid gap-4 lg:grid-cols-[1fr,300px]">
-        {/* Left: Tabs */}
+        {/* Left: Chart + Tabs */}
         <div className="space-y-4">
+          {/* Price chart */}
+          <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4">
+            <TokenChart
+              trades={trades}
+              basePrice={trades.length > 0 ? trades[trades.length - 1].price : 0}
+            />
+          </div>
+
           {/* Info tabs */}
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
             <div className="flex border-b border-white/[0.07]">
