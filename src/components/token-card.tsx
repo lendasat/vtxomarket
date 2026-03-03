@@ -42,26 +42,18 @@ export function TokenCard({ token }: TokenCardProps) {
             </div>
 
             <div className="shrink-0 text-right">
-              <p className="text-sm font-semibold tabular-nums">
-                {token.price < 0.01 ? token.price.toFixed(4) : token.price.toFixed(2)}
-                <span className="text-[10px] text-muted-foreground/30 ml-0.5">sat</span>
+              <p className="text-xs tabular-nums text-muted-foreground/40">
+                {formatSats(token.supply)}
+                <span className="text-[10px] text-muted-foreground/25 ml-0.5">supply</span>
               </p>
             </div>
           </div>
 
-          {/* Bonding curve bar */}
-          <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-white/[0.1] to-white/[0.2] transition-all duration-500"
-              style={{ width: `${token.curveProgress}%` }}
-            />
-          </div>
-
-          {/* Mcap + trades */}
+          {/* Trades + replies */}
           <div className="flex items-center text-[10px] text-muted-foreground/35 tabular-nums">
-            <span>mcap {formatSats(token.marketCap)}</span>
-            <span className="mx-2 text-white/[0.06]">/</span>
             <span>{token.tradeCount} trades</span>
+            <span className="mx-2 text-white/[0.06]">/</span>
+            <span>{token.replies} replies</span>
           </div>
         </div>
       </div>

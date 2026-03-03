@@ -239,10 +239,11 @@ export function getDustAmount(wallet: any): number {
 
 export interface IssueTokenParams {
   amount: number;
-  name: string;
-  ticker: string;
+  name?: string;
+  ticker?: string;
   decimals?: number;
   icon?: string;
+  controlAssetId?: string; // when set: link this issuance to an existing control asset
 }
 
 export interface IssueTokenResult {
@@ -251,93 +252,117 @@ export interface IssueTokenResult {
 }
 
 /**
- * Issue a new token on Ark.
+ * Issue a new token on Ark using the official SDK protocol.
  *
- * We replicate the SDK's assetManager.issue() logic manually because the
- * mainnet Ark server requires ALL outputs to have amount >= dustAmount,
- * including OP_RETURN. The SDK's Packet.txOut() returns amount=0 which
- * the server rejects. We set the packet output to dustAmount instead.
+ * The Ark server requires ALL outputs to have amount >= dustAmount (including
+ * OP_RETURN). The SDK's Packet.txOut() returns amount=0 which the server
+ * rejects. We monkey-patch buildAndSubmitOffchainTx to lift the packet output
+ * to dustAmount and deduct it from the main output, then delegate to
+ * wallet.assetManager.issue() which handles coin selection and passthrough
+ * groups correctly.
+ *
+ * Official reissuable token flow (two separate calls from create/page.tsx):
+ *   Step 1: issueToken(wallet, { amount: 1 })
+ *           → creates the control asset (1 unit, no metadata)
+ *   Step 2: issueToken(wallet, { amount: N, name, ticker, ..., controlAssetId: step1.assetId })
+ *           → creates the main token linked to control (carries name/ticker/metadata)
+ *   reissue: wallet.assetManager.reissue({ assetId: step2.assetId, amount })
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function issueToken(wallet: any, params: IssueTokenParams): Promise<IssueTokenResult> {
-  const { amount, name, ticker, decimals, icon } = params;
+  const { amount, name, ticker, decimals, icon, controlAssetId } = params;
   if (amount <= 0) throw new Error("Amount must be greater than 0");
 
-  const sdk = await getSDK();
-  const { AssetGroup, AssetOutput, AssetId, Packet, Metadata } = sdk.asset;
-  const { ArkAddress } = sdk;
+  const dustAmt = BigInt(Number(wallet.dustAmount));
 
-  // Build metadata using proper Metadata.create(keyBytes, valueBytes) objects
-  const enc = new TextEncoder();
+  // Monkey-patch buildAndSubmitOffchainTx to fix the packet output amount.
+  // The SDK builds outputs as [mainOutput(fullSats), packetOutput(0sats)].
+  // The Ark server rejects amount=0 on OP_RETURN outputs, so we move dustAmt
+  // from the main output to the packet output.
+  const origBuildAndSubmit = wallet.buildAndSubmitOffchainTx.bind(wallet);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const metadata: any[] = [
-    Metadata.create(enc.encode("name"), enc.encode(name)),
-    Metadata.create(enc.encode("ticker"), enc.encode(ticker)),
-  ];
-  if (decimals !== undefined) {
-    metadata.push(Metadata.create(enc.encode("decimals"), enc.encode(String(decimals))));
+  wallet.buildAndSubmitOffchainTx = async (inputs: any[], outputs: any[]) => {
+    // Find the OP_RETURN (packet) output — it has a script starting with 0x6a
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const packetIdx = outputs.findIndex((o: any) => o.script?.[0] === 0x6a || o.amount === 0n);
+    if (packetIdx >= 0 && outputs[packetIdx].amount === 0n) {
+      // Find the first non-OP_RETURN output (BTC change) to deduct from
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mainIdx = outputs.findIndex((_: any, i: number) => i !== packetIdx);
+      if (mainIdx >= 0 && outputs[mainIdx].amount >= dustAmt * 2n) {
+        outputs = outputs.map((o, i) => {
+          if (i === packetIdx) return { ...o, amount: dustAmt };
+          if (i === mainIdx) return { ...o, amount: o.amount - dustAmt };
+          return o;
+        });
+        console.log("[ark] issueToken: patched packet output to %d, main=%d", Number(dustAmt), Number(outputs[mainIdx].amount));
+      }
+    }
+    return origBuildAndSubmit(inputs, outputs);
+  };
+
+  try {
+    // Build metadata object for the SDK (it expects a plain object, not Metadata[])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const metadata: Record<string, any> | undefined =
+      name && ticker
+        ? {
+            name,
+            ticker,
+            ...(decimals !== undefined && { decimals }),
+            ...(icon && { icon }),
+          }
+        : undefined;
+
+    console.log("[ark] issueToken: amount=%d, controlAssetId=%s, metadata=%o", amount, controlAssetId, metadata);
+
+    const result = await wallet.assetManager.issue({
+      amount,
+      ...(controlAssetId && { controlAssetId }),
+      ...(metadata && { metadata }),
+    });
+
+    console.log("[ark] issueToken: success! txid=%s, assetId=%s", result.arkTxId, result.assetId);
+    return { arkTxId: result.arkTxId, assetId: result.assetId };
+  } finally {
+    wallet.buildAndSubmitOffchainTx = origBuildAndSubmit;
   }
-  if (icon) {
-    metadata.push(Metadata.create(enc.encode("icon"), enc.encode(icon)));
-  }
+}
 
-  // Coin selection: need 2*dustAmount (main output + packet output both >= dust)
-  const vtxos = await wallet.getVtxos({ withRecoverable: false });
-  const dustAmt = Number(wallet.dustAmount);
-  const minRequired = dustAmt * 2;
-
-  console.log("[ark] issueToken: dustAmount=%d, minRequired=%d, vtxos=%d", dustAmt, minRequired, vtxos.length);
-
-  // Sort by expiry (ascending), then value (descending) — same as SDK
+/**
+ * Reissue (mint more) tokens for a reissuable asset.
+ * Requires the caller to hold the control asset VTXO.
+ *
+ * Applies the same OP_RETURN amount monkey-patch as issueToken — the Ark server
+ * rejects amount=0 on the packet output that assetManager.reissue() produces.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function reissueToken(wallet: any, assetId: string, amount: number): Promise<string> {
+  const dustAmt = BigInt(Number(wallet.dustAmount));
+  const origBuildAndSubmit = wallet.buildAndSubmitOffchainTx.bind(wallet);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sorted = [...vtxos].sort((a: any, b: any) => {
-    const expiryA = a.virtualStatus?.batchExpiry || Number.MAX_SAFE_INTEGER;
-    const expiryB = b.virtualStatus?.batchExpiry || Number.MAX_SAFE_INTEGER;
-    if (expiryA !== expiryB) return expiryA - expiryB;
-    return b.value - a.value;
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const selectedInputs: any[] = [];
-  let selectedAmount = 0;
-  for (const coin of sorted) {
-    selectedInputs.push(coin);
-    selectedAmount += coin.value;
-    if (selectedAmount >= minRequired) break;
+  wallet.buildAndSubmitOffchainTx = async (inputs: any[], outputs: any[]) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const packetIdx = outputs.findIndex((o: any) => o.script?.[0] === 0x6a || o.amount === 0n);
+    if (packetIdx >= 0 && outputs[packetIdx].amount === 0n) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mainIdx = outputs.findIndex((_: any, i: number) => i !== packetIdx);
+      if (mainIdx >= 0 && outputs[mainIdx].amount >= dustAmt * 2n) {
+        outputs = outputs.map((o, i) => {
+          if (i === packetIdx) return { ...o, amount: dustAmt };
+          if (i === mainIdx) return { ...o, amount: o.amount - dustAmt };
+          return o;
+        });
+        console.log("[ark] reissueToken: patched packet output to %d", Number(dustAmt));
+      }
+    }
+    return origBuildAndSubmit(inputs, outputs);
+  };
+  try {
+    return await wallet.assetManager.reissue({ assetId, amount });
+  } finally {
+    wallet.buildAndSubmitOffchainTx = origBuildAndSubmit;
   }
-  if (selectedAmount < minRequired) {
-    throw new Error(`Not enough sats: need ${minRequired}, have ${selectedAmount}`);
-  }
-
-  console.log("[ark] issueToken: selected %d inputs, total %d sats", selectedInputs.length, selectedAmount);
-
-  // Build asset packet
-  const issuedAssetOutput = AssetOutput.create(0, BigInt(amount));
-  const issuedAssetGroup = AssetGroup.create(null, null, [], [issuedAssetOutput], metadata);
-  const packet = Packet.create([issuedAssetGroup]);
-  const packetOut = packet.txOut();
-
-  // Ark server requires amount >= dustAmount for ALL outputs (including OP_RETURN).
-  // Assign dustAmount to the packet output, rest to main output.
-  const packetAmount = BigInt(dustAmt);
-  const mainAmount = BigInt(selectedAmount) - packetAmount;
-
-  const address = await wallet.getAddress();
-  const outputAddress = ArkAddress.decode(address);
-
-  const outputs = [
-    { script: outputAddress.pkScript, amount: mainAmount },
-    { ...packetOut, amount: packetAmount },
-  ];
-
-  console.log("[ark] issueToken: submitting tx (main=%d, packet=%d)", Number(mainAmount), Number(packetAmount));
-
-  const { arkTxid } = await wallet.buildAndSubmitOffchainTx(selectedInputs, outputs);
-  const assetId = AssetId.create(arkTxid, 0).toString();
-
-  console.log("[ark] issueToken: success! txid=%s, assetId=%s", arkTxid, assetId);
-
-  return { arkTxId: arkTxid, assetId };
 }
 
 // -- Transaction history --
@@ -519,10 +544,12 @@ export async function sendAsset(
   assetId: string,
   assetAmount: number
 ): Promise<string> {
-  const txid = await wallet.assetManager.send({
+  // wallet.send() handles asset transfers with proper input/output balancing.
+  // amount=0 means no BTC transfer; assets array carries the token transfer.
+  const txid = await wallet.send({
     address: recipientAddress,
-    assetId,
-    amount: assetAmount,
+    amount: 0,
+    assets: [{ assetId, amount: assetAmount }],
   });
   return txid;
 }

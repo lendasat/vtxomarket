@@ -113,7 +113,7 @@ function AuthScreen({ onComplete }: { onComplete: () => void }) {
         {/* Branding */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-b from-white via-white/90 to-white/40 bg-clip-text text-transparent">
-            vtxo.fun
+            vtxo.market
           </h1>
           <p className="mt-2 text-sm text-muted-foreground/40">
             Token launchpad on Arkade + Nostr

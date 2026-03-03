@@ -11,8 +11,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "vtxo.fun",
-  description: "Launch tokens on Nostr",
+  title: "vtxo.market",
+  description: "Token marketplace on Arkade + Nostr",
 };
 
 export const viewport: Viewport = {

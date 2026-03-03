@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { issueToken, getDustAmount, getReceivingAddresses } from "@/lib/ark-wallet";
 import { publishTokenListing } from "@/lib/nostr-market";
+import { uploadImage } from "@/lib/image-upload";
 
 const NAME_MAX = 32;
 const TICKER_MAX = 10;
@@ -21,8 +22,9 @@ export default function CreatePage() {
 
   const balance = useAppStore((s) => s.balance);
   const [dustAmount, setDustAmount] = useState<number>(0);
-  // Need 2x dustAmount: main output (dust) + packet output (dust)
-  const minIssuanceCost = dustAmount * 2;
+  const [reissuable, setReissuable] = useState(false);
+  // Need 2×dust for fixed supply (1 TX), 4×dust for reissuable (2 TXs)
+  const minIssuanceCost = dustAmount * (reissuable ? 4 : 2);
   const hasEnoughSats = (balance?.available ?? 0) >= minIssuanceCost;
 
   useEffect(() => {
@@ -38,13 +40,17 @@ export default function CreatePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
-
-  const [supply, setSupply] = useState("1000000");
+  const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [imageUploadedUrl, setImageUploadedUrl] = useState<string | null>(null);
+  const [showUploadedBadge, setShowUploadedBadge] = useState(false);
 
   const [showSocials, setShowSocials] = useState(false);
   const [website, setWebsite] = useState("");
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
+
+  const [supply, setSupply] = useState("");
+  const supplyNum = parseInt(supply, 10);
 
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState("");
@@ -60,10 +66,28 @@ export default function CreatePage() {
       return;
     }
     setImageFile(file);
+    setImageUploadState("uploading");
+    setImageUploadedUrl(null);
+    setError("");
+
+    // Show local preview immediately while upload runs in background
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target?.result as string);
     reader.readAsDataURL(file);
-    setError("");
+
+    // Upload to nostr.build — returns a plain HTTPS URL
+    uploadImage(file)
+      .then((url) => {
+        setImageUploadedUrl(url);
+        setImageUploadState("done");
+        setShowUploadedBadge(true);
+        setTimeout(() => setShowUploadedBadge(false), 1000);
+      })
+      .catch((err) => {
+        console.error("Image upload failed:", err);
+        setImageUploadState("error");
+        setError("Image upload failed — you can still paste a URL manually.");
+      });
   }, []);
 
   const handleDrop = useCallback(
@@ -79,12 +103,24 @@ export default function CreatePage() {
   const removeImage = () => {
     setImageFile(null);
     setImagePreview(null);
+    setImageUploadedUrl(null);
+    setImageUploadState("idle");
+    setShowUploadedBadge(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // For display: use local preview while uploading, then uploaded URL
   const resolvedImage = imagePreview || imageUrl || undefined;
 
-  const canCreate = name.trim().length > 0 && ticker.trim().length > 0 && walletReady && nostrReady && hasEnoughSats;
+  const canCreate =
+    name.trim().length > 0 &&
+    ticker.trim().length > 0 &&
+    supplyNum > 0 &&
+    !isNaN(supplyNum) &&
+    walletReady &&
+    nostrReady &&
+    hasEnoughSats &&
+    imageUploadState !== "uploading";
 
   const handleCreate = async () => {
     if (!canCreate || !arkWallet) return;
@@ -92,18 +128,33 @@ export default function CreatePage() {
     setError("");
 
     try {
-      const finalImage = imageUrl || imagePreview || "";
+      // Always use the hosted URL — never the raw base64 preview.
+      // The SDK serialises the icon string verbatim into the OP_RETURN output,
+      // so a base64 data URI would balloon the transaction size past the weight limit.
+      const finalImage = imageUrl || imageUploadedUrl || "";
       const tickerUp = ticker.toUpperCase();
-      const supplyNum = parseInt(supply, 10) || 1_000_000;
 
-      // Step 1: Issue token on Arkade
-      setStep("Issuing token on Arkade...");
+      let controlAssetId: string | undefined;
+
+      if (reissuable) {
+        // Official Arkade protocol: two separate issuances.
+        // Step 1: issue a 1-unit control asset (no metadata) — proves reissuance rights
+        setStep("Issuing control asset...");
+        const controlResult = await issueToken(arkWallet, { amount: 1 });
+        controlAssetId = controlResult.assetId;
+        // Step 2: issue the main token with metadata, linked to the control asset
+        setStep("Issuing main token...");
+      } else {
+        setStep("Issuing token on Arkade...");
+      }
+
       const result = await issueToken(arkWallet, {
         amount: supplyNum,
         name,
         ticker: tickerUp,
         decimals: 0,
         icon: finalImage || undefined,
+        ...(controlAssetId && { controlAssetId }),
       });
 
       // Get creator's Ark address
@@ -120,9 +171,11 @@ export default function CreatePage() {
         assetId: result.assetId,
         arkTxId: result.arkTxId,
         creatorArkAddress,
+        supply: supplyNum,
         ...(website && { website }),
         ...(twitter && { twitter }),
         ...(telegram && { telegram }),
+        ...(controlAssetId && { controlAssetId }),
       });
 
       // Step 3: Add to local state
@@ -137,12 +190,7 @@ export default function CreatePage() {
         creatorArkAddress,
         createdAt: Math.floor(Date.now() / 1000),
         supply: supplyNum,
-        virtualTokenReserves: 0,
-        virtualSatReserves: 0,
-        realTokenReserves: 0,
-        price: 0,
-        marketCap: 0,
-        curveProgress: 0,
+        ...(controlAssetId && { controlAssetId }),
         replies: 0,
         tradeCount: 0,
         ...(website && { website }),
@@ -224,6 +272,23 @@ export default function CreatePage() {
                 >
                   &times;
                 </button>
+                {/* Upload status badge */}
+                {imageUploadState === "uploading" && (
+                  <div className="absolute bottom-0 inset-x-0 rounded-b-2xl bg-black/60 flex items-center justify-center gap-1.5 py-1.5">
+                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    <span className="text-[10px] text-white/80">Uploading…</span>
+                  </div>
+                )}
+                {showUploadedBadge && (
+                  <div className="absolute bottom-0 inset-x-0 rounded-b-2xl bg-emerald-500/70 flex items-center justify-center gap-1 py-1.5">
+                    <span className="text-[10px] text-white font-medium">Uploaded ✓</span>
+                  </div>
+                )}
+                {imageUploadState === "error" && (
+                  <div className="absolute bottom-0 inset-x-0 rounded-b-2xl bg-red-500/70 flex items-center justify-center gap-1 py-1.5">
+                    <span className="text-[10px] text-white">Upload failed</span>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -264,7 +329,7 @@ export default function CreatePage() {
                   <span className="text-foreground">browse</span>
                 </p>
                 <p className="text-xs text-muted-foreground/40 mt-1">
-                  JPG, PNG, GIF &middot; Max 15 MB &middot; Recommended 512&times;512
+                  JPG, PNG, GIF &middot; Max 15 MB &middot; Auto-hosted on nostr.build
                 </p>
               </div>
             </div>
@@ -346,24 +411,6 @@ export default function CreatePage() {
             </div>
           </div>
 
-          {/* Supply */}
-          <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
-              Total Supply
-            </label>
-            <input
-              type="number"
-              min="1"
-              placeholder="1000000"
-              value={supply}
-              onChange={(e) => setSupply(e.target.value)}
-              className={`${inputClass} h-11 font-mono`}
-            />
-            <p className="text-[11px] text-muted-foreground/40">
-              Total number of tokens to issue on Arkade.
-            </p>
-          </div>
-
           {/* Description */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -384,6 +431,26 @@ export default function CreatePage() {
               rows={3}
               className={`${inputClass} py-3 resize-none`}
             />
+          </div>
+
+          {/* Supply */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+              Total Supply <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              placeholder="e.g. 1000000"
+              value={supply}
+              onChange={(e) => setSupply(e.target.value)}
+              className={`${inputClass} h-11`}
+            />
+            {supply && supplyNum > 0 && (
+              <p className="text-[11px] text-muted-foreground/40">
+                {supplyNum.toLocaleString()} tokens will be issued
+              </p>
+            )}
           </div>
 
           {/* Social links toggle */}
@@ -439,6 +506,40 @@ export default function CreatePage() {
               </div>
             )}
           </div>
+
+          {/* Reissuable toggle */}
+          <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <div className="relative shrink-0 mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={reissuable}
+                  onChange={(e) => setReissuable(e.target.checked)}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-4 h-4 rounded border transition-all flex items-center justify-center ${
+                    reissuable
+                      ? "bg-white/[0.9] border-white/[0.9]"
+                      : "bg-white/[0.04] border-white/[0.2]"
+                  }`}
+                >
+                  {reissuable && (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                      <path d="M2 6l3 3 5-5" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-foreground/80">Reissuable supply</p>
+                <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                  Creates a control asset that lets you mint more tokens later.
+                  Costs ~{dustAmount > 0 ? (dustAmount * 4).toLocaleString() : "1,320"} sats (two Ark transactions).
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         {/* Divider */}
@@ -474,11 +575,19 @@ export default function CreatePage() {
                     ${ticker || "TICKER"}
                   </p>
                 </div>
-                <div className="shrink-0 text-right">
-                  <span className="text-[10px] text-muted-foreground/30 font-medium px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
-                    {(parseInt(supply, 10) || 0).toLocaleString()} supply
-                  </span>
-                </div>
+                {supplyNum > 0 && (
+                  <div className="shrink-0 text-right">
+                    <span className="text-[10px] text-muted-foreground/30 font-medium px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
+                      {supplyNum >= 1_000_000_000
+                        ? `${(supplyNum / 1_000_000_000).toFixed(1)}B`
+                        : supplyNum >= 1_000_000
+                        ? `${(supplyNum / 1_000_000).toFixed(1)}M`
+                        : supplyNum >= 1_000
+                        ? `${(supplyNum / 1_000).toFixed(1)}K`
+                        : supplyNum.toLocaleString()} supply
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

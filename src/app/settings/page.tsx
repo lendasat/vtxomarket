@@ -122,7 +122,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "vtxo-fun-seed-phrase.txt";
+    a.download = "vtxomarket-seed-phrase.txt";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -471,6 +471,58 @@ export default function SettingsPage() {
               your keys are safe.
             </p>
           )}
+        </div>
+      </div>
+
+      {/* About */}
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+        <div className="p-5 space-y-3">
+          <h2 className="text-sm font-semibold">About vtxo.market</h2>
+          <p className="text-[12px] text-muted-foreground/60 leading-relaxed">
+            vtxo.market is a non-profit, open-source project maintained by the Arkade community. It is free to use and will remain so. No fees, no investors, no company behind it.
+          </p>
+          <p className="text-[12px] text-muted-foreground/60 leading-relaxed">
+            If you find it useful, consider donating sats or contributing code. Every bit helps keep the lights on.
+          </p>
+          <div className="flex flex-col gap-2 pt-1">
+            <a
+              href="https://github.com/arkade-os/vtxomarket"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-xl bg-white/[0.05] border border-white/[0.08] px-3.5 py-2.5 text-xs font-medium transition-all hover:bg-white/[0.09] hover:border-white/[0.12]"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 shrink-0 text-muted-foreground/60">
+                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z" />
+              </svg>
+              GitHub — Contribute or report issues
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Terms of Service */}
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+        <div className="p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-amber-400/70">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+            </svg>
+            <h2 className="text-sm font-semibold">Terms of Service</h2>
+          </div>
+          <div className="space-y-2 text-[12px] text-muted-foreground/55 leading-relaxed">
+            <p>
+              vtxo.market is an <span className="text-foreground/70 font-medium">experimental platform</span> provided for research and entertainment purposes only. It is not a financial product or investment service.
+            </p>
+            <p>
+              The platform is provided &ldquo;as-is&rdquo; with no warranties of any kind. We are not responsible for any losses of funds, whether caused by bugs, network failures, protocol changes, or user error. <span className="text-foreground/70 font-medium">Do not put serious money into anything on this platform.</span>
+            </p>
+            <p>
+              All tokens issued here are on a test network (Mutinynet). They have no real monetary value. Treat this as a playground, not a market.
+            </p>
+            <p className="text-muted-foreground/35">
+              By using vtxo.market you acknowledge these terms and accept all risks.
+            </p>
+          </div>
         </div>
       </div>
 

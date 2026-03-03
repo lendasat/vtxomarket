@@ -5,13 +5,11 @@ import Link from "next/link";
 import { TokenCard } from "@/components/token-card";
 import { useTokens } from "@/hooks/useTokens";
 
-type SortMode = "trending" | "new" | "top" | "finishing";
+type SortMode = "trending" | "new";
 
 const SORT_TABS: { key: SortMode; label: string }[] = [
   { key: "trending", label: "Trending" },
   { key: "new", label: "New" },
-  { key: "top", label: "Top" },
-  { key: "finishing", label: "Graduating" },
 ];
 
 export default function Home() {
@@ -39,28 +37,17 @@ export default function Home() {
       case "new":
         list.sort((a, b) => b.createdAt - a.createdAt);
         break;
-      case "top":
-        list.sort((a, b) => b.marketCap - a.marketCap);
-        break;
-      case "finishing":
-        list.sort((a, b) => b.curveProgress - a.curveProgress);
-        break;
     }
 
     return list;
   }, [tokens, sort, search]);
 
   const topMovers = useMemo(
-    () =>
-      [...tokens]
-        .sort((a, b) => b.marketCap - a.marketCap)
-        .slice(0, 5),
+    () => [...tokens].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5),
     [tokens]
   );
 
   const heroTokens = topMovers.slice(0, 2);
-
-  const totalMcap = tokens.reduce((s, t) => s + t.marketCap, 0);
 
   function formatSats(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -131,30 +118,25 @@ export default function Home() {
                         <p className="text-[11px] font-mono text-muted-foreground/40">${t.ticker}</p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span className="text-lg sm:text-xl font-bold tabular-nums text-emerald-400">
-                          {formatSats(t.marketCap)}
+                        <span className="text-xs tabular-nums text-muted-foreground/50">
+                          {formatSats(t.supply)} supply
                         </span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-[9px] uppercase tracking-[0.2em] font-medium px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.07] text-muted-foreground/40">
-                        {i === 0 ? "#1" : "#2"}
+                        {i === 0 ? "Latest" : "Recent"}
                       </span>
                       <div className="h-5 w-px bg-white/[0.06]" />
                       <div>
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Price</p>
-                        <p className="text-xs font-semibold tabular-nums">{t.price.toFixed(4)} <span className="text-muted-foreground/30">sat</span></p>
+                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Replies</p>
+                        <p className="text-xs font-semibold tabular-nums">{t.replies}</p>
                       </div>
                       <div className="h-5 w-px bg-white/[0.06]" />
                       <div>
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Curve</p>
-                        <p className="text-xs font-semibold tabular-nums">{t.curveProgress.toFixed(1)}%</p>
-                      </div>
-                      <div className="h-5 w-px bg-white/[0.06] hidden sm:block" />
-                      <div className="hidden sm:block">
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">MCap</p>
-                        <p className="text-xs font-semibold tabular-nums">{formatSats(t.marketCap)}</p>
+                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Trades</p>
+                        <p className="text-xs font-semibold tabular-nums">{t.tradeCount}</p>
                       </div>
                     </div>
                   </div>
@@ -177,7 +159,7 @@ export default function Home() {
                 >
                   <span className="font-mono font-medium text-muted-foreground/70">${t.ticker}</span>
                   <span className="font-medium tabular-nums text-muted-foreground/50">
-                    {formatSats(t.marketCap)}
+                    {formatSats(t.supply)}
                   </span>
                 </Link>
               ))}

@@ -13,14 +13,7 @@ export interface Token {
   creatorArkAddress: string;     // for trading
   createdAt: number;
   supply: number;
-  // Bonding curve
-  virtualTokenReserves: number;
-  virtualSatReserves: number;
-  realTokenReserves: number;
-  // Derived
-  price: number;
-  marketCap: number;
-  curveProgress: number;
+  controlAssetId?: string;        // present when token is reissuable
   // Social
   replies: number;
   tradeCount: number;

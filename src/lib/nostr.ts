@@ -79,7 +79,7 @@ export async function updateMyProfile(updates: Partial<NDKUserProfile>): Promise
   return user.profile;
 }
 
-// Custom event kind for vtxo.fun token listings
+// Custom event kind for vtxo.market token listings
 export const VTXO_TOKEN_KIND = 30078;
 
 export { RELAYS };

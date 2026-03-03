@@ -94,8 +94,6 @@ export default function WalletPage() {
         name: token?.name ?? "Unknown",
         ticker: token?.ticker ?? "???",
         image: token?.image,
-        price: token?.price ?? 0,
-        value: Math.floor(a.amount * (token?.price ?? 0)),
       };
     });
 
@@ -437,14 +435,11 @@ export default function WalletPage() {
                       </p>
                     </div>
 
-                    {/* Value */}
+                    {/* Amount */}
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold tabular-nums">
-                        {formatSats(token.value)}
-                        <span className="text-[10px] text-muted-foreground/30 ml-0.5">sat</span>
-                      </p>
-                      <p className="text-[10px] text-muted-foreground/40 tabular-nums">
-                        {token.price < 0.01 ? token.price.toFixed(4) : token.price.toFixed(2)} sat/token
+                        {token.amount.toLocaleString()}
+                        <span className="text-[10px] text-muted-foreground/30 ml-0.5">tokens</span>
                       </p>
                     </div>
                   </Link>

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+data/
+.env
+package-lock.json
+*.db
+*.db-shm
+*.db-wal

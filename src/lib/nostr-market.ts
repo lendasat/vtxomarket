@@ -1,25 +1,16 @@
 /**
- * Nostr marketplace operations for vtxo.fun.
+ * Nostr marketplace operations for vtxo.market.
  *
  * All token data is stored as replaceable kind 30078 events on Nostr relays.
  * D-tag conventions:
- *   - Token listing:  vtxofun/token/{TICKER}
- *   - Curve state:    vtxofun/curve/{TICKER}
- *   - Trade receipt:  vtxofun/trade/{arkTxId}
- *   - Order:          vtxofun/order/{arkTxId}
+ *   - Token listing:  vtxomarket/token/{TICKER}
+ *   - Trade receipt:  vtxomarket/trade/{arkTxId}
+ *   - Order:          vtxomarket/order/{arkTxId}
  */
 
 import { NDKEvent, NDKFilter, NDKSubscription } from "@nostr-dev-kit/ndk";
 import { ensureNostrReady, getNDK, VTXO_TOKEN_KIND } from "./nostr";
 import { ARK_SERVER_URL } from "./ark-wallet";
-import type { CurveState } from "./bonding-curve";
-import {
-  getPrice,
-  getMarketCap,
-  getCurveProgress,
-  initialCurveState,
-  TOKEN_TOTAL_SUPPLY,
-} from "./bonding-curve";
 import type { Token } from "./store";
 
 // ── Network identifier ───────────────────────────────────────────────
@@ -36,7 +27,7 @@ function getNetworkId(): string {
 
 // ── Label tags ────────────────────────────────────────────────────────
 
-const LABEL_NAMESPACE = "vtxofun";
+const LABEL_NAMESPACE = "vtxomarket";
 function labelTags(type: string): string[][] {
   return [
     ["L", LABEL_NAMESPACE],
@@ -57,12 +48,13 @@ export interface PublishTokenListingParams {
   website?: string;
   twitter?: string;
   telegram?: string;
+  controlAssetId?: string; // present when token is reissuable
+  supply: number;
 }
 
 export async function publishTokenListing(params: PublishTokenListingParams): Promise<NDKEvent> {
   const ndk = ensureNostrReady();
-  const { name, ticker, description, image, assetId, arkTxId, creatorArkAddress, website, twitter, telegram } = params;
-  const curve = initialCurveState();
+  const { name, ticker, description, image, assetId, arkTxId, creatorArkAddress, website, twitter, telegram, controlAssetId, supply } = params;
 
   const event = new NDKEvent(ndk);
   event.kind = VTXO_TOKEN_KIND;
@@ -73,46 +65,25 @@ export async function publishTokenListing(params: PublishTokenListingParams): Pr
     image: image || "",
     assetId,
     arkTxId,
-    supply: TOKEN_TOTAL_SUPPLY,
+    supply,
     creatorArkAddress,
-    virtualTokenReserves: curve.virtualTokenReserves,
-    virtualSatReserves: curve.virtualSatReserves,
-    realTokenReserves: curve.realTokenReserves,
     ...(website && { website }),
     ...(twitter && { twitter }),
     ...(telegram && { telegram }),
+    ...(controlAssetId && { controlAssetId }),
   });
   event.tags = [
-    ["d", `vtxofun/token/${ticker}`],
+    ["d", `vtxomarket/token/${ticker}`],
     ...labelTags("token"),
-    ["t", "vtxofun-token"],
+    ["t", "vtxomarket-token"],
     ["network", getNetworkId()],
     ["name", name],
     ["ticker", ticker],
     ["assetId", assetId],
-    ["supply", String(TOKEN_TOTAL_SUPPLY)],
+    ["supply", String(supply)],
+    ...(controlAssetId ? [["controlAssetId", controlAssetId]] : []),
   ];
 
-  await event.publish();
-  return event;
-}
-
-// ── Publish curve state ──────────────────────────────────────────────
-
-export async function publishCurveState(ticker: string, state: CurveState): Promise<NDKEvent> {
-  const ndk = ensureNostrReady();
-  const event = new NDKEvent(ndk);
-  event.kind = VTXO_TOKEN_KIND;
-  event.content = JSON.stringify({
-    virtualTokenReserves: state.virtualTokenReserves,
-    virtualSatReserves: state.virtualSatReserves,
-    realTokenReserves: state.realTokenReserves,
-  });
-  event.tags = [
-    ["d", `vtxofun/curve/${ticker}`],
-    ...labelTags("curve"),
-    ["ticker", ticker],
-  ];
   await event.publish();
   return event;
 }
@@ -137,7 +108,7 @@ export async function publishTradeReceipt(trade: TradeReceiptData): Promise<NDKE
   event.kind = VTXO_TOKEN_KIND;
   event.content = JSON.stringify(trade);
   event.tags = [
-    ["d", `vtxofun/trade/${trade.arkTxId}`],
+    ["d", `vtxomarket/trade/${trade.arkTxId}`],
     ...labelTags("trade"),
     ["ticker", trade.ticker],
   ];
@@ -164,7 +135,7 @@ export async function publishOrderEvent(order: OrderData): Promise<NDKEvent> {
   event.kind = VTXO_TOKEN_KIND;
   event.content = JSON.stringify(order);
   event.tags = [
-    ["d", `vtxofun/order/${order.arkTxId}`],
+    ["d", `vtxomarket/order/${order.arkTxId}`],
     ...labelTags("order"),
     ["ticker", order.ticker],
     ["p", order.buyerPubkey],
@@ -186,7 +157,7 @@ export async function publishComment(
   event.content = text;
   event.tags = [
     ["e", tokenEventId, "", "root"],
-    ["t", `vtxofun-${ticker.toLowerCase()}`],
+    ["t", `vtxomarket-${ticker.toLowerCase()}`],
     ...labelTags("comment"),
   ];
   await event.publish();
@@ -199,12 +170,6 @@ export async function publishComment(
 function parseTokenEvent(event: NDKEvent): Token | null {
   try {
     const data = JSON.parse(event.content);
-    const curve: CurveState = {
-      virtualTokenReserves: data.virtualTokenReserves ?? initialCurveState().virtualTokenReserves,
-      virtualSatReserves: data.virtualSatReserves ?? initialCurveState().virtualSatReserves,
-      realTokenReserves: data.realTokenReserves ?? initialCurveState().realTokenReserves,
-    };
-
     return {
       id: event.id,
       assetId: data.assetId || "",
@@ -215,13 +180,8 @@ function parseTokenEvent(event: NDKEvent): Token | null {
       creator: event.pubkey,
       creatorArkAddress: data.creatorArkAddress || "",
       createdAt: event.created_at ?? Math.floor(Date.now() / 1000),
-      supply: data.supply ?? TOKEN_TOTAL_SUPPLY,
-      virtualTokenReserves: curve.virtualTokenReserves,
-      virtualSatReserves: curve.virtualSatReserves,
-      realTokenReserves: curve.realTokenReserves,
-      price: getPrice(curve),
-      marketCap: getMarketCap(curve),
-      curveProgress: getCurveProgress(curve),
+      supply: data.supply ?? 0,
+      controlAssetId: data.controlAssetId || undefined,
       replies: 0,
       tradeCount: 0,
       website: data.website,
@@ -233,7 +193,7 @@ function parseTokenEvent(event: NDKEvent): Token | null {
   }
 }
 
-/** Subscribe to all vtxo.fun token listing events for the current network */
+/** Subscribe to all vtxo.market token listing events for the current network */
 export function subscribeToTokenListings(callbacks: {
   onToken: (token: Token) => void;
   onEose?: () => void;
@@ -242,7 +202,7 @@ export function subscribeToTokenListings(callbacks: {
   const networkId = getNetworkId();
   const filter: NDKFilter = {
     kinds: [VTXO_TOKEN_KIND as number],
-    "#t": ["vtxofun-token"],
+    "#t": ["vtxomarket-token"],
   };
 
   const sub = ndk.subscribe(filter, { closeOnEose: false });
@@ -250,7 +210,7 @@ export function subscribeToTokenListings(callbacks: {
   sub.on("event", (event: NDKEvent) => {
     // Only process token listing events (not curve/trade/order)
     const dTag = event.tags.find((t) => t[0] === "d")?.[1] || "";
-    if (!dTag.startsWith("vtxofun/token/")) return;
+    if (!dTag.startsWith("vtxomarket/token/")) return;
 
     // Filter by network — skip tokens from other networks
     const eventNetwork = event.tags.find((t) => t[0] === "network")?.[1];
@@ -263,33 +223,6 @@ export function subscribeToTokenListings(callbacks: {
   if (callbacks.onEose) {
     sub.on("eose", callbacks.onEose);
   }
-
-  return sub;
-}
-
-/** Subscribe to curve state updates for a specific token */
-export function subscribeToCurveState(
-  ticker: string,
-  callback: (state: CurveState) => void
-): NDKSubscription | null {
-  const ndk = getNDK();
-  const filter: NDKFilter = {
-    kinds: [VTXO_TOKEN_KIND as number],
-    "#d": [`vtxofun/curve/${ticker}`],
-  };
-
-  const sub = ndk.subscribe(filter, { closeOnEose: false });
-
-  sub.on("event", (event: NDKEvent) => {
-    try {
-      const data = JSON.parse(event.content);
-      callback({
-        virtualTokenReserves: data.virtualTokenReserves,
-        virtualSatReserves: data.virtualSatReserves,
-        realTokenReserves: data.realTokenReserves,
-      });
-    } catch { /* ignore malformed */ }
-  });
 
   return sub;
 }
@@ -395,7 +328,7 @@ export async function fetchTokenByTicker(ticker: string): Promise<Token | null> 
   const networkId = getNetworkId();
   const filter: NDKFilter = {
     kinds: [VTXO_TOKEN_KIND as number],
-    "#d": [`vtxofun/token/${ticker}`],
+    "#d": [`vtxomarket/token/${ticker}`],
     limit: 1,
   };
 
