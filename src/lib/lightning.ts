@@ -20,7 +20,8 @@ export async function initLightning(wallet: any) {
 
   return new ArkadeLightning({
     wallet,
-    arkProvider,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    arkProvider: arkProvider as any,
     swapProvider,
     indexerProvider,
     swapManager: true, // Enable SwapManager for auto-claim, auto-refund, and persistence
