@@ -1,243 +1,340 @@
+/**
+ * Wallet storage module — Dexie-based IndexedDB storage.
+ *
+ * Follows the same class-based pattern as lendaswap's IdbWalletStorage.
+ * Provides persistent storage for mnemonic, keys, and password data.
+ *
+ * Schema history:
+ *   v1 (legacy): Raw IndexedDB "vtxo-fun-wallet" with key-value store
+ *   v2 (current): Dexie "vtxo-market-v2" with typed wallet table
+ */
+
+import Dexie, { type EntityTable } from "dexie";
 import { encryptWithPassword, decryptWithPassword, isEncrypted } from "./wallet-crypto";
 
-const DB_NAME = "vtxo-fun-wallet";
-const STORE_NAME = "wallet";
+// ── Database ────────────────────────────────────────────────────────────────
+
+const DB_NAME = "vtxo-market-v2";
 const DB_VERSION = 1;
+
+// Legacy (v1) database constants for migration
+const V1_DB_NAME = "vtxo-fun-wallet";
+const V1_STORE_NAME = "wallet";
+
+interface WalletRecord {
+  key: string;
+  value: string;
+}
+
+class VtxoMarketDatabase extends Dexie {
+  wallet!: EntityTable<WalletRecord, "key">;
+
+  constructor() {
+    super(DB_NAME);
+    this.version(DB_VERSION).stores({
+      wallet: "key",
+    });
+  }
+}
+
+// Singleton database instance
+let dbInstance: VtxoMarketDatabase | null = null;
+
+function getDatabase(): VtxoMarketDatabase {
+  if (!dbInstance) {
+    dbInstance = new VtxoMarketDatabase();
+  }
+  return dbInstance;
+}
+
+// ── Storage keys ────────────────────────────────────────────────────────────
+
 const MNEMONIC_KEY = "mnemonic";
 const NOSTR_KEY_OVERRIDE = "nostr-key-override";
-const PASSWORD_CHECK_KEY = "password-check"; // stores encrypted known value to verify password
+const PASSWORD_CHECK_KEY = "password-check";
+const PASSWORD_CHECK_VALUE = "vtxo-market-password-ok";
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
+// ── WalletStorage interface ─────────────────────────────────────────────────
+
+export interface WalletStorage {
+  getMnemonic(): Promise<string | null>;
+  setMnemonic(mnemonic: string): Promise<void>;
+  deleteMnemonic(): Promise<void>;
+  getNostrKeyOverride(): Promise<string | null>;
+  setNostrKeyOverride(hexKey: string): Promise<void>;
+  hasPassword(): Promise<boolean>;
+  setupPassword(password: string): Promise<void>;
+  verifyPassword(password: string): Promise<boolean>;
+  setMnemonicEncrypted(mnemonic: string, password: string): Promise<void>;
+  getMnemonicDecrypted(password?: string): Promise<string | null>;
+  isMnemonicEncrypted(): Promise<boolean>;
+  getNostrKeyOverrideDecrypted(password?: string): Promise<string | null>;
+  clear(): Promise<void>;
+}
+
+// ── IdbWalletStorage ────────────────────────────────────────────────────────
+
+export class IdbWalletStorage implements WalletStorage {
+  readonly #db: VtxoMarketDatabase;
+  #migratedFromLegacy = false;
+
+  constructor() {
+    this.#db = getDatabase();
+  }
+
+  /**
+   * Whether a legacy (v1) wallet was migrated during this session.
+   * When true, the old "vtxo-fun-wallet" IndexedDB can be safely deleted.
+   */
+  get migratedFromLegacy(): boolean {
+    return this.#migratedFromLegacy;
+  }
+
+  async getMnemonic(): Promise<string | null> {
+    const record = await this.#db.wallet.get(MNEMONIC_KEY);
+    if (record?.value) {
+      return record.value;
+    }
+
+    // No mnemonic in v2 — try migrating from legacy (v1) raw IndexedDB
+    const legacy = await readLegacyWallet();
+    if (!legacy) return null;
+
+    // Persist to v2 so migration only happens once
+    if (legacy.mnemonic) {
+      await this.setMnemonic(legacy.mnemonic);
+    }
+    if (legacy.nostrKeyOverride) {
+      await this.setNostrKeyOverride(legacy.nostrKeyOverride);
+    }
+    if (legacy.passwordCheck) {
+      await this.#db.wallet.put({ key: PASSWORD_CHECK_KEY, value: legacy.passwordCheck });
+    }
+    this.#migratedFromLegacy = true;
+
+    return legacy.mnemonic;
+  }
+
+  async setMnemonic(mnemonic: string): Promise<void> {
+    await this.#db.wallet.put({ key: MNEMONIC_KEY, value: mnemonic });
+  }
+
+  async deleteMnemonic(): Promise<void> {
+    await this.#db.wallet.delete(MNEMONIC_KEY);
+  }
+
+  async getNostrKeyOverride(): Promise<string | null> {
+    const record = await this.#db.wallet.get(NOSTR_KEY_OVERRIDE);
+    return record?.value ?? null;
+  }
+
+  async setNostrKeyOverride(hexKey: string): Promise<void> {
+    await this.#db.wallet.put({ key: NOSTR_KEY_OVERRIDE, value: hexKey });
+  }
+
+  // ── Password encryption ─────────────────────────────────────────────────
+
+  async hasPassword(): Promise<boolean> {
+    const record = await this.#db.wallet.get(PASSWORD_CHECK_KEY);
+    return record?.value != null;
+  }
+
+  async setupPassword(password: string): Promise<void> {
+    const checkValue = await encryptWithPassword(PASSWORD_CHECK_VALUE, password);
+
+    // If there's an existing plaintext mnemonic, encrypt it
+    const existingMnemonic = await this.getMnemonic();
+    if (existingMnemonic && !isEncrypted(existingMnemonic)) {
+      const encryptedMnemonic = await encryptWithPassword(existingMnemonic, password);
+      await this.#db.transaction("rw", this.#db.wallet, async () => {
+        await this.#db.wallet.put({ key: MNEMONIC_KEY, value: encryptedMnemonic });
+        await this.#db.wallet.put({ key: PASSWORD_CHECK_KEY, value: checkValue });
+      });
+    } else {
+      await this.#db.wallet.put({ key: PASSWORD_CHECK_KEY, value: checkValue });
+    }
+
+    // Also encrypt the nostr key override if present
+    const nostrOverride = await this.getNostrKeyOverride();
+    if (nostrOverride && !isEncrypted(nostrOverride)) {
+      const encrypted = await encryptWithPassword(nostrOverride, password);
+      await this.#db.wallet.put({ key: NOSTR_KEY_OVERRIDE, value: encrypted });
+    }
+  }
+
+  async verifyPassword(password: string): Promise<boolean> {
+    const record = await this.#db.wallet.get(PASSWORD_CHECK_KEY);
+    if (!record?.value) return false;
+
+    try {
+      const decrypted = await decryptWithPassword(record.value, password);
+      return decrypted === PASSWORD_CHECK_VALUE;
+    } catch {
+      return false;
+    }
+  }
+
+  async setMnemonicEncrypted(mnemonic: string, password: string): Promise<void> {
+    const encrypted = await encryptWithPassword(mnemonic, password);
+    await this.#db.wallet.put({ key: MNEMONIC_KEY, value: encrypted });
+  }
+
+  async getMnemonicDecrypted(password?: string): Promise<string | null> {
+    const raw = await this.getMnemonic();
+    if (!raw) return null;
+
+    if (isEncrypted(raw)) {
+      if (!password) return null;
+      try {
+        return await decryptWithPassword(raw, password);
+      } catch {
+        return null;
       }
+    }
+
+    // Plaintext (pre-encryption wallet) — return as-is
+    return raw;
+  }
+
+  async isMnemonicEncrypted(): Promise<boolean> {
+    const raw = await this.getMnemonic();
+    if (!raw) return false;
+    return isEncrypted(raw);
+  }
+
+  async getNostrKeyOverrideDecrypted(password?: string): Promise<string | null> {
+    const raw = await this.getNostrKeyOverride();
+    if (!raw) return null;
+
+    if (isEncrypted(raw)) {
+      if (!password) return null;
+      try {
+        return await decryptWithPassword(raw, password);
+      } catch {
+        return null;
+      }
+    }
+
+    return raw;
+  }
+
+  async clear(): Promise<void> {
+    await this.#db.wallet.clear();
+  }
+}
+
+// ── Legacy v1 migration ─────────────────────────────────────────────────────
+
+interface LegacyWalletData {
+  mnemonic: string | null;
+  nostrKeyOverride: string | null;
+  passwordCheck: string | null;
+}
+
+/**
+ * Read wallet data from the legacy v1 raw IndexedDB database ("vtxo-fun-wallet").
+ *
+ * The v1 database used a plain object store with string keys:
+ *   "mnemonic", "nostr-key-override", "password-check"
+ *
+ * Returns null if the v1 database doesn't exist or has no wallet data.
+ */
+function readLegacyWallet(): Promise<LegacyWalletData | null> {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === "undefined") {
+      resolve(null);
+      return;
+    }
+
+    const request = indexedDB.open(V1_DB_NAME);
+
+    // If onupgradeneeded fires, the database didn't exist — abort to
+    // prevent creating an empty v1 database.
+    request.onupgradeneeded = () => {
+      request.transaction?.abort();
     };
+
+    request.onerror = () => {
+      resolve(null);
+    };
+
     request.onsuccess = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        // Store missing (DB exists but store was lost) — delete and re-create
+
+      if (!db.objectStoreNames.contains(V1_STORE_NAME)) {
         db.close();
-        const delReq = indexedDB.deleteDatabase(DB_NAME);
-        delReq.onsuccess = () => {
-          const retry = indexedDB.open(DB_NAME, DB_VERSION);
-          retry.onupgradeneeded = () => {
-            retry.result.createObjectStore(STORE_NAME);
-          };
-          retry.onsuccess = () => resolve(retry.result);
-          retry.onerror = () => reject(retry.error);
-        };
-        delReq.onerror = () => reject(delReq.error);
+        resolve(null);
         return;
       }
-      resolve(db);
+
+      try {
+        const tx = db.transaction(V1_STORE_NAME, "readonly");
+        const store = tx.objectStore(V1_STORE_NAME);
+        const results: Record<string, string | null> = {};
+        const keys = ["mnemonic", "nostr-key-override", "password-check"];
+        let remaining = keys.length;
+
+        keys.forEach((key) => {
+          const getReq = store.get(key);
+          getReq.onsuccess = () => {
+            results[key] = getReq.result ?? null;
+            remaining--;
+            if (remaining === 0) {
+              db.close();
+              if (!results["mnemonic"] && !results["nostr-key-override"]) {
+                resolve(null);
+              } else {
+                resolve({
+                  mnemonic: results["mnemonic"],
+                  nostrKeyOverride: results["nostr-key-override"],
+                  passwordCheck: results["password-check"],
+                });
+              }
+            }
+          };
+          getReq.onerror = () => {
+            remaining--;
+            if (remaining === 0) {
+              db.close();
+              resolve(null);
+            }
+          };
+        });
+      } catch {
+        db.close();
+        resolve(null);
+      }
     };
-    request.onerror = () => reject(request.error);
   });
 }
 
-export async function saveMnemonic(mnemonic: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put(mnemonic, MNEMONIC_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+// ── Singleton + standalone function exports ─────────────────────────────────
+// Backward-compatible standalone functions that delegate to a singleton instance.
+// Consumers can gradually migrate to using `walletStorage` directly.
 
-export async function getMnemonic(): Promise<string | null> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(MNEMONIC_KEY);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
-}
+let _storage: IdbWalletStorage | null = null;
 
-export async function deleteMnemonic(): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).delete(MNEMONIC_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function saveNostrKeyOverride(hexKey: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put(hexKey, NOSTR_KEY_OVERRIDE);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-export async function getNostrKeyOverride(): Promise<string | null> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(NOSTR_KEY_OVERRIDE);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-export async function deleteAllWalletData(): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    store.delete(MNEMONIC_KEY);
-    store.delete(NOSTR_KEY_OVERRIDE);
-    store.delete(PASSWORD_CHECK_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-// -- Password-encrypted storage --
-
-const PASSWORD_CHECK_VALUE = "vtxo-fun-password-ok";
-
-/** Check if a wallet password has been set */
-export async function hasPassword(): Promise<boolean> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(PASSWORD_CHECK_KEY);
-    request.onsuccess = () => resolve(request.result != null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/** Set up wallet encryption with a password. Encrypts existing mnemonic if present. */
-export async function setupPassword(password: string): Promise<void> {
-  // Store an encrypted known value so we can verify the password later
-  const checkValue = await encryptWithPassword(PASSWORD_CHECK_VALUE, password);
-  const db = await openDB();
-
-  // If there's an existing plaintext mnemonic, encrypt it
-  const existingMnemonic = await getMnemonic();
-  if (existingMnemonic && !isEncrypted(existingMnemonic)) {
-    const encryptedMnemonic = await encryptWithPassword(existingMnemonic, password);
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      store.put(encryptedMnemonic, MNEMONIC_KEY);
-      store.put(checkValue, PASSWORD_CHECK_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } else {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(checkValue, PASSWORD_CHECK_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+function getStorage(): IdbWalletStorage {
+  if (!_storage) {
+    _storage = new IdbWalletStorage();
   }
-
-  // Also encrypt the nostr key override if present
-  const nostrOverride = await getNostrKeyOverride();
-  if (nostrOverride && !isEncrypted(nostrOverride)) {
-    const encrypted = await encryptWithPassword(nostrOverride, password);
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(encrypted, NOSTR_KEY_OVERRIDE);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
+  return _storage;
 }
 
-/** Verify a password against the stored check value */
-export async function verifyPassword(password: string): Promise<boolean> {
-  const db = await openDB();
-  const checkValue = await new Promise<string | null>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(PASSWORD_CHECK_KEY);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
+/** Singleton storage instance. Prefer using this over standalone functions. */
+export const walletStorage = getStorage;
 
-  if (!checkValue) return false;
-
-  try {
-    const decrypted = await decryptWithPassword(checkValue, password);
-    return decrypted === PASSWORD_CHECK_VALUE;
-  } catch {
-    return false; // wrong password
-  }
-}
-
-/**
- * Save mnemonic with optional encryption.
- * If password is provided, encrypts before storing.
- */
-export async function saveMnemonicEncrypted(mnemonic: string, password: string): Promise<void> {
-  const encrypted = await encryptWithPassword(mnemonic, password);
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put(encrypted, MNEMONIC_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-/**
- * Get mnemonic, decrypting if encrypted.
- * If data is encrypted and no password provided, returns null.
- * If data is plaintext, returns as-is (backward compatible).
- */
-export async function getMnemonicDecrypted(password?: string): Promise<string | null> {
-  const raw = await getMnemonic();
-  if (!raw) return null;
-
-  if (isEncrypted(raw)) {
-    if (!password) return null; // needs password
-    try {
-      return await decryptWithPassword(raw, password);
-    } catch {
-      return null; // wrong password
-    }
-  }
-
-  // Plaintext (pre-encryption wallet) — return as-is
-  return raw;
-}
-
-/**
- * Check if the stored mnemonic is encrypted.
- */
-export async function isMnemonicEncrypted(): Promise<boolean> {
-  const raw = await getMnemonic();
-  if (!raw) return false;
-  return isEncrypted(raw);
-}
-
-/**
- * Get nostr key override, decrypting if encrypted.
- */
-export async function getNostrKeyOverrideDecrypted(password?: string): Promise<string | null> {
-  const raw = await getNostrKeyOverride();
-  if (!raw) return null;
-
-  if (isEncrypted(raw)) {
-    if (!password) return null;
-    try {
-      return await decryptWithPassword(raw, password);
-    } catch {
-      return null;
-    }
-  }
-
-  return raw;
-}
+// Standalone function exports (backward compat with existing consumers)
+export const getMnemonic = () => getStorage().getMnemonic();
+export const saveMnemonic = (m: string) => getStorage().setMnemonic(m);
+export const deleteMnemonic = () => getStorage().deleteMnemonic();
+export const saveNostrKeyOverride = (k: string) => getStorage().setNostrKeyOverride(k);
+export const getNostrKeyOverride = () => getStorage().getNostrKeyOverride();
+export const deleteAllWalletData = () => getStorage().clear();
+export const hasPassword = () => getStorage().hasPassword();
+export const setupPassword = (p: string) => getStorage().setupPassword(p);
+export const verifyPassword = (p: string) => getStorage().verifyPassword(p);
+export const saveMnemonicEncrypted = (m: string, p: string) => getStorage().setMnemonicEncrypted(m, p);
+export const getMnemonicDecrypted = (p?: string) => getStorage().getMnemonicDecrypted(p);
+export const isMnemonicEncrypted = () => getStorage().isMnemonicEncrypted();
+export const getNostrKeyOverrideDecrypted = (p?: string) => getStorage().getNostrKeyOverrideDecrypted(p);

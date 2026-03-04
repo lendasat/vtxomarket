@@ -141,5 +141,49 @@ export function buildApp(): Hono {
     return c.body(null, 204);
   });
 
+  // ── Introspector logs proxy ──────────────────────────────────────────────────
+  // Reads Docker container logs for the introspector service and returns parsed entries.
+
+  app.get("/introspector/logs", async (c) => {
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "200", 10), 500);
+    try {
+      const proc = Bun.spawn(
+        ["docker", "logs", "introspector", "--tail", String(limit), "--timestamps"],
+        { stdout: "pipe", stderr: "pipe" }
+      );
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      // Docker sends logs to stderr for container stderr output
+      const raw = (stdout + "\n" + stderr).trim();
+      if (!raw) return c.json({ logs: [] });
+
+      const entries = raw.split("\n").filter(Boolean).map((line) => {
+        // Docker --timestamps prepends: "2026-03-04T09:44:09.123456789Z "
+        // Logrus format: time="..." level=info msg="..." key=val
+        const timeMatch = line.match(/time="([^"]+)"/);
+        const levelMatch = line.match(/level=(\w+)/);
+        const msgMatch = line.match(/msg="([^"]+)"/);
+        const ts = timeMatch?.[1] ?? line.slice(0, 30);
+        const level = levelMatch?.[1] ?? "info";
+        const msg = msgMatch?.[1] ?? line;
+        // Collect remaining key=val pairs as meta
+        const meta: Record<string, string> = {};
+        const kvRegex = /(\w+)=(?:"([^"]*)"|(\S+))/g;
+        let m;
+        while ((m = kvRegex.exec(line)) !== null) {
+          const key = m[1];
+          if (key === "time" || key === "level" || key === "msg") continue;
+          meta[key] = m[2] ?? m[3];
+        }
+        return { ts, level, msg, meta: Object.keys(meta).length > 0 ? meta : undefined };
+      });
+      return c.json({ logs: entries });
+    } catch {
+      return c.json({ logs: [], error: "Could not read introspector logs (docker not available?)" });
+    }
+  });
+
   return app;
 }

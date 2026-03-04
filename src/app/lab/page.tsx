@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { hex as scureHex } from "@scure/base";
 import { useAppStore } from "@/lib/store";
 import { useTokens } from "@/hooks/useTokens";
 import {
@@ -13,17 +14,18 @@ import {
 
 // ── Opcode reference data ──────────────────────────────────────────────────────
 
+// Hex values from introspector/pkg/arkade/opcode.go (authoritative source)
 const OPCODES = [
   { byte: "0xCF", dec: 207, name: "OP_INSPECTOUTPUTVALUE",        used: true,  desc: "Pop output index → push output[i].value as 8-byte LE64" },
-  { byte: "0xD1", dec: 209, name: "OP_INSPECTOUTPUTSCRIPTPUBKEY", used: true,  desc: "Pop output index → push output[i].scriptPubKey (34-byte P2TR)" },
-  { byte: "0xCE", dec: 206, name: "OP_INSPECTOUTPUTASSET",        used: false, desc: "Pop output index → push output[i].asset (32-byte asset ID)" },
+  { byte: "0xD1", dec: 209, name: "OP_INSPECTOUTPUTSCRIPTPUBKEY", used: true,  desc: "Pop output index → push witnessProgram, then version on top" },
+  { byte: "0xCE", dec: 206, name: "OP_INSPECTOUTPUTASSET",        used: false, desc: "Not implemented in introspector — 0xCE is OP_UNKNOWN206" },
   { byte: "0xD0", dec: 208, name: "OP_INSPECTOUTPUTNONCE",        used: false, desc: "Pop output index → push output[i].nonce (confidential tx)" },
-  { byte: "0xCA", dec: 202, name: "OP_INSPECTINPUTVALUE",         used: false, desc: "Pop input index → push input[i].value as 8-byte LE64" },
-  { byte: "0xCB", dec: 203, name: "OP_INSPECTINPUTSCRIPTPUBKEY",  used: false, desc: "Pop input index → push input[i].scriptPubKey" },
-  { byte: "0xDF", dec: 223, name: "OP_GREATERTHANOREQUAL64",      used: true,  desc: "Pop two LE64 values → push 1 if stack[1] >= stack[0]" },
-  { byte: "0xDC", dec: 220, name: "OP_ADD64",                     used: false, desc: "Pop two LE64 values → push their sum as LE64" },
-  { byte: "0xDD", dec: 221, name: "OP_SUB64",                     used: false, desc: "Pop two LE64 values → push their difference as LE64" },
-  { byte: "0xDE", dec: 222, name: "OP_LESSTHAN64",                used: false, desc: "Pop two LE64 values → push 1 if stack[1] < stack[0]" },
+  { byte: "0xC9", dec: 201, name: "OP_INSPECTINPUTVALUE",         used: false, desc: "Pop input index → push input[i].value as 8-byte LE64" },
+  { byte: "0xCA", dec: 202, name: "OP_INSPECTINPUTSCRIPTPUBKEY",  used: false, desc: "Pop input index → push input[i].scriptPubKey" },
+  { byte: "0xDF", dec: 223, name: "OP_GREATERTHANOREQUAL64",      used: true,  desc: "Pop b (top), pop a → push 1 if int64(a) >= int64(b)" },
+  { byte: "0xD7", dec: 215, name: "OP_ADD64",                     used: false, desc: "Pop two LE64 values → push their sum as LE64" },
+  { byte: "0xD8", dec: 216, name: "OP_SUB64",                     used: false, desc: "Pop two LE64 values → push their difference as LE64" },
+  { byte: "0xDC", dec: 220, name: "OP_LESSTHAN64",                used: false, desc: "Pop b (top), pop a → push 1 if int64(a) < int64(b)" },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -34,13 +36,9 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function hexToBytes(hex: string): Uint8Array | null {
   const clean = hex.replace(/\s+/g, "");
-  if (clean.length % 2 !== 0) return null;
+  if (clean.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(clean)) return null;
   try {
-    const result = new Uint8Array(clean.length / 2);
-    for (let i = 0; i < clean.length; i += 2) {
-      result[i / 2] = parseInt(clean.slice(i, i + 2), 16);
-    }
-    return result;
+    return scureHex.decode(clean);
   } catch {
     return null;
   }
@@ -224,6 +222,7 @@ export default function LabPage() {
     const offer: SwapOffer = {
       offerOutpoint: fcOutpoint,
       swapScriptHex: fcSwapScriptHex,
+      arkadeScriptHex: "",
       assetId: fcAssetId,
       tokenAmount: parseInt(fcTokenAmount, 10) || 0,
       satAmount: parseInt(fcSatAmount, 10) || 0,
@@ -256,6 +255,7 @@ export default function LabPage() {
     const offer: SwapOffer = {
       offerOutpoint: fcOutpoint,
       swapScriptHex: fcSwapScriptHex,
+      arkadeScriptHex: "",
       assetId: fcAssetId,
       tokenAmount: parseInt(fcTokenAmount, 10) || 0,
       satAmount: parseInt(fcSatAmount, 10) || 0,

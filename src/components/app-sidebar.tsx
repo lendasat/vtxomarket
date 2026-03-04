@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { FlaskConical } from "lucide-react";
 
 const navItems = [
   {
@@ -43,11 +44,7 @@ const navItems = [
   {
     href: "/lab",
     label: "Lab",
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-[18px] w-[18px]">
-        <path fillRule="evenodd" d="M8.5 3.528v4.644c0 .729-.29 1.428-.805 1.944l-1.217 1.216a8.75 8.75 0 0 1 3.55.621l.502.201a7.25 7.25 0 0 0 5.6.139l.392-.158a.75.75 0 0 1 .996.719v.117a.75.75 0 0 1-.5.707 8.75 8.75 0 0 1-5.316-.068l-.502-.2a7.25 7.25 0 0 0-4.468-.279 5.75 5.75 0 0 0-3.233 2.188.75.75 0 0 1-1.27-.806A7.25 7.25 0 0 1 6.5 11.5a8.75 8.75 0 0 1 1-.233V10.116l-1.217-1.217A2.75 2.75 0 0 1 5.5 6.944V3.528a2.75 2.75 0 0 1 3-.001ZM7 3.75v.75h6v-.75A1.25 1.25 0 0 0 11.75 2.5h-3.5A1.25 1.25 0 0 0 7 3.75Z" clipRule="evenodd" />
-      </svg>
-    ),
+    icon: <FlaskConical className="h-[18px] w-[18px]" strokeWidth={2} />,
   },
   {
     href: "/settings",

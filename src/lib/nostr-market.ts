@@ -5,7 +5,6 @@
  * D-tag conventions:
  *   - Token listing:  vtxomarket/token/{TICKER}
  *   - Trade receipt:  vtxomarket/trade/{arkTxId}
- *   - Order:          vtxomarket/order/{arkTxId}
  */
 
 import { NDKEvent, NDKFilter, NDKSubscription } from "@nostr-dev-kit/ndk";
@@ -100,48 +99,6 @@ export interface TradeReceiptData {
   seller: string;  // pubkey hex
   price: number;
   timestamp: number;
-}
-
-export async function publishTradeReceipt(trade: TradeReceiptData): Promise<NDKEvent> {
-  const ndk = ensureNostrReady();
-  const event = new NDKEvent(ndk);
-  event.kind = VTXO_TOKEN_KIND;
-  event.content = JSON.stringify(trade);
-  event.tags = [
-    ["d", `vtxomarket/trade/${trade.arkTxId}`],
-    ...labelTags("trade"),
-    ["ticker", trade.ticker],
-  ];
-  await event.publish();
-  return event;
-}
-
-// ── Order events ────────────────────────────────────────────────────
-
-export interface OrderData {
-  ticker: string;
-  arkTxId: string;
-  type: "buy" | "sell";
-  sats: number;
-  expectedTokens: number;
-  buyerPubkey: string;
-  buyerArkAddress: string;
-  timestamp: number;
-}
-
-export async function publishOrderEvent(order: OrderData): Promise<NDKEvent> {
-  const ndk = ensureNostrReady();
-  const event = new NDKEvent(ndk);
-  event.kind = VTXO_TOKEN_KIND;
-  event.content = JSON.stringify(order);
-  event.tags = [
-    ["d", `vtxomarket/order/${order.arkTxId}`],
-    ...labelTags("order"),
-    ["ticker", order.ticker],
-    ["p", order.buyerPubkey],
-  ];
-  await event.publish();
-  return event;
 }
 
 // ── Comments (kind 1) ───────────────────────────────────────────────
@@ -248,38 +205,6 @@ export function subscribeToTradesForToken(
     try {
       const trade = JSON.parse(event.content) as TradeReceiptData;
       callbacks.onTrade(trade);
-    } catch { /* ignore */ }
-  });
-
-  if (callbacks.onEose) {
-    sub.on("eose", callbacks.onEose);
-  }
-
-  return sub;
-}
-
-/** Subscribe to order events for a specific creator (for CMM) */
-export function subscribeToOrdersForCreator(
-  pubkey: string,
-  callbacks: {
-    onOrder: (order: OrderData, event: NDKEvent) => void;
-    onEose?: () => void;
-  }
-): NDKSubscription | null {
-  const ndk = getNDK();
-  const filter: NDKFilter = {
-    kinds: [VTXO_TOKEN_KIND as number],
-    "#l": ["order"],
-  };
-
-  const sub = ndk.subscribe(filter, { closeOnEose: false });
-
-  sub.on("event", (event: NDKEvent) => {
-    try {
-      const order = JSON.parse(event.content) as OrderData;
-      // Only process orders for tokens created by this pubkey
-      // The creator checks if the order is for their token
-      callbacks.onOrder(order, event);
     } catch { /* ignore */ }
   });
 

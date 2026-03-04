@@ -14,6 +14,7 @@
  *   provider.clearSwapContext();
  */
 
+import { hex as scureHex } from "@scure/base";
 import {
   submitIntent as introspectorSubmitIntent,
   submitFinalization as introspectorSubmitFinalization,
@@ -22,10 +23,7 @@ import {
 
 // PSBT custom field key for arkade script (matches introspector's expectation)
 const ARK_PSBT_KEY_TYPE = 0xDE;
-const ARKADE_SCRIPT_FIELD_KEY = new Uint8Array([
-  ARK_PSBT_KEY_TYPE,
-  ...new TextEncoder().encode("arkadescript"),
-]);
+const ARKADE_SCRIPT_FIELD_KEY = new TextEncoder().encode("arkadescript");
 
 interface SwapContext {
   offerOutpoint: string;
@@ -48,7 +46,14 @@ export class IntrospectorArkProvider {
     this.inner = inner;
   }
 
+  /** Set swap context before calling wallet.settle(). Throws if a swap is already in progress. */
   setSwapContext(ctx: SwapContext): void {
+    if (this.swapContext) {
+      throw new Error(
+        `IntrospectorProvider: swap already in progress for ${this.swapContext.offerOutpoint}. ` +
+        `Call clearSwapContext() first or wait for the current swap to complete.`
+      );
+    }
     this.swapContext = ctx;
     this.lastSignedIntentProof = null;
     this.lastIntentMessage = null;
@@ -71,7 +76,7 @@ export class IntrospectorArkProvider {
       return this.inner.registerIntent(intent);
     }
 
-    const arkadeScriptBytes = hexToBytes(this.swapContext.arkadeScriptHex);
+    const arkadeScriptBytes = scureHex.decode(this.swapContext.arkadeScriptHex);
 
     // Inject arkadescript PSBT field into the intent proof
     const modifiedProof = await this.injectArkadeScriptField(
@@ -96,7 +101,7 @@ export class IntrospectorArkProvider {
     signedForfeitTxs: string[],
     signedCommitmentTx?: string
   ): Promise<void> {
-    if (!this.swapContext || !this.lastSignedIntentProof) {
+    if (!this.swapContext || !this.lastSignedIntentProof || this.lastIntentMessage === null) {
       // No swap context — pass through
       return this.inner.submitSignedForfeitTxs(
         signedForfeitTxs,
@@ -113,18 +118,26 @@ export class IntrospectorArkProvider {
     const finalizationResult = await introspectorSubmitFinalization({
       signedIntent: {
         proof: this.lastSignedIntentProof,
-        message: this.lastIntentMessage!,
+        message: this.lastIntentMessage,
       },
       forfeits: signedForfeitTxs,
       connectorTree: this.connectorTreeChunks,
       commitmentTx: signedCommitmentTx,
     });
 
+    // When swap context is active, introspector MUST co-sign forfeits.
+    // An empty response means the introspector failed to validate — do not
+    // fall back to unsigned forfeits as the ASP would reject them anyway.
+    if (finalizationResult.signedForfeits.length === 0 && signedForfeitTxs.length > 0) {
+      throw new Error(
+        "Introspector returned empty signedForfeits — co-signing failed. " +
+        "The swap cannot proceed without introspector signatures."
+      );
+    }
+
     // Forward the introspector-signed versions to ASP
     return this.inner.submitSignedForfeitTxs(
-      finalizationResult.signedForfeits.length > 0
-        ? finalizationResult.signedForfeits
-        : signedForfeitTxs,
+      finalizationResult.signedForfeits,
       finalizationResult.signedCommitmentTx || signedCommitmentTx
     );
   }
@@ -214,8 +227,10 @@ export class IntrospectorArkProvider {
 
   /**
    * Inject the arkadescript PSBT custom field into the intent proof.
-   * Input 0 is the message input (skip), input 1+ are VTXO inputs.
-   * We add the field to all VTXO inputs (the introspector skips non-arkade inputs).
+   *
+   * The SDK's intent PSBT layout: input 0 = message input, input 1+ = VTXO inputs.
+   * We add the arkade script field to all VTXO inputs. The introspector skips
+   * inputs that don't have the field.
    */
   private async injectArkadeScriptField(
     base64Proof: string,
@@ -227,22 +242,21 @@ export class IntrospectorArkProvider {
     const psbtBytes = base64.decode(base64Proof);
     const tx = Transaction.fromPSBT(psbtBytes);
 
-    // Add arkadescript unknown field to each VTXO input (skip input 0 = message)
     const inputCount = tx.inputsLength;
+    if (inputCount < 2) {
+      throw new Error(
+        `PSBT has ${inputCount} input(s), expected at least 2 (message + VTXO). ` +
+        `Cannot inject arkade script field.`
+      );
+    }
+
+    // Skip input 0 (message), inject into all VTXO inputs (1+)
     for (let i = 1; i < inputCount; i++) {
       tx.updateInput(i, {
-        unknown: [[ARKADE_SCRIPT_FIELD_KEY, arkadeScript]],
+        unknown: [[{ type: ARK_PSBT_KEY_TYPE, key: ARKADE_SCRIPT_FIELD_KEY }, arkadeScript]],
       });
     }
 
     return base64.encode(tx.toPSBT());
   }
-}
-
-function hexToBytes(hex: string): Uint8Array {
-  const result = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return result;
 }

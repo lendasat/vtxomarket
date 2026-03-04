@@ -36,9 +36,7 @@ export function useWallet() {
         console.error("[wallet] Mnemonic storage failed, using ephemeral:", e);
         mnemonic = generateMnemonic();
       }
-      useAppStore.getState().setMnemonic(mnemonic);
-
-      // 2. Derive keys
+      // 2. Derive keys (mnemonic stays in local variable only — never stored in global state)
       let arkKeyHex: string;
       let nostrKeyHex: string;
       try {

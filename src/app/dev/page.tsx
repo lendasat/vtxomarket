@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const INDEXER = "http://localhost:3001";
+const INTROSPECTOR = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
 const POLL_MS = 2000;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,6 +44,11 @@ interface LogEntry {
   meta?: Record<string, unknown>;
 }
 
+interface IntrospectorInfo {
+  version: string;
+  signerPubkey: string;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function shortId(id: string) {
@@ -55,12 +61,15 @@ function elapsed(secs: number) {
   return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
 }
 
-const LEVEL_STYLE: Record<LogEntry["level"], string> = {
+const LEVEL_STYLE: Record<string, string> = {
   debug: "text-zinc-500",
   info:  "text-blue-400",
   warn:  "text-yellow-400",
+  warning: "text-yellow-400",
   error: "text-red-400",
 };
+
+type LogSource = "indexer" | "introspector";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -71,15 +80,24 @@ export default function DevPage() {
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [vtxos, setVtxos] = useState<Vtxo[]>([]);
   const [vtxosLoading, setVtxosLoading] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logFilter, setLogFilter] = useState<LogEntry["level"] | "all">("all");
+
+  // Logs
+  const [indexerLogs, setIndexerLogs] = useState<LogEntry[]>([]);
+  const [introspectorLogs, setIntrospectorLogs] = useState<LogEntry[]>([]);
+  const [logSource, setLogSource] = useState<LogSource>("indexer");
+  const [logFilter, setLogFilter] = useState<string>("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const [spendableOnly, setSpendableOnly] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Introspector
+  const [introInfo, setIntroInfo] = useState<IntrospectorInfo | null>(null);
+  const [introOnline, setIntroOnline] = useState(false);
+
   // ── Polling ─────────────────────────────────────────────────────────────────
 
   const poll = useCallback(async () => {
+    // Indexer
     try {
       const [h, a, l] = await Promise.all([
         fetch(`${INDEXER}/health`).then((r) => r.json()),
@@ -89,9 +107,26 @@ export default function DevPage() {
       setHealth(h);
       setHealthErr(false);
       setAssets(a.assets ?? []);
-      setLogs(l.logs ?? []);
+      setIndexerLogs(l.logs ?? []);
     } catch {
       setHealthErr(true);
+    }
+
+    // Introspector info (direct — CORS enabled)
+    try {
+      const info = await fetch(`${INTROSPECTOR}/v1/info`).then((r) => r.json());
+      setIntroInfo(info);
+      setIntroOnline(true);
+    } catch {
+      setIntroOnline(false);
+    }
+
+    // Introspector logs (proxied through indexer → docker logs)
+    try {
+      const il = await fetch(`${INDEXER}/introspector/logs?limit=200`).then((r) => r.json());
+      setIntrospectorLogs(il.logs ?? []);
+    } catch {
+      // Indexer might be down; introspector logs unavailable
     }
   }, []);
 
@@ -103,9 +138,14 @@ export default function DevPage() {
 
   // ── Auto-scroll logs ─────────────────────────────────────────────────────────
 
+  const activeLogs = logSource === "indexer" ? indexerLogs : introspectorLogs;
+  const filteredLogs = logFilter === "all"
+    ? activeLogs
+    : activeLogs.filter((l) => l.level === logFilter || (logFilter === "warn" && l.level === ("warning" as string)));
+
   useEffect(() => {
     if (autoScroll) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs, autoScroll]);
+  }, [filteredLogs, autoScroll]);
 
   // ── Load VTXOs when asset selected ──────────────────────────────────────────
 
@@ -119,10 +159,6 @@ export default function DevPage() {
       .catch(() => setVtxosLoading(false));
   }, [selectedAsset, spendableOnly]);
 
-  // ── Filtered logs ────────────────────────────────────────────────────────────
-
-  const filteredLogs = logFilter === "all" ? logs : logs.filter((l) => l.level === logFilter);
-
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -131,12 +167,17 @@ export default function DevPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-white">Indexer Debug</h1>
-          <p className="text-zinc-500 text-xs">interim_asset_indexer · polls every {POLL_MS / 1000}s</p>
+          <h1 className="text-lg font-bold text-white">Developer Dashboard</h1>
+          <p className="text-zinc-500 text-xs">indexer + introspector · polls every {POLL_MS / 1000}s</p>
         </div>
-        <span className={`px-2 py-0.5 rounded text-xs font-bold ${healthErr ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"}`}>
-          {healthErr ? "OFFLINE" : "ONLINE"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded text-xs font-bold ${healthErr ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"}`}>
+            IDX {healthErr ? "OFF" : "ON"}
+          </span>
+          <span className={`px-2 py-0.5 rounded text-xs font-bold ${introOnline ? "bg-purple-900 text-purple-300" : "bg-red-900 text-red-300"}`}>
+            INTRO {introOnline ? "ON" : "OFF"}
+          </span>
+        </div>
       </div>
 
       {/* Health stats */}
@@ -149,10 +190,14 @@ export default function DevPage() {
             { label: "Txs seen",  value: health.txCount },
             { label: "Uptime",    value: elapsed(health.uptime) },
             { label: "ARK server", value: new URL(health.arkServerUrl).hostname },
+            ...(introInfo ? [
+              { label: "Introspector", value: introInfo.version },
+              { label: "Signer key", value: shortId(introInfo.signerPubkey) },
+            ] : []),
           ].map(({ label, value }) => (
             <div key={label} className="bg-zinc-900 border border-zinc-800 rounded p-2">
               <div className="text-zinc-500 text-xs">{label}</div>
-              <div className="text-white font-bold truncate">{String(value)}</div>
+              <div className="text-white font-bold truncate" title={String(value)}>{String(value)}</div>
             </div>
           ))}
         </div>
@@ -257,10 +302,37 @@ export default function DevPage() {
           )}
         </div>
 
-        {/* Right: Log stream */}
+        {/* Right: Log stream with tabs */}
         <div className="bg-zinc-900 border border-zinc-800 rounded flex flex-col" style={{ minHeight: "500px", maxHeight: "70vh" }}>
+
+          {/* Log source tabs */}
+          <div className="flex border-b border-zinc-800 flex-shrink-0">
+            {(["indexer", "introspector"] as const).map((src) => (
+              <button
+                key={src}
+                onClick={() => { setLogSource(src); setLogFilter("all"); }}
+                className={`flex-1 px-3 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
+                  logSource === src
+                    ? src === "indexer"
+                      ? "bg-zinc-800 text-blue-400 border-b-2 border-blue-400"
+                      : "bg-zinc-800 text-purple-400 border-b-2 border-purple-400"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                }`}
+              >
+                {src}
+                <span className={`ml-1.5 px-1 py-0.5 rounded text-[10px] ${
+                  (src === "indexer" ? !healthErr : introOnline)
+                    ? "bg-green-900/50 text-green-400"
+                    : "bg-red-900/50 text-red-400"
+                }`}>
+                  {(src === "indexer" ? indexerLogs : introspectorLogs).length}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Filter + controls bar */}
           <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-2 flex-shrink-0">
-            <span className="font-bold text-white">Logs</span>
             <span className="text-zinc-500 text-xs">({filteredLogs.length})</span>
 
             {/* Level filter */}
@@ -287,15 +359,19 @@ export default function DevPage() {
 
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {filteredLogs.length === 0 ? (
-              <div className="text-zinc-600 text-xs p-2">No log entries yet.</div>
+              <div className="text-zinc-600 text-xs p-2">
+                {logSource === "introspector" && !introOnline
+                  ? "Introspector is offline. Start it with: docker start introspector"
+                  : "No log entries yet."}
+              </div>
             ) : (
               filteredLogs.map((entry, i) => (
                 <div key={i} className="flex gap-2 text-xs leading-5 hover:bg-zinc-800/50 rounded px-1">
                   <span className="text-zinc-600 flex-shrink-0 tabular-nums">
-                    {entry.ts.slice(11, 19)}
+                    {(entry.ts ?? "").slice(11, 19) || "—"}
                   </span>
-                  <span className={`flex-shrink-0 w-10 font-bold uppercase ${LEVEL_STYLE[entry.level]}`}>
-                    {entry.level.slice(0, 4)}
+                  <span className={`flex-shrink-0 w-10 font-bold uppercase ${LEVEL_STYLE[entry.level] ?? "text-zinc-500"}`}>
+                    {(entry.level ?? "info").slice(0, 4)}
                   </span>
                   <span className="text-zinc-300 break-all">{entry.msg}</span>
                   {entry.meta && Object.keys(entry.meta).length > 0 && (

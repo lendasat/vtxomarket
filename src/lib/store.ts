@@ -29,9 +29,6 @@ export interface HeldAsset {
 }
 
 interface AppState {
-  // Wallet seed
-  mnemonic: string | null;
-
   // Nostr
   user: NDKUser | null;
   profile: NDKUserProfile | null;
@@ -55,7 +52,6 @@ interface AppState {
   heldAssets: HeldAsset[];
 
   // Actions
-  setMnemonic: (mnemonic: string | null) => void;
   setUser: (user: NDKUser | null) => void;
   setProfile: (profile: NDKUserProfile | null) => void;
   setConnected: (connected: boolean) => void;
@@ -75,7 +71,6 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  mnemonic: null,
   user: null,
   profile: null,
   connected: false,
@@ -89,7 +84,6 @@ export const useAppStore = create<AppState>((set) => ({
   tokensLoading: false,
   tokensLoaded: false,
   heldAssets: [],
-  setMnemonic: (mnemonic) => set({ mnemonic }),
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   setConnected: (connected) => set({ connected }),

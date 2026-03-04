@@ -3,19 +3,20 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useAppStore } from "@/lib/store";
-import { deleteAllWalletData, getNostrKeyOverride } from "@/lib/wallet-storage";
+import { deleteAllWalletData, getNostrKeyOverride, getMnemonic } from "@/lib/wallet-storage";
 import {
   mnemonicToNostrPrivateKeyHex,
   mnemonicToArkPrivateKeyHex,
 } from "@/lib/wallet-crypto";
 
 export default function SettingsPage() {
-  const mnemonic = useAppStore((s) => s.mnemonic);
   const user = useAppStore((s) => s.user);
   const profile = useAppStore((s) => s.profile);
   const nostrReady = useAppStore((s) => s.nostrReady);
   const walletReady = useAppStore((s) => s.walletReady);
 
+  // Mnemonic loaded from IndexedDB on-demand (not held in global state)
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -133,12 +134,13 @@ export default function SettingsPage() {
     window.location.reload();
   };
 
-  // Derive keys for display — check for nsec override
+  // Derive keys for display — only after mnemonic is loaded on-demand
   let arkPrivKeyHex = "";
   if (mnemonic) {
     try { arkPrivKeyHex = mnemonicToArkPrivateKeyHex(mnemonic); } catch { /* */ }
   }
 
+  // Load nostr key (override or derived) — on-demand after mnemonic loads
   useEffect(() => {
     async function loadNostrKey() {
       const override = await getNostrKeyOverride();
@@ -153,6 +155,23 @@ export default function SettingsPage() {
     }
     loadNostrKey();
   }, [mnemonic]);
+
+  // Load mnemonic from IndexedDB on-demand when user clicks "Reveal"
+  const handleRevealMnemonic = async () => {
+    if (mnemonic) {
+      setRevealed(true);
+      return;
+    }
+    try {
+      const stored = await getMnemonic();
+      if (stored) {
+        setMnemonic(stored);
+        setRevealed(true);
+      }
+    } catch (e) {
+      console.error("[settings] Failed to load mnemonic:", e);
+    }
+  };
 
   const truncate = (s: string, chars = 16) => {
     if (s.length <= chars * 2 + 3) return s;
@@ -322,20 +341,19 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {!mnemonic ? (
-            <p className="text-xs text-muted-foreground/50">Generating wallet...</p>
-          ) : !revealed ? (
+          {!revealed ? (
             <button
-              onClick={() => setRevealed(true)}
-              className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-medium transition-all hover:bg-white/[0.12] hover:border-white/[0.14]"
+              onClick={handleRevealMnemonic}
+              disabled={!walletReady}
+              className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-medium transition-all hover:bg-white/[0.12] hover:border-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              Reveal Seed Phrase
+              {walletReady ? "Reveal Seed Phrase" : "Generating wallet..."}
             </button>
           ) : (
             <>
               <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">
                 <div className="flex flex-wrap gap-2">
-                  {mnemonic.split(" ").map((word, i) => (
+                  {mnemonic!.split(" ").map((word, i) => (
                     <span
                       key={i}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.06] px-2.5 py-1.5 text-xs font-mono"
@@ -356,7 +374,7 @@ export default function SettingsPage() {
                   Download .txt
                 </button>
                 <button
-                  onClick={() => handleCopy(mnemonic, "mnemonic")}
+                  onClick={() => handleCopy(mnemonic!, "mnemonic")}
                   className="flex-1 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] text-xs font-medium transition-all hover:bg-white/[0.1]"
                 >
                   {copied === "mnemonic" ? "Copied!" : "Copy"}

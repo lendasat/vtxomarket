@@ -54,27 +54,25 @@ export async function getAspOnchainFee(): Promise<number> {
 // VTXO renewal: default 3 days before expiry (matches Arkade SDK default)
 const DEFAULT_RENEWAL_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
 
-let _sdk: typeof import("@arkade-os/sdk") | null = null;
+// Cache the SDK import *promise* (not the resolved value) to prevent
+// concurrent callers from triggering duplicate imports + opcode registration.
+let _sdkPromise: Promise<typeof import("@arkade-os/sdk")> | null = null;
 
-async function getSDK() {
-  if (!_sdk) {
-    _sdk = await import("@arkade-os/sdk");
-    await registerArkadeOpcodes();
+function getSDK() {
+  if (!_sdkPromise) {
+    _sdkPromise = import("@arkade-os/sdk").then(async (sdk) => {
+      await registerArkadeOpcodes();
+      return sdk;
+    });
   }
-  return _sdk;
+  return _sdkPromise;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function hexToBytes(hex: string): Uint8Array {
-  const result = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return result;
-}
+// Use @scure/base for hex encoding/decoding — validates input and throws on
+// invalid hex (odd length, non-hex chars) instead of silently producing garbage.
+import { hex as scureHex } from "@scure/base";
+const hexToBytes = scureHex.decode;
+const bytesToHex = scureHex.encode;
 
 const WALLET_CONNECT_TIMEOUT = 30_000;
 const WALLET_MAX_RETRIES = 2;
