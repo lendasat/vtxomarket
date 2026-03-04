@@ -56,6 +56,7 @@ export interface OfferRow {
   makerPkScript: string;
   makerXOnlyPubkey: string;
   swapScriptHex: string;
+  arkadeScriptHex: string;  // hex-encoded arkade script (introspection conditions for PSBT field)
   expiresAt: number;
   status: 'open' | 'filled' | 'expired' | 'cancelled';
   filledInTxid: string | null;
@@ -146,6 +147,7 @@ function migrate(db: Database): void {
       makerPkScript   TEXT NOT NULL DEFAULT '',
       makerXOnlyPubkey TEXT NOT NULL DEFAULT '',
       swapScriptHex   TEXT NOT NULL DEFAULT '',
+      arkadeScriptHex TEXT NOT NULL DEFAULT '',
       expiresAt       INTEGER NOT NULL,
       status          TEXT NOT NULL DEFAULT 'open',
       filledInTxid    TEXT,
@@ -154,11 +156,15 @@ function migrate(db: Database): void {
     )
   `);
 
-  // Add vtxoSatsValue column if missing (migration for existing DBs)
+  // Add missing columns (migration for existing DBs)
   const offerCols = db.query("PRAGMA table_info(offers)").all() as { name: string }[];
   if (!offerCols.some((col) => col.name === "vtxoSatsValue")) {
     db.run("ALTER TABLE offers ADD COLUMN vtxoSatsValue TEXT NOT NULL DEFAULT '330'");
     log.info("Database: added vtxoSatsValue column to offers table");
+  }
+  if (!offerCols.some((col) => col.name === "arkadeScriptHex")) {
+    db.run("ALTER TABLE offers ADD COLUMN arkadeScriptHex TEXT NOT NULL DEFAULT ''");
+    log.info("Database: added arkadeScriptHex column to offers table");
   }
 }
 
@@ -291,8 +297,8 @@ export function upsertOffer(
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   db.run(
-    `INSERT INTO offers (offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt, status, filledInTxid, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)
+    `INSERT INTO offers (offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt, status, filledInTxid, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)
      ON CONFLICT(offerOutpoint) DO UPDATE SET
        tokenAmount = excluded.tokenAmount,
        satAmount = excluded.satAmount,
@@ -301,6 +307,7 @@ export function upsertOffer(
        makerPkScript = excluded.makerPkScript,
        makerXOnlyPubkey = excluded.makerXOnlyPubkey,
        swapScriptHex = excluded.swapScriptHex,
+       arkadeScriptHex = excluded.arkadeScriptHex,
        expiresAt = excluded.expiresAt,
        updatedAt = excluded.updatedAt`,
     [
@@ -313,6 +320,7 @@ export function upsertOffer(
       offer.makerPkScript,
       offer.makerXOnlyPubkey,
       offer.swapScriptHex,
+      offer.arkadeScriptHex ?? '',
       offer.expiresAt,
       now,
       now,

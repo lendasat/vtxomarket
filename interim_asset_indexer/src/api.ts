@@ -113,11 +113,11 @@ export function buildApp(): Hono {
   // Maker self-reports after creating the swap VTXO
   app.post("/offers", async (c) => {
     const body = await c.req.json();
-    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt } = body;
+    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt } = body;
     if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
       return c.json({ error: "missing required fields" }, 400);
     }
-    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, expiresAt });
+    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex: arkadeScriptHex ?? '', expiresAt });
     return c.json({ ok: true }, 201);
   });
 

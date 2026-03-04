@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# introspector (standalone clone — not a submodule)
+introspector/
+
 # vercel
 .vercel
 
