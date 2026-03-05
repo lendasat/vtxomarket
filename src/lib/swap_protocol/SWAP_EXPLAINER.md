@@ -65,9 +65,21 @@ Standard opcodes in tapscript leaves: `CHECKSIG`, `CHECKSIGVERIFY`, `CHECKSEQUEN
 
 `@scure/btc-signer` doesn't know about Arkade's custom opcodes. If you try to decode a script containing `0xCF`, it throws `"Unknown opcode=cf"`. We monkey-patch the `OP` and `OPNames` maps at runtime so `Script.decode()` and `VtxoScript.decode()` work. This runs once on SDK init. Marked `@deprecated` — should be removed when the SDK handles this natively.
 
-### 2. `script.ts:127-154` — Hand-assembled arkade script (raw byte array)
+### 2. `script.ts:139-167` — Hand-assembled arkade script (raw byte array)
 
-The arkade script is assembled as a raw `Uint8Array` with opcode bytes and push data, not using `Script.encode()`. This is because there's no TypeScript Arkade Script compiler yet (`arkadec` only has a CLI). The byte layout matches what the Go introspector expects. Once an arkade-script-to-bytes compiler exists in TS, this can be replaced.
+The arkade script is assembled as a raw `Uint8Array` with opcode bytes and push data. In the Arkade Script high-level syntax ([docs](https://docs.arkadeos.com/experimental/non-interactive-swaps)), this would be:
+
+```
+contract NonInteractiveSwap(makerPkScript, amount) {
+  swap(takerSig) {
+    verify(inspectOutputValue(0) >= amount)
+    verify(inspectOutputScriptPubKey(0) == makerPkScript)
+    verify(checkSig(takerSig))
+  }
+}
+```
+
+We hand-assemble the equivalent opcode bytes because the Arkade Script compiler ([arkadec](https://github.com/ArkLabsHQ/arkade)) is a Go CLI tool with no TypeScript/JavaScript API. Our script is parametric — the maker's address and sat amount change per offer, so we need runtime generation. For this 2-condition script (~15 bytes of opcodes + 40 bytes of parameters) hand-assembly is straightforward. For complex contracts (partial fills, oracle pricing) the compiler would be the right tool.
 
 ### 3. `script.ts:227-290` — Manual taproot tree construction
 

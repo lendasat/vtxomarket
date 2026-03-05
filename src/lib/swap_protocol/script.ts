@@ -116,13 +116,33 @@ export async function computeIntrospectorTweakedPubkey(
 
 /**
  * Build the standalone arkade script — introspection conditions validated by the introspector.
- * This is embedded as a PSBT custom field, NOT as a tapscript leaf.
+ * This is embedded as a PSBT custom field (key 0xDE + "arkadescript"), NOT as a tapscript leaf.
  *
  * Conditions: output[0].value >= satAmount AND output[0].scriptPubKey == makerPkScript
  *
+ * In Arkade Script (high-level syntax), this would be:
+ *
+ *   contract NonInteractiveSwap(makerPkScript, amount) {
+ *     swap(takerSig) {
+ *       verify(inspectOutputValue(0) >= amount)
+ *       verify(inspectOutputScriptPubKey(0) == makerPkScript)
+ *       verify(checkSig(takerSig))
+ *     }
+ *   }
+ *
+ * See: https://docs.arkadeos.com/experimental/non-interactive-swaps
+ *
+ * We hand-assemble the opcode bytes below because the Arkade Script compiler (arkadec)
+ * is a Go CLI tool with no TypeScript/JavaScript API. Our script is parametric — the
+ * maker's address and sat amount change per offer, requiring runtime compilation.
+ * For our 2-condition script this is straightforward; for complex contracts (partial fills,
+ * oracle pricing) the compiler would be the right tool.
+ *
+ * Compiler repo: https://github.com/ArkLabsHQ/arkade (arkadec CLI)
+ *
  * The introspector's OP_INSPECTOUTPUTSCRIPTPUBKEY pushes [scriptType, scriptBody] separately:
- *   - scriptType: 1 for P2TR
- *   - scriptBody: 32-byte x-only pubkey (without 0x5120 prefix)
+ *   - scriptType: 1 for P2TR (segwit v1)
+ *   - scriptBody: 32-byte witness program (without 0x5120 prefix)
  */
 export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number): Uint8Array {
   const satAmountLE64 = encodeLE64(satAmount);

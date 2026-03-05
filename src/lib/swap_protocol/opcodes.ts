@@ -91,7 +91,14 @@ let _registered = false;
  * Must be called before any VtxoScript.decode() or Script.decode() on
  * scripts containing Arkade opcodes.
  *
- * @deprecated — remove when the SDK natively handles Arkade Script opcodes
+ * Why this is needed: @scure/btc-signer only knows standard Bitcoin opcodes.
+ * Arkade's introspection opcodes (OP_INSPECTOUTPUTVALUE, etc.) use OP_SUCCESS
+ * slots (0xCF, 0xD1, 0xDF, ...) that the library doesn't recognize. Without
+ * this registration, Script.decode() throws "Unknown opcode=cf". The Arkade
+ * SDK (@arkade-os/sdk) also doesn't register these — it has no Arkade Script
+ * awareness yet.
+ *
+ * Remove when the SDK natively handles Arkade Script opcodes.
  */
 export async function registerArkadeOpcodes(): Promise<void> {
   if (_registered) return;
@@ -107,9 +114,12 @@ export async function registerArkadeOpcodes(): Promise<void> {
 
 /**
  * Encode a number as 8-byte little-endian (LE64).
- * Used in arkade script construction for OP_INSPECTOUTPUTVALUE comparisons.
+ * Used in buildArkadeScript() for OP_INSPECTOUTPUTVALUE comparisons.
+ * The introspector pushes output values as 8-byte LE64, so we must
+ * encode the comparison amount in the same format.
  *
- * @deprecated — remove when arkadec TypeScript compiler is available
+ * Remove when the Arkade Script compiler (arkadec) has a TypeScript API.
+ * See: https://github.com/ArkLabsHQ/arkade
  */
 export function encodeLE64(n: number | bigint): Uint8Array {
   const buf = new Uint8Array(8);
