@@ -670,7 +670,7 @@ interface SwapScriptParams {
   makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
   makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   satAmount: number;
-  expiresAt: number;             // unix seconds, CLTV absolute locktime
+  cancelSeconds: number;          // relative seconds (CSV) for cancel exit leaf
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
 }
@@ -717,7 +717,11 @@ async function computeIntrospectorTweakedPubkey(
 
   // EC point addition: P' = P + scriptHash * G
   // The introspector normalizes the base key to x-only (even Y) before tweaking
-  const basePoint = secp256k1.ProjectivePoint.fromHex(basePubkeyXOnly);
+  // fromHex expects 33-byte compressed key, so prepend 0x02 (even Y) to the 32-byte x-only key
+  const compressedBase = new Uint8Array(33);
+  compressedBase[0] = 0x02;
+  compressedBase.set(basePubkeyXOnly, 1);
+  const basePoint = secp256k1.ProjectivePoint.fromHex(compressedBase);
   const tweakScalar = BigInt("0x" + bytesToHex(scriptHash));
   const tweakPoint = secp256k1.ProjectivePoint.BASE.multiply(tweakScalar);
   const resultPoint = basePoint.add(tweakPoint);
@@ -739,8 +743,17 @@ async function computeIntrospectorTweakedPubkey(
  *   - scriptType: 1 for P2TR
  *   - scriptBody: 32-byte x-only pubkey (without 0x5120 prefix)
  */
-function buildArkadeScript(makerXOnlyPubkey: Uint8Array, satAmount: number): Uint8Array {
+function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number): Uint8Array {
   const satAmountLE64 = encodeLE64(satAmount);
+
+  // Extract the 32-byte witness program from the P2TR pkScript (OP_1 <32-byte-key>).
+  // This is the tweaked key that appears in the output's scriptPubKey,
+  // NOT the raw x-only pubkey. The introspector's OP_INSPECTOUTPUTSCRIPTPUBKEY
+  // pushes the witness program, so we must match it.
+  if (makerPkScript.length !== 34 || makerPkScript[0] !== 0x51) {
+    throw new Error(`Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${makerPkScript.length} bytes`);
+  }
+  const makerWitnessProgram = makerPkScript.slice(2); // skip OP_1 (0x51) + push length (0x20)
 
   return new Uint8Array([
     // Check: output[0].value >= satAmount
@@ -750,13 +763,13 @@ function buildArkadeScript(makerXOnlyPubkey: Uint8Array, satAmount: number): Uin
     OP_GREATERTHANOREQUAL64,         // compare: output value >= required
     OP_VERIFY,                       // abort if false
 
-    // Check: output[0].scriptPubKey == maker's P2TR address
+    // Check: output[0].scriptPubKey == maker's Ark address (P2TR tweaked key)
     0x00,                            // OP_0 — output index 0
-    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // pushes [scriptType, scriptBody]
-    OP_1,                            // push 1 (P2TR script type)
-    OP_EQUALVERIFY,                  // check scriptType == P2TR
-    0x20, ...makerXOnlyPubkey,       // push 32-byte expected x-only pubkey
-    OP_EQUAL,                        // check scriptBody matches — leaves true on stack
+    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // pushes [program(32 bytes), version(int)]
+    OP_1,                            // push 1 (P2TR script type / segwit v1)
+    OP_EQUALVERIFY,                  // check version == 1, pop both
+    0x20, ...makerWitnessProgram,    // push 32-byte expected witness program
+    OP_EQUAL,                        // check program matches — leaves true on stack
   ]);
 }
 
@@ -775,10 +788,11 @@ async function buildSwapScript(params: SwapScriptParams): Promise<SwapScriptResu
   const btc = await import("@scure/btc-signer");
   const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
   const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
-  const { makerPkScript, makerXOnlyPubkey, satAmount, expiresAt, introspectorPubkey, aspPubkey } = params;
+  const { makerPkScript, makerXOnlyPubkey, satAmount, cancelSeconds, introspectorPubkey, aspPubkey } = params;
 
   // Build standalone arkade script (PSBT custom field for introspector validation)
-  const arkadeScript = buildArkadeScript(makerXOnlyPubkey, satAmount);
+  // Uses makerPkScript (P2TR with tweaked key) — the introspector inspects the actual output scriptPubKey
+  const arkadeScript = buildArkadeScript(makerPkScript, satAmount);
 
   // Compute introspector's tweaked pubkey for this specific arkade script
   const { tweakedPubkey: introspectorTweakedPubkey, scriptHash: arkadeScriptHash } =
@@ -793,10 +807,17 @@ async function buildSwapScript(params: SwapScriptParams): Promise<SwapScriptResu
     "CHECKSIG",
   ]);
 
-  // ── Leaf 1: Cancel (CLTV + maker CHECKSIG) ──
+  // ── Leaf 1: Cancel exit (CSV — relative timelock + maker CHECKSIG) ──
+  // The ASP requires an exit leaf with CHECKSEQUENCEVERIFY (seconds-based, not blocks).
+  const bip68Module = await import("bip68");
+  const bip68Encode = bip68Module.encode ?? bip68Module.default?.encode ?? bip68Module.default;
+  const csvSequence = bip68Encode({ seconds: cancelSeconds });
+  const { ScriptNum } = btc;
+  const MinimalScriptNum = ScriptNum(undefined, true);
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(csvSequence));
   const cancelLeafBytes = btc.Script.encode([
-    expiresAt,
-    "CHECKLOCKTIMEVERIFY",
+    sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
+    "CHECKSEQUENCEVERIFY",
     "DROP",
     makerXOnlyPubkey,
     "CHECKSIG",
@@ -979,8 +1000,19 @@ export interface SwapOffer {
 export async function createSwapOffer(wallet: any, params: SwapOfferParams): Promise<SwapOffer> {
   const { ArkAddress } = await getSDK();
   const { getIntrospectorInfo } = await import("./introspector-client");
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + (params.expiresInSeconds ?? 3600);
+
+  // Validate satAmount >= dust minimum
+  const dustAmount = Number(wallet.dustAmount ?? 330);
+  if (params.satAmount < dustAmount) {
+    throw new Error(
+      `satAmount (${params.satAmount}) is below the minimum VTXO dust amount (${dustAmount} sats). ` +
+      `Set a price of at least ${dustAmount} sats.`
+    );
+  }
+
+  // bip68 seconds must be a multiple of 512 — round up
+  const rawSeconds = params.expiresInSeconds ?? 3600;
+  const cancelSeconds = Math.ceil(rawSeconds / 512) * 512;
 
   const makerArkAddress = await wallet.getAddress();
   const decodedAddr = ArkAddress.decode(makerArkAddress);
@@ -1001,7 +1033,7 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
     makerPkScript,
     makerXOnlyPubkey,
     satAmount: params.satAmount,
-    expiresAt,
+    cancelSeconds,
     introspectorPubkey,
     aspPubkey: aspPubkeyBytes,
   });
@@ -1019,6 +1051,10 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
 
   const offerOutpoint = `${arkTxId}:0`;
   const vtxoSatsValue = Number(wallet.dustAmount ?? 330);
+
+  // Compute approximate absolute expiry for UI display
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + cancelSeconds;
 
   return {
     offerOutpoint,
@@ -1068,29 +1104,60 @@ export async function fillSwapOffer(
   const vout = parseInt(voutStr, 10);
   const vtxoSatsValue = offer.vtxoSatsValue || 330;
 
-  // Set swap context on the provider so the IntrospectorArkProvider knows
-  // which inputs need arkade script PSBT fields and introspector co-signing
-  if (wallet.arkProvider?.setSwapContext) {
-    wallet.arkProvider.setSwapContext({
-      offerOutpoint: offer.offerOutpoint,
-      arkadeScriptHex: offer.arkadeScriptHex,
-    });
-  }
+  const tapTreeBytes = vtxoScript.encode();
 
   const swapVtxo = {
     txid,
     vout,
     value: vtxoSatsValue,
     assets: [{ assetId: offer.assetId, amount: offer.tokenAmount }],
-    tapTree: vtxoScript.encode(),
+    tapTree: tapTreeBytes,
     intentTapLeafScript: swapLeaf,        // spend via MultisigClosure (introspector validates)
     forfeitTapLeafScript: swapForfeitLeaf, // forfeit via same leaf (introspector co-signs)
   };
 
+  // The swap VTXO only holds dust sats — the taker must fund the sat payment
+  // from their own VTXOs.
+  const takerVtxos = await wallet.getVtxos();
+  const spendable = takerVtxos.filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (v: any) =>
+      (v.virtualStatus?.state === "settled" || v.virtualStatus?.state === "preconfirmed") &&
+      !v.isSpent &&
+      `${v.txid}:${v.vout}` !== offer.offerOutpoint
+  );
+
+  // Simple coin selection: largest first until we cover the output
+  const sorted = [...spendable].sort((a, b) => b.value - a.value);
+  let fundedSats = vtxoSatsValue; // swap VTXO contributes its dust value
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fundingVtxos: any[] = [];
+  for (const v of sorted) {
+    if (fundedSats >= offer.satAmount) break;
+    fundingVtxos.push(v);
+    fundedSats += v.value;
+  }
+  if (fundedSats < offer.satAmount) {
+    throw new Error(
+      `Insufficient funds to fill offer: have ${fundedSats} sats, need ${offer.satAmount} sats`
+    );
+  }
+
+  // Set swap context just before settle — inside try/finally so it always gets cleared.
+  if (wallet.arkProvider?.setSwapContext) {
+    wallet.arkProvider.setSwapContext({
+      offerOutpoint: offer.offerOutpoint,
+      arkadeScriptHex: offer.arkadeScriptHex,
+      tapTreeHex: bytesToHex(tapTreeBytes),
+      vtxoSatsValue,
+      forfeitTapLeafScript: swapForfeitLeaf,
+    });
+  }
+
   try {
     return await wallet.settle(
       {
-        inputs: [swapVtxo],
+        inputs: [swapVtxo, ...fundingVtxos],
         outputs: [{ address: offer.makerArkAddress, amount: BigInt(offer.satAmount) }],
       },
       eventCallback ?? ((event: unknown) => console.log("[fillSwapOffer]", event)),
@@ -1104,7 +1171,7 @@ export async function fillSwapOffer(
 }
 
 /**
- * Cancel a swap offer as maker (after expiry). Spends via the CLTV cancel leaf.
+ * Cancel a swap offer as maker (after CSV timelock expires). Spends via the CSV cancel leaf.
  * No introspector needed — uses standard maker+ASP forfeit (leaf 2).
  */
 export async function cancelSwapOffer(
@@ -1124,7 +1191,7 @@ export async function cancelSwapOffer(
     hexToBytes(offer.arkadeScriptHex),
     introspectorPubkey,
   );
-  const cancelLeaf = vtxoScript.leaves[1];        // CLTV + maker CHECKSIG
+  const cancelLeaf = vtxoScript.leaves[1];        // CSV + maker CHECKSIG
   const cancelForfeitLeaf = vtxoScript.leaves[2];  // MultisigClosure(maker, ASP)
 
   const [txid, voutStr] = offer.offerOutpoint.split(":");
@@ -1137,7 +1204,7 @@ export async function cancelSwapOffer(
     value: vtxoSatsValue,
     assets: [{ assetId: offer.assetId, amount: offer.tokenAmount }],
     tapTree: vtxoScript.encode(),
-    intentTapLeafScript: cancelLeaf,        // maker uses cancel leaf (CLTV)
+    intentTapLeafScript: cancelLeaf,        // maker uses cancel leaf (CSV)
     forfeitTapLeafScript: cancelForfeitLeaf, // standard maker+ASP forfeit
   };
 

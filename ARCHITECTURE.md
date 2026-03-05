@@ -26,6 +26,9 @@ src/
 │   └── dev/              # Debug panel
 ├── lib/
 │   ├── ark-wallet.ts     # Arkade SDK wrapper (issue, reissue, send, swap, settle)
+│   ├── introspector-client.ts  # REST client for Introspector API
+│   ├── introspector-provider.ts # ArkProvider wrapper for co-signing + forfeit creation
+│   ├── psbt-combiner.ts  # Raw BIP-174 PSBT merge + tapScriptSig stripping
 │   ├── nostr-market.ts   # Nostr event publish/subscribe (listings, trades)
 │   ├── nostr.ts          # NDK singleton + NIP-98 auth
 │   ├── image-upload.ts   # NIP-96 image upload → nostr.build
@@ -192,12 +195,26 @@ unilaterally until `expiresAt` (enforced by the cancel leaf's CLTV).
    - Builds swap VTXO input with `intentTapLeafScript = leaf 0` (MultisigClosure)
    - Calls `wallet.settle({ inputs: [swapVtxo], outputs: [{ address: makerArkAddress, amount: satAmount }] })`
 3. **IntrospectorArkProvider intercepts the settle flow**:
-   - `registerIntent()`: injects `arkadescript` PSBT field → `POST /v1/intent`
+   - `registerIntent()`: strips tapScriptSig from non-swap inputs (via `psbt-combiner.ts`),
+     injects `arkadescript` + `taptree` PSBT fields → `POST /v1/intent`
      → Introspector validates conditions (amount + destination), co-signs
-     → forwards co-signed PSBT to ASP
+     → re-injects stripped fields, forwards co-signed PSBT to ASP
    - `getEventStream()`: captures connector tree chunks from TreeTx events
-   - `submitSignedForfeitTxs()`: `POST /v1/finalization`
-     → Introspector co-signs forfeits → forwards to ASP
+   - `submitSignedForfeitTxs()`: builds the **swap VTXO forfeit** that the SDK
+     can't create (the swap VTXO isn't in the taker's wallet, so the SDK skips it),
+     then sends all forfeits to `POST /v1/finalization` → Introspector co-signs
+     the swap forfeit → combines introspector's co-signed forfeits with taker's
+     original forfeits → merges commitment tx via `Psbt.combine()` → forwards to ASP
+
+   **Why the SDK can't build the swap VTXO forfeit:**
+   The SDK's `handleSettlementFinalizationEvent` looks up each input in
+   `getVirtualCoins()` to build forfeits. The swap VTXO belongs to the maker,
+   not the taker, so it's not in the taker's virtual coins. The SDK treats it
+   as a "boarding input" and silently skips forfeit creation. But the ASP knows
+   it's a VTXO and demands a forfeit. `buildSwapVtxoForfeit()` constructs it
+   manually: input 0 = swap VTXO (with tapLeafScript for leaf 2), input 1 =
+   connector from tree, output 0 = ASP forfeit address, output 1 = P2A anchor.
+
 4. **Round completes** — the swap settles atomically:
    - Maker receives `satAmount` sats (validated by introspection conditions)
    - Taker receives `tokenAmount` tokens (asset conservation enforced by ASP)
@@ -521,7 +538,8 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 |---|---|
 | `src/lib/ark-wallet.ts` | Wallet init, `buildArkadeScript()`, `buildSwapScript()`, `createSwapOffer()`, `fillSwapOffer()`, `cancelSwapOffer()`, opcode registration |
 | `src/lib/introspector-client.ts` | REST client for Introspector API (`/v1/info`, `/v1/intent`, `/v1/finalization`) |
-| `src/lib/introspector-provider.ts` | `IntrospectorArkProvider` — wraps ArkProvider, intercepts settle flow for co-signing |
+| `src/lib/introspector-provider.ts` | `IntrospectorArkProvider` — wraps ArkProvider, intercepts settle flow for co-signing + builds swap VTXO forfeit |
+| `src/lib/psbt-combiner.ts` | Raw BIP-174 PSBT utilities: `Psbt.combine()` (merge KV pairs), `Psbt.stripTapScriptSig()` (remove entries from specific inputs) |
 | `interim_asset_indexer/src/db.ts` | SQLite schema + queries (offers include `arkadeScriptHex`) |
 | `interim_asset_indexer/src/api.ts` | REST API for assets, VTXOs, offers |
 | `introspector/` | Cloned from `github.com/ArkLabsHQ/introspector` (standalone, not a submodule) |
@@ -536,6 +554,13 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
   unilaterally access user funds.
 - **The indexer is temporary.** Once arkd ships native asset filtering, most of
   it becomes redundant.
+- **`psbt-combiner.ts` exists because `@scure/btc-signer` can't do two things:**
+  (1) `updateInput({ tapScriptSig: [] })` is a no-op — doesn't clear entries.
+  (2) `updateInput({ tapScriptSig: [...] })` replaces rather than merges.
+  Both are needed: stripping non-swap inputs before sending to the Introspector,
+  and merging the Introspector's co-signatures back into the PSBT. The file does
+  raw BIP-174 byte-level parsing/serialization. The Arkade team is working on an
+  IntrospectorPacket approach that may eliminate the need for stripping.
 - **Arkade Script is experimental.** The introspection opcodes (0xCF, 0xD1, 0xDF)
   are `OP_SUCCESS` extensions — they have defined semantics in the Introspector's
   off-chain engine but would succeed unconditionally on standard Bitcoin. The

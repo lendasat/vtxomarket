@@ -137,6 +137,7 @@ export default function LabPage() {
   // Fill / Cancel offer
   const [fcOutpoint, setFcOutpoint]         = useState("");
   const [fcSwapScriptHex, setFcSwapScriptHex] = useState("");
+  const [fcArkadeScriptHex, setFcArkadeScriptHex] = useState("");
   const [fcAssetId, setFcAssetId]           = useState("");
   const [fcTokenAmount, setFcTokenAmount]   = useState("");
   const [fcSatAmount, setFcSatAmount]       = useState("");
@@ -202,6 +203,7 @@ export default function LabPage() {
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);
       setFcSwapScriptHex(offer.swapScriptHex);
+      setFcArkadeScriptHex(offer.arkadeScriptHex);
       setFcAssetId(offer.assetId);
       setFcTokenAmount(String(offer.tokenAmount));
       setFcSatAmount(String(offer.satAmount));
@@ -222,7 +224,7 @@ export default function LabPage() {
     const offer: SwapOffer = {
       offerOutpoint: fcOutpoint,
       swapScriptHex: fcSwapScriptHex,
-      arkadeScriptHex: "",
+      arkadeScriptHex: fcArkadeScriptHex,
       assetId: fcAssetId,
       tokenAmount: parseInt(fcTokenAmount, 10) || 0,
       satAmount: parseInt(fcSatAmount, 10) || 0,
@@ -236,7 +238,7 @@ export default function LabPage() {
     addLog("info", `Filling offer: ${fcOutpoint}`);
     try {
       const txid = await fillSwapOffer(arkWallet, offer, (ev) => {
-        addLog("event", JSON.stringify(ev).slice(0, 120));
+        addLog("event", JSON.stringify(ev, (_, v) => typeof v === "bigint" ? Number(v) : v).slice(0, 120));
       });
       addLog("success", `Filled! arkTxId: ${txid}`);
     } catch (e) {
@@ -255,7 +257,7 @@ export default function LabPage() {
     const offer: SwapOffer = {
       offerOutpoint: fcOutpoint,
       swapScriptHex: fcSwapScriptHex,
-      arkadeScriptHex: "",
+      arkadeScriptHex: fcArkadeScriptHex,
       assetId: fcAssetId,
       tokenAmount: parseInt(fcTokenAmount, 10) || 0,
       satAmount: parseInt(fcSatAmount, 10) || 0,

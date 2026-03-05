@@ -5,7 +5,7 @@ import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
 import { useTokens } from "@/hooks/useTokens";
-import { getBalance, getReceivingAddresses, sendPayment, getTransactionHistory, getAspOnchainFee } from "@/lib/ark-wallet";
+import { getBalance, getReceivingAddresses, sendPayment, sendAsset, getTransactionHistory, getAspOnchainFee } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
 import {
@@ -123,6 +123,7 @@ export default function WalletPage() {
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [sendError, setSendError] = useState("");
   const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
+  const [sendAssetId, setSendAssetId] = useState<string | null>(null);
 
   // Lightning receive state
   const [lnReceiveAmount, setLnReceiveAmount] = useState("");
@@ -207,8 +208,8 @@ export default function WalletPage() {
 
   const handleSend = async () => {
     if (!arkWallet || !sendAddress || !sendAmount) return;
-    const sats = parseInt(sendAmount, 10);
-    if (isNaN(sats) || sats <= 0) {
+    const amt = parseInt(sendAmount, 10);
+    if (isNaN(amt) || amt <= 0) {
       setSendError("Invalid amount");
       return;
     }
@@ -216,10 +217,16 @@ export default function WalletPage() {
     setSendError("");
     setSendResult(null);
     try {
-      const txid = await sendPayment(arkWallet, sendAddress, sats);
+      let txid: string;
+      if (sendAssetId && tab === "arkade") {
+        txid = await sendAsset(arkWallet, sendAddress, sendAssetId, amt);
+      } else {
+        txid = await sendPayment(arkWallet, sendAddress, amt);
+      }
       setSendResult(txid);
       setSendAddress("");
       setSendAmount("");
+      setSendAssetId(null);
       await refreshBalance();
     } catch (e) {
       setSendError(e instanceof Error ? e.message : "Send failed");
@@ -247,6 +254,7 @@ export default function WalletPage() {
     setStableChain("arbitrum");
     setStableAmount("");
     setStableAddress("");
+    setSendAssetId(null);
   };
 
   const addressForTab = (t: Tab): string => {
@@ -635,6 +643,26 @@ export default function WalletPage() {
                           <SuccessView txid={sendResult} copied={copied} copyToClipboard={copyToClipboard} truncateAddr={truncateAddr} />
                         ) : (
                           <div className="space-y-4">
+                            {tab === "arkade" && userTokens.length > 0 && (
+                              <div className="space-y-2">
+                                <label className="text-[11px] text-muted-foreground/50 font-medium">Asset</label>
+                                <select
+                                  value={sendAssetId ?? ""}
+                                  onChange={(e) => {
+                                    setSendAssetId(e.target.value || null);
+                                    setSendAmount("");
+                                  }}
+                                  className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all appearance-none cursor-pointer"
+                                >
+                                  <option value="" className="bg-[#1a1a1a]">Bitcoin (BTC)</option>
+                                  {userTokens.map((t) => (
+                                    <option key={t.assetId} value={t.assetId} className="bg-[#1a1a1a]">
+                                      {t.name} ({t.ticker}) — {t.amount.toLocaleString()}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                             <div className="space-y-2">
                               <label className="text-[11px] text-muted-foreground/50 font-medium">
                                 {tab === "arkade" ? "Arkade Address" : "Bitcoin Address"}
@@ -647,7 +675,11 @@ export default function WalletPage() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <label className="text-[11px] text-muted-foreground/50 font-medium">Amount (sats)</label>
+                              <label className="text-[11px] text-muted-foreground/50 font-medium">
+                                {sendAssetId && tab === "arkade"
+                                  ? `Amount (${userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"})`
+                                  : "Amount (sats)"}
+                              </label>
                               <input
                                 type="number"
                                 value={sendAmount}
@@ -655,7 +687,11 @@ export default function WalletPage() {
                                 placeholder="0"
                                 className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
                               />
-                              {balance && (
+                              {sendAssetId && tab === "arkade" ? (
+                                <button type="button" className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors" onClick={() => setSendAmount(String(userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0))}>
+                                  Max: {(userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0).toLocaleString()} {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"}
+                                </button>
+                              ) : balance && (
                                 <button type="button" className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors" onClick={() => setSendAmount(String(balance.available))}>
                                   Max: {balance.available.toLocaleString()} sats
                                 </button>
