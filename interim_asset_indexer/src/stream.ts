@@ -85,7 +85,7 @@ async function connectStream(onTx: TxHandler): Promise<void> {
         const data = line.startsWith("data:") ? line.slice(5).trim() : line;
         if (!data) continue;
 
-        processEvent(data, onTx);
+        await processEvent(data, onTx);
       }
     }
 
@@ -111,7 +111,7 @@ function scheduleReconnect(onTx: TxHandler): void {
   }, config.sseReconnectDelayMs);
 }
 
-function processEvent(data: string, onTx: TxHandler): void {
+async function processEvent(data: string, onTx: TxHandler): Promise<void> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(data);
@@ -152,8 +152,9 @@ function processEvent(data: string, onTx: TxHandler): void {
     spendable: txNotification.spendableVtxos.length,
   });
 
-  // Fire and forget — errors are caught inside onTx
-  Promise.resolve(onTx(txNotification)).catch((err) => {
+  try {
+    await onTx(txNotification);
+  } catch (err) {
     log.error("SSE stream: onTx handler threw", { error: String(err) });
-  });
+  }
 }

@@ -113,6 +113,7 @@ export default function TokenPage() {
   const [fillError, setFillError] = useState("");
   const [cancelLoading, setCancelLoading] = useState<string | null>(null); // offerOutpoint being cancelled
   const [cancelError, setCancelError] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{ type: "buy" | "cancel"; outpoint: string } | null>(null);
   const [userArkAddress, setUserArkAddress] = useState("");
 
   // Fetch user's Ark address (for identifying own offers)
@@ -213,10 +214,13 @@ export default function TokenPage() {
     }
   };
 
+  const tradeInFlight = fillLoading !== null || cancelLoading !== null;
+
   // Fill swap offer handler
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleFill = async (offer: any) => {
-    if (!arkWallet) return;
+    if (!arkWallet || tradeInFlight) return;
+    setConfirmAction(null);
     setFillLoading(offer.offerOutpoint);
     setFillError("");
     try {
@@ -232,7 +236,8 @@ export default function TokenPage() {
   // Cancel own swap offer handler (maker only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCancelOffer = async (offer: any) => {
-    if (!arkWallet) return;
+    if (!arkWallet || tradeInFlight) return;
+    setConfirmAction(null);
     setCancelLoading(offer.offerOutpoint);
     setCancelError("");
     try {
@@ -505,29 +510,63 @@ export default function TokenPage() {
                                 <span className="text-[10px] text-muted-foreground/35 ml-0.5">sat</span>
                               </span>
                               {isOwn ? (
-                                <button
-                                  onClick={() => handleCancelOffer(offer)}
-                                  disabled={!walletReady || cancelLoading === offer.offerOutpoint}
-                                  className="w-16 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                  {cancelLoading === offer.offerOutpoint ? (
-                                    <span className="flex items-center justify-center">
-                                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" />
-                                    </span>
-                                  ) : "Cancel"}
-                                </button>
+                                cancelLoading === offer.offerOutpoint ? (
+                                  <span className="w-16 py-1 flex items-center justify-center">
+                                    <span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" />
+                                  </span>
+                                ) : confirmAction?.type === "cancel" && confirmAction.outpoint === offer.offerOutpoint ? (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleCancelOffer(offer)}
+                                      className="px-2 py-1 rounded-lg bg-red-500/30 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-500/40 transition-colors"
+                                    >
+                                      Yes
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmAction(null)}
+                                      className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })}
+                                    disabled={!walletReady || tradeInFlight}
+                                    className="w-16 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  >
+                                    Cancel
+                                  </button>
+                                )
                               ) : (
-                                <button
-                                  onClick={() => handleFill(offer)}
-                                  disabled={!walletReady || fillLoading === offer.offerOutpoint}
-                                  className="w-16 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                >
-                                  {fillLoading === offer.offerOutpoint ? (
-                                    <span className="flex items-center justify-center">
-                                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-400/50 border-t-transparent" />
-                                    </span>
-                                  ) : "Buy"}
-                                </button>
+                                fillLoading === offer.offerOutpoint ? (
+                                  <span className="w-16 py-1 flex items-center justify-center">
+                                    <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-400/50 border-t-transparent" />
+                                  </span>
+                                ) : confirmAction?.type === "buy" && confirmAction.outpoint === offer.offerOutpoint ? (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleFill(offer)}
+                                      className="px-2 py-1 rounded-lg bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/40 transition-colors"
+                                    >
+                                      Yes
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmAction(null)}
+                                      className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
+                                    >
+                                      No
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmAction({ type: "buy", outpoint: offer.offerOutpoint })}
+                                    disabled={!walletReady || tradeInFlight}
+                                    className="w-16 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  >
+                                    Buy
+                                  </button>
+                                )
                               )}
                             </div>
                           );
