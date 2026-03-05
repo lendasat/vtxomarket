@@ -1106,11 +1106,18 @@ export async function fillSwapOffer(
 
   const tapTreeBytes = vtxoScript.encode();
 
+  // IMPORTANT: Do NOT include `assets` on the swap VTXO input here.
+  // The SDK aggregates all input assets and routes them to the first offchain
+  // output via an Extension packet (wallet.js:890-916). In a fill, the first
+  // output is the maker's sat payment — so the SDK would route the tokens TO
+  // the maker, which is wrong. By omitting `assets`, no Extension packet is
+  // created, and the ASP's own asset conservation logic routes tokens to the
+  // taker's change VTXO instead.
+  // (cancelSwapOffer DOES include assets because the maker reclaims their own tokens.)
   const swapVtxo = {
     txid,
     vout,
     value: vtxoSatsValue,
-    assets: [{ assetId: offer.assetId, amount: offer.tokenAmount }],
     tapTree: tapTreeBytes,
     intentTapLeafScript: swapLeaf,        // spend via MultisigClosure (introspector validates)
     forfeitTapLeafScript: swapForfeitLeaf, // forfeit via same leaf (introspector co-signs)

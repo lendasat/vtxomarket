@@ -156,6 +156,9 @@ function migrate(db: Database): void {
     )
   `);
 
+  db.run(`CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_offers_asset_status ON offers(assetId, status)`);
+
   // Add missing columns (migration for existing DBs)
   const offerCols = db.query("PRAGMA table_info(offers)").all() as { name: string }[];
   if (!offerCols.some((col) => col.name === "vtxoSatsValue")) {
@@ -309,7 +312,8 @@ export function upsertOffer(
        swapScriptHex = excluded.swapScriptHex,
        arkadeScriptHex = excluded.arkadeScriptHex,
        expiresAt = excluded.expiresAt,
-       updatedAt = excluded.updatedAt`,
+       updatedAt = excluded.updatedAt
+     WHERE offers.status = 'open'`,
     [
       offer.offerOutpoint,
       offer.assetId,
@@ -360,7 +364,7 @@ export function markOfferFilled(offerOutpoint: string, filledInTxid: string): vo
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   db.run(
-    "UPDATE offers SET status = 'filled', filledInTxid = ?, updatedAt = ? WHERE offerOutpoint = ?",
+    "UPDATE offers SET status = 'filled', filledInTxid = ?, updatedAt = ? WHERE offerOutpoint = ? AND status = 'open'",
     [filledInTxid, now, offerOutpoint]
   );
 }
@@ -369,7 +373,7 @@ export function markOfferCancelled(offerOutpoint: string): void {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   db.run(
-    "UPDATE offers SET status = 'cancelled', updatedAt = ? WHERE offerOutpoint = ?",
+    "UPDATE offers SET status = 'cancelled', updatedAt = ? WHERE offerOutpoint = ? AND status = 'open'",
     [now, offerOutpoint]
   );
 }

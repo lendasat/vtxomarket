@@ -25,6 +25,7 @@ import {
   getAllOpenOffers,
   markOfferCancelled,
 } from "./db";
+import { fetchVtxosByOutpoints } from "./ark-client";
 import { getRecentLogs } from "./log-buffer";
 
 export function buildApp(): Hono {
@@ -110,13 +111,50 @@ export function buildApp(): Hono {
 
   // ── Offers ─────────────────────────────────────────────────────────────────
 
-  // Maker self-reports after creating the swap VTXO
+  // Maker self-reports after creating the swap VTXO.
+  // Verified against arkd: the VTXO must exist, be unspent, and hold the claimed asset.
   app.post("/offers", async (c) => {
     const body = await c.req.json();
     const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt } = body;
     if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
       return c.json({ error: "missing required fields" }, 400);
     }
+
+    // Reject re-registration of offers that are already filled/cancelled/expired
+    const existing = getOffer(offerOutpoint);
+    if (existing && existing.status !== 'open') {
+      return c.json({ error: `offer already ${existing.status}` }, 409);
+    }
+
+    // Verify the VTXO actually exists on the Ark server and holds the claimed asset
+    const vtxos = await fetchVtxosByOutpoints([offerOutpoint]);
+    if (vtxos.length === 0) {
+      return c.json({ error: "VTXO not found on Ark server" }, 400);
+    }
+    const vtxo = vtxos[0];
+    if (vtxo.isSpent) {
+      return c.json({ error: "VTXO is already spent" }, 400);
+    }
+    const matchingAsset = vtxo.assets?.find((a) => a.assetId === assetId);
+    if (!matchingAsset) {
+      return c.json({ error: "VTXO does not hold the claimed asset" }, 400);
+    }
+    if (BigInt(matchingAsset.amount) < BigInt(tokenAmount)) {
+      return c.json({
+        error: `VTXO holds ${matchingAsset.amount} tokens, but offer claims ${tokenAmount}`,
+      }, 400);
+    }
+
+    // Validate expiresAt is within a reasonable range (max 30 days from now)
+    const now = Math.floor(Date.now() / 1000);
+    const maxExpiry = now + 30 * 24 * 60 * 60;
+    if (expiresAt > maxExpiry) {
+      return c.json({ error: "expiresAt too far in the future (max 30 days)" }, 400);
+    }
+    if (expiresAt < now) {
+      return c.json({ error: "expiresAt is in the past" }, 400);
+    }
+
     upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex: arkadeScriptHex ?? '', expiresAt });
     return c.json({ ok: true }, 201);
   });
@@ -135,9 +173,34 @@ export function buildApp(): Hono {
     return c.json({ offer });
   });
 
-  // Maker cancels their offer
-  app.delete("/offers/:outpoint", (c) => {
-    markOfferCancelled(c.req.param("outpoint"));
+  // Maker cancels their offer — requires maker's pubkey to prevent unauthorized cancellation
+  app.delete("/offers/:outpoint", async (c) => {
+    const outpoint = c.req.param("outpoint");
+    const offer = getOffer(outpoint);
+    if (!offer) {
+      return c.json({ error: "offer not found" }, 404);
+    }
+    if (offer.status !== 'open') {
+      return c.json({ error: `offer already ${offer.status}` }, 409);
+    }
+
+    // Require the maker's pubkey as proof of ownership.
+    // Accept from query param (for simple DELETE) or JSON body.
+    let makerPubkey: string | undefined;
+    try {
+      const body = await c.req.json();
+      makerPubkey = body?.makerXOnlyPubkey;
+    } catch {
+      // No JSON body — check query param
+    }
+    if (!makerPubkey) {
+      makerPubkey = c.req.query("makerXOnlyPubkey");
+    }
+    if (!makerPubkey || makerPubkey !== offer.makerXOnlyPubkey) {
+      return c.json({ error: "unauthorized: makerXOnlyPubkey does not match" }, 403);
+    }
+
+    markOfferCancelled(outpoint);
     return c.body(null, 204);
   });
 

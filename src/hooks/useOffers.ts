@@ -16,6 +16,7 @@ export interface OpenOffer {
   makerPkScript: string;
   makerXOnlyPubkey: string;
   swapScriptHex: string;
+  arkadeScriptHex: string;  // hex-encoded arkade script (introspection conditions)
   expiresAt: number;
   status: string;
 }
@@ -51,6 +52,7 @@ export function useOffers(assetId: string | null): {
         makerPkScript: o.makerPkScript ?? "",
         makerXOnlyPubkey: o.makerXOnlyPubkey ?? "",
         swapScriptHex: o.swapScriptHex ?? "",
+        arkadeScriptHex: o.arkadeScriptHex ?? "",
         expiresAt: o.expiresAt,
         status: o.status,
       }));
