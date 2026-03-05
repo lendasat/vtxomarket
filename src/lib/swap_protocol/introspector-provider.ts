@@ -291,12 +291,12 @@ export class IntrospectorArkProvider {
    *
    * The SDK's intent PSBT layout: input 0 = message input, input 1+ = VTXO inputs.
    *
-   * Why we inject taptree here:
-   *   The SDK's craftToSignTx (intent/index.js) creates `new Transaction({ version, lockTime })`
-   *   WITHOUT `allowUnknown: true`. When it then calls `tx.updateInput(i, { unknown: [...] })`,
-   *   @scure/btc-signer's mergeKeyMap silently deletes the unknown fields. This is an SDK bug —
-   *   prepareCoinAsIntentProofInput correctly sets VtxoTaprootTree but craftToSignTx drops it.
-   *   We re-inject it here after the SDK produces the PSBT.
+   * Why we inject fields here:
+   *   The SDK has no awareness of Arkade Script or the introspector. It never sets the
+   *   "arkadescript" PSBT custom field (key 0xDE) because that's an introspector-specific
+   *   concept. We inject both the taptree (which the SDK may or may not preserve through
+   *   its Transaction roundtrip) and the arkadescript (which the SDK never sets at all)
+   *   into the swap VTXO's input after the SDK produces the PSBT.
    */
   private async injectSwapPsbtFields(
     base64Proof: string,
