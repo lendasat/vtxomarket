@@ -30,9 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files (plaintext — never commit)
 .env*
 !.env.example
+# encrypted envs (SOPS — safe to commit)
+!.envs/
 
 # introspector (standalone clone — not a submodule)
 introspector/
