@@ -10,7 +10,7 @@
  * the full rate/fee breakdown for transparency.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
 import { useLendaswap } from "../hooks/useLendaswap";
@@ -24,16 +24,37 @@ import {
 
 export function StablecoinReceive() {
   const balance = useAppStore((s) => s.balance);
-  const { ready, state, getQuoteAndCreateReceive, reset } = useLendaswap();
+  const { ready, state, getQuoteAndCreateReceive, getReceiveEstimate, reset } = useLendaswap();
 
   const [coin, setCoin] = useState<StablecoinKey>("USDC");
   const [chain, setChain] = useState<EvmChainKey>("arbitrum");
   const [amount, setAmount] = useState("");
   const [copied, setCopied] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [satsEstimate, setSatsEstimate] = useState<number | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sats = parseInt(amount, 10);
-  const isValidAmount = !isNaN(sats) && sats > 0;
+  const usdVal = parseFloat(amount);
+  const isValidAmount = !isNaN(usdVal) && usdVal > 0;
+
+  // Debounced sats estimate as user types
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!isValidAmount || !ready) {
+      setSatsEstimate(null);
+      return;
+    }
+    setEstimating(true);
+    debounceRef.current = setTimeout(async () => {
+      const est = await getReceiveEstimate({ coin, chain, amountUsd: amount });
+      setSatsEstimate(est);
+      setEstimating(false);
+    }, 600);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [amount, coin, chain, ready, isValidAmount, getReceiveEstimate]);
   const chainLabel = getChainName(chain);
   const { step, quote, swap, error } = state;
 
@@ -55,7 +76,7 @@ export function StablecoinReceive() {
   // One-tap: fetch quote + create swap + show address — no intermediate steps
   const handleReceive = async () => {
     if (!isValidAmount || !ready) return;
-    await getQuoteAndCreateReceive({ coin, chain, amountSats: sats });
+    await getQuoteAndCreateReceive({ coin, chain, amountUsd: amount });
   };
 
   const handleDone = () => {
@@ -188,18 +209,28 @@ export function StablecoinReceive() {
     <div className="space-y-4">
       <CoinChainSelectors coin={coin} setCoin={handleCoinChange} chain={chain} setChain={handleChainChange}  />
 
-      {/* Amount input */}
+      {/* Amount input (stablecoin / dollar amount) */}
       <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 space-y-2">
         <div className="flex items-center gap-2">
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0"
+            placeholder="0.00"
+            step="0.01"
             className="flex-1 bg-transparent text-lg font-semibold tabular-nums text-foreground placeholder:text-muted-foreground/20 outline-none"
           />
-          <span className="text-xs text-muted-foreground/40 font-medium">sats</span>
+          <span className="text-xs text-muted-foreground/40 font-medium">{coin}</span>
         </div>
+        {isValidAmount && (
+          <p className="text-[11px] text-muted-foreground/30 tabular-nums">
+            {estimating
+              ? "estimating..."
+              : satsEstimate
+                ? `~ ${satsEstimate.toLocaleString()} sats`
+                : ""}
+          </p>
+        )}
       </div>
 
       <button
@@ -217,7 +248,7 @@ export function StablecoinReceive() {
         ) : !isValidAmount ? (
           "Enter amount"
         ) : (
-          `Receive ${coin}`
+          `Receive ${amount} ${coin}`
         )}
       </button>
 

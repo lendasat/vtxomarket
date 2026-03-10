@@ -21,6 +21,7 @@ import { getLendaswapClient } from "../lib/client";
 import {
   getTokenAddress,
   getChainId,
+  toSmallestUnit,
   fromSmallestUnit,
   type EvmChainKey,
   type StablecoinKey,
@@ -432,7 +433,8 @@ export function useLendaswap() {
     async (params: {
       coin: StablecoinKey;
       chain: EvmChainKey;
-      amountSats: number;
+      /** Stablecoin amount as a human-readable string (e.g. "50.25") */
+      amountUsd: string;
     }): Promise<boolean> => {
       if (!addresses?.offchainAddr) {
         updateState({ step: "error", error: "Wallet not connected" });
@@ -444,14 +446,15 @@ export function useLendaswap() {
         const client = await getLendaswapClient();
         const tokenAddress = getTokenAddress(params.coin, params.chain);
         const chainId = getChainId(params.chain);
+        const sourceSmallest = toSmallestUnit(params.amountUsd, params.coin);
 
-        // 1. Fetch quote (for the details badge)
+        // 1. Fetch quote using sourceAmount (stablecoin smallest unit)
         const quoteResp = await client.getQuote({
           sourceChain: String(chainId),
           sourceToken: tokenAddress,
           targetChain: "Arkade",
           targetToken: "btc",
-          targetAmount: params.amountSats,
+          sourceAmount: Number(sourceSmallest),
         });
 
         const quoteInfo: QuoteInfo = {
@@ -469,11 +472,12 @@ export function useLendaswap() {
           targetAddress: addresses.offchainAddr,
           tokenAddress,
           evmChainId: chainId,
-          targetAmount: params.amountSats,
+          sourceAmount: sourceSmallest,
           gasless: true,
         });
 
         const resp = result.response;
+        const targetSats = parseInt(resp.target_amount, 10);
         const swap: ActiveSwap = {
           id: resp.id,
           direction: "receive",
@@ -481,8 +485,8 @@ export function useLendaswap() {
           chain: params.chain,
           evmDepositAddress: resp.client_evm_address,
           evmDepositAmount: resp.source_amount,
-          sourceDisplay: `${fromSmallestUnit(resp.source_amount, params.coin)} ${params.coin}`,
-          targetDisplay: `${params.amountSats.toLocaleString()} sats`,
+          sourceDisplay: `${params.amountUsd} ${params.coin}`,
+          targetDisplay: `${(targetSats || 0).toLocaleString()} sats`,
           backendStatus: resp.status,
           createdAt: Date.now(),
         };
@@ -535,6 +539,36 @@ export function useLendaswap() {
     }
   }, []);
 
+  // ── Lightweight sats estimate (no state changes, for live preview) ────
+
+  const getReceiveEstimate = useCallback(
+    async (params: {
+      coin: StablecoinKey;
+      chain: EvmChainKey;
+      amountUsd: string;
+    }): Promise<number | null> => {
+      try {
+        const client = await getLendaswapClient();
+        const tokenAddress = getTokenAddress(params.coin, params.chain);
+        const chainId = getChainId(params.chain);
+        const sourceSmallest = toSmallestUnit(params.amountUsd, params.coin);
+
+        const quoteResp = await client.getQuote({
+          sourceChain: String(chainId),
+          sourceToken: tokenAddress,
+          targetChain: "Arkade",
+          targetToken: "btc",
+          sourceAmount: Number(sourceSmallest),
+        });
+
+        return parseInt(quoteResp.target_amount, 10) || null;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
   // ── Reset (back to idle) ──────────────────────────────────────────────
 
   const reset = useCallback(() => {
@@ -561,6 +595,8 @@ export function useLendaswap() {
     createReceiveSwap,
     /** One-shot: quote + create receive swap (no confirm step) */
     getQuoteAndCreateReceive,
+    /** Lightweight sats estimate for a given stablecoin amount (no side effects) */
+    getReceiveEstimate,
     /** Attempt to refund a swap */
     refundSwap,
     /** List all stored swaps */
