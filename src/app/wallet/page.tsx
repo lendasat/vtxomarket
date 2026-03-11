@@ -19,7 +19,7 @@ import {
 } from "@/lib/lnurl";
 import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
-import { StablecoinSend as LendaswapStablecoinSend, StablecoinReceive as LendaswapStablecoinReceive } from "@/lendaswap_integration";
+import { StablecoinSend as LendaswapStablecoinSend, StablecoinReceive as LendaswapStablecoinReceive, useLendaswapHistory } from "@/lendaswap_integration";
 import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
 
 type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
@@ -84,6 +84,8 @@ export default function WalletPage() {
   const heldAssets = useAppStore((s) => s.heldAssets);
   // Load token metadata from Nostr (needed if user navigates here directly)
   useTokens();
+  // Load LendaSwap swap history into the store on mount (regardless of active tab)
+  useLendaswapHistory();
   const tokens = useAppStore((s) => s.tokens);
   const stablecoinTxs = useAppStore((s) => s.stablecoinTxs);
 

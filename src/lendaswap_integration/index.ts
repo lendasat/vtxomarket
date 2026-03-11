@@ -42,6 +42,7 @@ export type {
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 export { useLendaswap } from "./hooks/useLendaswap";
+export { useLendaswapHistory } from "./hooks/useLendaswapHistory";
 
 // ── Components ──────────────────────────────────────────────────────────────
 export { StablecoinReceive } from "./components/StablecoinReceive";
