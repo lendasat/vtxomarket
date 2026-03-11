@@ -54,6 +54,7 @@ export function StablecoinReceive() {
 
   const [evmSending, setEvmSending] = useState(false);
   const [evmTxHash, setEvmTxHash] = useState<string | null>(null);
+  const [evmSendError, setEvmSendError] = useState<string | null>(null);
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
@@ -173,6 +174,7 @@ export function StablecoinReceive() {
     setFunded(false);
     setFundError(null);
     setEvmTxHash(null);
+    setEvmSendError(null);
   };
 
   // Changing coin or chain resets the active swap so user must re-enter amount
@@ -187,8 +189,9 @@ export function StablecoinReceive() {
 
   // Send stablecoins from connected wallet to the deposit address
   const handleEvmSend = useCallback(async () => {
-    if (!walletClient || !swap?.evmDepositAddress || !swap?.evmDepositAmount) return;
+    if (!walletClient || !swap?.evmDepositAddress || !swap?.evmDepositAmount || !evmAddress) return;
     setEvmSending(true);
+    setEvmSendError(null);
     try {
       const requiredChainId = getChainId(chain);
       // Switch chain if needed
@@ -200,7 +203,24 @@ export function StablecoinReceive() {
       const humanAmount = fromSmallestUnit(swap.evmDepositAmount, coin);
       const amountWei = parseUnits(humanAmount, decimals);
 
+      // Check wallet balance before attempting transfer
+      const viemChain = getViemChain(chain);
+      const publicClient = createPublicClient({ chain: viemChain, transport: http() });
+      const walletBalance = await publicClient.readContract({
+        address: tokenAddr,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [evmAddress],
+      });
+
+      if (walletBalance < amountWei) {
+        const walletHuman = fromSmallestUnit(walletBalance.toString(), coin);
+        setEvmSendError(`Insufficient ${coin} balance. You have ${walletHuman} ${coin} but need ${humanAmount} ${coin}.`);
+        return;
+      }
+
       const txHash = await walletClient.writeContract({
+        chain: viemChain,
         address: tokenAddr,
         abi: erc20Abi,
         functionName: "transfer",
@@ -209,10 +229,18 @@ export function StablecoinReceive() {
       setEvmTxHash(txHash);
     } catch (err) {
       console.error("[lendaswap] EVM send failed:", err);
+      const msg = err instanceof Error ? err.message : "Transfer failed";
+      if (msg.includes("exceeds balance")) {
+        setEvmSendError(`Insufficient ${coin} balance in your wallet.`);
+      } else if (msg.includes("User rejected") || msg.includes("user rejected")) {
+        setEvmSendError("Transaction rejected.");
+      } else {
+        setEvmSendError(msg.length > 100 ? msg.slice(0, 100) + "..." : msg);
+      }
     } finally {
       setEvmSending(false);
     }
-  }, [walletClient, swap, chain, coin, switchChainAsync]);
+  }, [walletClient, swap, chain, coin, switchChainAsync, evmAddress]);
 
   // ── Success ─────────────────────────────────────────────────────────
 
@@ -370,6 +398,11 @@ export function StablecoinReceive() {
                     `Send ${depositDisplay} from wallet`
                   )}
                 </button>
+              )}
+              {evmSendError && (
+                <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-2">
+                  <p className="text-[11px] text-red-400/80">{evmSendError}</p>
+                </div>
               )}
               {evmTxHash && (
                 <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-2">
