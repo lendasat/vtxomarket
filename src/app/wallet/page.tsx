@@ -975,10 +975,10 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
       {expanded && (
         <div className="mx-4 mb-3 rounded-xl bg-white/[0.02] border border-white/[0.05] p-3 space-y-2">
           {[
-            ["Status", tx.backendStatus.toUpperCase()],
+            ["Status", (tx.backendStatus ?? "unknown").toUpperCase()],
             ["Direction", isSend ? "BTC → Stablecoin" : "Stablecoin → BTC"],
-            ["Sats", `${tx.satsAmount.toLocaleString()} sats`],
-            ["Chain", tx.chain.charAt(0).toUpperCase() + tx.chain.slice(1)],
+            ...(tx.satsAmount ? [["Sats", `${tx.satsAmount.toLocaleString()} sats`]] : []),
+            ...(tx.chain ? [["Chain", tx.chain.charAt(0).toUpperCase() + tx.chain.slice(1)]] : []),
             ...(tx.destinationAddress ? [["To", `${tx.destinationAddress.slice(0, 8)}...${tx.destinationAddress.slice(-4)}`]] : []),
             ...(tx.claimTxHash ? [["Claim TX", `${tx.claimTxHash.slice(0, 8)}...${tx.claimTxHash.slice(-4)}`]] : []),
             ["Swap ID", `${tx.swapId.slice(0, 8)}...${tx.swapId.slice(-4)}`],
