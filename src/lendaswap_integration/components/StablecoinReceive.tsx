@@ -69,6 +69,7 @@ export function StablecoinReceive() {
   // Mirrors the reference app's DepositEvmGaslessStep: poll ERC-20 balance
   // at client_evm_address, enable "Fund Swap" button when sufficient.
   const [depositBalance, setDepositBalance] = useState<bigint | null>(null);
+  const [pollFailing, setPollFailing] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
   const [funded, setFunded] = useState(false);
@@ -82,6 +83,7 @@ export function StablecoinReceive() {
   useEffect(() => {
     if (!rpcClient || !swap?.evmDepositAddress || funded) return;
     let cancelled = false;
+    let failCount = 0;
 
     const tokenAddr = getTokenAddress(coin, chain) as `0x${string}`;
     const depositAddr = swap.evmDepositAddress as `0x${string}`;
@@ -94,9 +96,15 @@ export function StablecoinReceive() {
           functionName: "balanceOf",
           args: [depositAddr],
         });
-        if (!cancelled) setDepositBalance(bal);
+        if (!cancelled) {
+          setDepositBalance(bal);
+          failCount = 0;
+          setPollFailing(false);
+        }
       } catch (err) {
-        console.error("[lendaswap] Deposit balance poll error:", err);
+        failCount++;
+        console.error(`[lendaswap] Deposit balance poll error (${failCount}):`, err);
+        if (!cancelled && failCount >= 3) setPollFailing(true);
       }
     };
 
@@ -171,6 +179,7 @@ export function StablecoinReceive() {
     setAmount("");
     setShowDetails(false);
     setDepositBalance(null);
+    setPollFailing(false);
     setFunded(false);
     setFundError(null);
     setEvmTxHash(null);
@@ -339,10 +348,19 @@ export function StablecoinReceive() {
                   </svg>
                   {depositDisplay} received
                 </span>
+              ) : pollFailing ? (
+                <span className="text-[11px] text-amber-400/70 flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                    <path fillRule="evenodd" d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                  </svg>
+                  RPC issue — checking...
+                </span>
               ) : (
                 <span className="text-[11px] text-muted-foreground/30 flex items-center gap-1.5">
                   <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
-                  Waiting for {depositDisplay}...
+                  {depositBalance !== null && depositBalance > 0n
+                    ? `${fromSmallestUnit(depositBalance.toString(), coin)} / ${fromSmallestUnit(swap.evmDepositAmount || "0", coin)} ${coin}`
+                    : `Waiting for ${depositDisplay}...`}
                 </span>
               )}
             </div>
