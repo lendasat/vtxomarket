@@ -32,12 +32,14 @@ import {
   type QuoteInfo,
   type ActiveSwap,
   type SwapStep,
+  type StablecoinTxItem,
 } from "../lib/types";
 
 // ── Polling configuration ───────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_DURATION_MS = 30 * 60 * 1_000; // 30 min timeout
+const MAX_CLAIM_RETRIES = 10;
 
 // ── Terminal statuses (stop polling when reached) ───────────────────────────
 
@@ -49,9 +51,21 @@ const TERMINAL_STATUSES = new Set([
   "clientfundedserverrefunded",
   "clientrefundedserverfunded",
   "clientrefundedserverrefunded",
+  "clientinvalidfunded",
+  "clientfundedtoolate",
+  "clientredeemedandclientrefunded",
 ]);
 
-const SUCCESS_STATUSES = new Set(["serverredeemed", "clientredeemed"]);
+const SUCCESS_STATUSES = new Set(["serverredeemed", "clientredeemed", "clientredeeming"]);
+
+/** Map raw backend status to coarse UI status */
+function mapBackendStatus(raw: string): "pending" | "processing" | "claiming" | "complete" | "failed" {
+  if (SUCCESS_STATUSES.has(raw)) return "complete";
+  if (raw === "serverfunded") return "claiming";
+  if (TERMINAL_STATUSES.has(raw) && !SUCCESS_STATUSES.has(raw)) return "failed";
+  if (raw === "pending") return "pending";
+  return "processing";
+}
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 
@@ -60,13 +74,15 @@ export function useLendaswap() {
   const addresses = useAppStore((s) => s.addresses);
   const setBalance = useAppStore((s) => s.setBalance);
   const setAddresses = useAppStore((s) => s.setAddresses);
+  const upsertStablecoinTx = useAppStore((s) => s.upsertStablecoinTx);
 
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<SwapState>(INITIAL_SWAP_STATE);
 
-  // Refs for polling cleanup
+  // Refs for polling cleanup + concurrent claim guard
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const isClaimingRef = useRef(false);
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -177,6 +193,7 @@ export function useLendaswap() {
     (swapId: string, direction: "send" | "receive") => {
       stopPolling();
       const startTime = Date.now();
+      let claimRetries = 0;
 
       pollingRef.current = setInterval(async () => {
         if (!mountedRef.current) {
@@ -199,9 +216,19 @@ export function useLendaswap() {
           const swapResp = await client.getSwap(swapId, { updateStorage: true });
           const status = swapResp.status as string;
 
+          console.log(`[lendaswap] Poll ${swapId.slice(0, 8)}: status=${status}, direction=${direction}`);
+
           // Update the active swap's backend status
           setState((prev) => {
             if (!prev.swap || prev.swap.id !== swapId) return prev;
+            // Also sync to store for transaction history
+            upsertStablecoinTx({
+              ...prev.swap as unknown as StablecoinTxItem,
+              swapId,
+              backendStatus: status,
+              status: mapBackendStatus(status),
+              claimTxHash: prev.swap.claimTxHash,
+            });
             return {
               ...prev,
               swap: { ...prev.swap, backendStatus: status },
@@ -225,11 +252,22 @@ export function useLendaswap() {
             return;
           }
 
-          // Auto-claim for Arkade→EVM (SEND) when server has funded
-          if (direction === "send" && status === "serverfunded") {
+          // Auto-claim when server has funded (both SEND and RECEIVE)
+          if (status === "serverfunded" && !isClaimingRef.current) {
+            if (claimRetries >= MAX_CLAIM_RETRIES) {
+              stopPolling();
+              updateState({
+                step: "error",
+                error: "Failed to claim after multiple attempts. Please try again or contact support.",
+              });
+              return;
+            }
+            isClaimingRef.current = true;
             updateState({ step: "claiming" });
             try {
+              console.log(`[lendaswap] Attempting claim for ${swapId.slice(0, 8)} (attempt ${claimRetries + 1})`);
               const result = await client.claim(swapId);
+              console.log(`[lendaswap] Claim result:`, result);
               if (result.success) {
                 setState((prev) => {
                   if (!prev.swap) return prev;
@@ -238,47 +276,17 @@ export function useLendaswap() {
                     swap: { ...prev.swap, claimTxHash: result.txHash },
                   };
                 });
+              } else {
+                claimRetries++;
+                console.warn(`[lendaswap] Claim returned success=false (attempt ${claimRetries}):`, result);
+                updateState({ step: "processing" });
               }
             } catch (claimErr) {
-              console.warn("[lendaswap] Auto-claim attempt failed, will retry:", claimErr);
-              // Polling continues — claim will be retried next cycle
+              claimRetries++;
+              console.warn(`[lendaswap] Auto-claim attempt ${claimRetries} failed:`, claimErr);
               updateState({ step: "processing" });
-            }
-          }
-
-          // RECEIVE flow: auto-fund HTLC via gasless relay once tokens are deposited.
-          // The backend transitions to "clientfundingseen" or "clientfunded" once it
-          // sees tokens at client_evm_address. We try fundSwapGasless() to relay them.
-          if (direction === "receive" && (status === "pending" || status === "clientfundingseen")) {
-            try {
-              await client.fundSwapGasless(swapId);
-              updateState({ step: "processing" });
-            } catch {
-              // Tokens may not have arrived yet — keep polling silently
-            }
-          }
-
-          // RECEIVE flow: auto-claim BTC when server has funded VHTLC
-          if (direction === "receive" && status === "serverfunded") {
-            updateState({ step: "claiming" });
-            try {
-              const offchainAddr = addresses?.offchainAddr;
-              if (!offchainAddr) throw new Error("No Arkade address available");
-              const result = await client.claimArkade(swapId, {
-                destinationAddress: offchainAddr,
-              });
-              if (result.success) {
-                setState((prev) => {
-                  if (!prev.swap) return prev;
-                  return {
-                    ...prev,
-                    swap: { ...prev.swap, claimTxHash: result.txId },
-                  };
-                });
-              }
-            } catch (claimErr) {
-              console.warn("[lendaswap] Auto-claim Arkade attempt failed, will retry:", claimErr);
-              updateState({ step: "processing" });
+            } finally {
+              isClaimingRef.current = false;
             }
           }
         } catch (err) {
@@ -287,7 +295,7 @@ export function useLendaswap() {
         }
       }, POLL_INTERVAL_MS);
     },
-    [stopPolling, updateState, refreshBalance, addresses],
+    [stopPolling, updateState, refreshBalance, upsertStablecoinTx],
   );
 
   // ── Create SEND swap (Arkade BTC → EVM stablecoin) ────────────────────
@@ -320,24 +328,46 @@ export function useLendaswap() {
         });
 
         const resp = result.response;
+        console.log("[lendaswap] Swap created:", JSON.stringify(resp, (_, v) => typeof v === "bigint" ? v.toString() : v, 2));
+
+        // IMPORTANT: send source_amount (the full amount), NOT evm_expected_sats (post-fee).
+        // The backend watcher checks received_sats >= expected source_amount.
+        const satsToSend = Number(resp.source_amount);
+
         const swap: ActiveSwap = {
           id: resp.id,
           direction: "send",
           coin: params.coin,
           chain: params.chain,
           vhtlcAddress: resp.btc_vhtlc_address,
-          satsRequired: resp.evm_expected_sats || params.amountSats,
-          sourceDisplay: `${params.amountSats.toLocaleString()} sats`,
+          satsRequired: satsToSend,
+          sourceDisplay: `${satsToSend.toLocaleString()} sats`,
           targetDisplay: `${fromSmallestUnit(resp.target_amount, params.coin)} ${params.coin}`,
           backendStatus: resp.status,
           createdAt: Date.now(),
         };
 
+        console.log(`[lendaswap] Sending ${swap.satsRequired} sats to VHTLC: ${resp.btc_vhtlc_address}`);
         updateState({ swap });
+
+        // Push to store so it appears in transaction history immediately
+        upsertStablecoinTx({
+          swapId: resp.id,
+          direction: "send",
+          coin: params.coin,
+          chain: params.chain,
+          stablecoinDisplay: swap.targetDisplay,
+          satsAmount: satsToSend,
+          destinationAddress: params.destinationEvmAddress,
+          status: "pending",
+          backendStatus: resp.status,
+          createdAt: Date.now(),
+        });
 
         // Send BTC to the VHTLC address via Arkade wallet
         try {
           await sendPayment(arkWallet, resp.btc_vhtlc_address, swap.satsRequired!);
+          console.log("[lendaswap] BTC sent successfully to VHTLC");
         } catch (sendErr) {
           const msg = sendErr instanceof Error ? sendErr.message : "Failed to send BTC";
           updateState({ step: "error", error: msg });
@@ -354,7 +384,7 @@ export function useLendaswap() {
         return false;
       }
     },
-    [arkWallet, updateState, startPolling],
+    [arkWallet, updateState, startPolling, upsertStablecoinTx],
   );
 
   // ── Create RECEIVE swap (EVM stablecoin → Arkade BTC) ─────────────────
@@ -411,8 +441,21 @@ export function useLendaswap() {
 
         updateState({ swap });
 
-        // Start polling — when tokens arrive at client_evm_address,
-        // we call fundSwapGasless() to relay them into the HTLC.
+        upsertStablecoinTx({
+          swapId: resp.id,
+          direction: "receive",
+          coin: params.coin,
+          chain: params.chain,
+          stablecoinDisplay: swap.sourceDisplay,
+          satsAmount: params.amountSats,
+          destinationAddress: addresses.offchainAddr,
+          status: "pending",
+          backendStatus: resp.status,
+          createdAt: Date.now(),
+        });
+
+        // Start polling — tracks backend status transitions.
+        // The UI component handles fundSwapGasless() after balance detection.
         startPolling(resp.id, "receive");
         return true;
       } catch (err) {
@@ -421,7 +464,7 @@ export function useLendaswap() {
         return false;
       }
     },
-    [addresses, updateState, startPolling],
+    [addresses, updateState, startPolling, upsertStablecoinTx],
   );
 
   // ── Seamless receive: quote + create in one shot ────────────────────
@@ -492,6 +535,20 @@ export function useLendaswap() {
         };
 
         updateState({ step: "awaiting_deposit", quote: quoteInfo, swap });
+
+        upsertStablecoinTx({
+          swapId: resp.id,
+          direction: "receive",
+          coin: params.coin,
+          chain: params.chain,
+          stablecoinDisplay: `${params.amountUsd} ${params.coin}`,
+          satsAmount: targetSats || 0,
+          destinationAddress: addresses.offchainAddr,
+          status: "pending",
+          backendStatus: resp.status,
+          createdAt: Date.now(),
+        });
+
         startPolling(resp.id, "receive");
         return true;
       } catch (err) {
@@ -500,7 +557,32 @@ export function useLendaswap() {
         return false;
       }
     },
-    [addresses, updateState, startPolling],
+    [addresses, updateState, startPolling, upsertStablecoinTx],
+  );
+
+  // ── Fund gasless (RECEIVE flow) ──────────────────────────────────────
+  //
+  // Called explicitly from the UI once on-chain balance polling confirms
+  // that stablecoins have arrived at client_evm_address. This signs
+  // Permit2 internally and relays the funding TX through the server.
+  // Matches the reference app's DepositEvmGaslessStep "Fund Swap" button.
+
+  const fundGasless = useCallback(
+    async (swapId: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        updateState({ step: "processing" });
+        const client = await getLendaswapClient();
+        console.log(`[lendaswap] Funding swap gasless: ${swapId.slice(0, 8)}`);
+        const result = await client.fundSwapGasless(swapId);
+        console.log(`[lendaswap] fundSwapGasless result:`, result);
+        return { success: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Gasless funding failed";
+        console.error("[lendaswap] fundSwapGasless failed:", err);
+        return { success: false, error: msg };
+      }
+    },
+    [updateState],
   );
 
   // ── Refund ────────────────────────────────────────────────────────────
@@ -597,6 +679,8 @@ export function useLendaswap() {
     getQuoteAndCreateReceive,
     /** Lightweight sats estimate for a given stablecoin amount (no side effects) */
     getReceiveEstimate,
+    /** Fund a gasless EVM swap (call after tokens arrive at deposit address) */
+    fundGasless,
     /** Attempt to refund a swap */
     refundSwap,
     /** List all stored swaps */

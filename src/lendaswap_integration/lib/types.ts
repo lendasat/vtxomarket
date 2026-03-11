@@ -103,3 +103,20 @@ export const INITIAL_SWAP_STATE: SwapState = {
   swap: null,
   error: null,
 };
+
+// ── Stablecoin transaction (for unified history) ────────────────────────────
+
+export interface StablecoinTxItem {
+  swapId: string;
+  direction: "send" | "receive";
+  coin: StablecoinKey;
+  chain: EvmChainKey;
+  /** Human-readable stablecoin amount (e.g. "50.25 USDC") */
+  stablecoinDisplay: string;
+  satsAmount: number;
+  destinationAddress: string;
+  status: "pending" | "processing" | "claiming" | "complete" | "failed";
+  backendStatus: string;
+  claimTxHash?: string;
+  createdAt: number;
+}

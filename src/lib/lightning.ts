@@ -7,7 +7,7 @@ const BOLTZ_URL = process.env.NEXT_PUBLIC_BOLTZ_URL || "https://api.ark.boltz.ex
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function initLightning(wallet: any) {
-  const { ArkadeLightning, BoltzSwapProvider } = await import("@arkade-os/boltz-swap");
+  const { ArkadeSwaps, BoltzSwapProvider } = await import("@arkade-os/boltz-swap");
   const { RestArkProvider, RestIndexerProvider } = await import("@arkade-os/sdk");
   const { ARK_SERVER_URL } = await import("./ark-wallet");
 
@@ -18,7 +18,7 @@ export async function initLightning(wallet: any) {
   });
   const indexerProvider = new RestIndexerProvider(ARK_SERVER_URL);
 
-  return new ArkadeLightning({
+  return new ArkadeSwaps({
     wallet,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     arkProvider: arkProvider as any,

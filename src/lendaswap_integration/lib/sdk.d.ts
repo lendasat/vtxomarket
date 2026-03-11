@@ -213,7 +213,8 @@ declare module "@lendasat/lendaswap-sdk-pure" {
       targetAddress: string;
       tokenAddress: string;
       evmChainId: number;
-      userAddress: string;
+      /** User's EVM address. Required unless gasless=true (SDK auto-derives from secretKey). */
+      userAddress?: string;
       sourceAmount?: bigint;
       targetAmount?: number;
       referralCode?: string;

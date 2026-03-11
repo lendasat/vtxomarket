@@ -9,14 +9,17 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@arkade-os/boltz-swap": "^0.2.20",
-    "@arkade-os/sdk": "^0.4.0-next.5",
+    "@arkade-os/boltz-swap": "^0.3.0",
+    "@arkade-os/sdk": "^0.4.0",
     "@kukks/bitcoin-descriptors": "^3.1.0",
     "@lendasat/lendaswap-sdk-pure": "^0.2.2",
     "@nostr-dev-kit/ndk": "^3.0.0",
+    "@reown/appkit": "^1.8.19",
+    "@reown/appkit-adapter-wagmi": "^1.8.19",
     "@scure/base": "^2.0.0",
     "@scure/bip32": "^2.0.1",
     "@scure/bip39": "^2.0.1",
+    "@tanstack/react-query": "^5.90.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dexie": "^4.3.0",
@@ -28,6 +31,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tailwind-merge": "^3.5.0",
+    "viem": "^2.47.1",
+    "wagmi": "^3.5.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

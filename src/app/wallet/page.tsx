@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
@@ -20,6 +20,7 @@ import {
 import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
 import { StablecoinSend as LendaswapStablecoinSend, StablecoinReceive as LendaswapStablecoinReceive } from "@/lendaswap_integration";
+import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
 
 type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
 type Mode = null | "send" | "receive" | "debug";
@@ -84,6 +85,7 @@ export default function WalletPage() {
   // Load token metadata from Nostr (needed if user navigates here directly)
   useTokens();
   const tokens = useAppStore((s) => s.tokens);
+  const stablecoinTxs = useAppStore((s) => s.stablecoinTxs);
 
   // Map held assets to token metadata
   const userTokens = heldAssets
@@ -345,6 +347,7 @@ export default function WalletPage() {
           /* ── Transaction History ── */
           <TransactionHistoryView
             txHistory={txHistory}
+            stablecoinTxs={stablecoinTxs}
             txLoading={txLoading}
             walletReady={walletReady}
             onRefresh={loadHistory}
@@ -703,17 +706,34 @@ export default function WalletPage() {
 
 // ===================== Transaction History =====================
 
+type UnifiedTxItem =
+  | { kind: "ark"; data: TxHistoryItem }
+  | { kind: "stablecoin"; data: StablecoinTxItem };
+
 function TransactionHistoryView({
   txHistory,
+  stablecoinTxs,
   txLoading,
   walletReady,
   onRefresh,
 }: {
   txHistory: TxHistoryItem[];
+  stablecoinTxs: StablecoinTxItem[];
   txLoading: boolean;
   walletReady: boolean;
   onRefresh: () => void;
 }) {
+  // Merge ark + stablecoin txs, sorted newest-first
+  const unified: UnifiedTxItem[] = useMemo(() => {
+    const ark: UnifiedTxItem[] = txHistory.map((tx) => ({ kind: "ark" as const, data: tx }));
+    const stable: UnifiedTxItem[] = stablecoinTxs.map((tx) => ({ kind: "stablecoin" as const, data: tx }));
+    return [...ark, ...stable].sort((a, b) => {
+      const aTime = a.kind === "ark" ? a.data.createdAt * 1000 : a.data.createdAt;
+      const bTime = b.kind === "ark" ? b.data.createdAt * 1000 : b.data.createdAt;
+      return bTime - aTime;
+    });
+  }, [txHistory, stablecoinTxs]);
+
   if (!walletReady) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -723,7 +743,7 @@ function TransactionHistoryView({
     );
   }
 
-  if (txLoading && txHistory.length === 0) {
+  if (txLoading && unified.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
@@ -732,7 +752,7 @@ function TransactionHistoryView({
     );
   }
 
-  if (txHistory.length === 0) {
+  if (unified.length === 0) {
     return (
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] p-8 text-center">
         <HistoryIcon className="size-8 text-muted-foreground/20 mx-auto" />
@@ -761,9 +781,13 @@ function TransactionHistoryView({
       </div>
 
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
-        {txHistory.map((tx, i) => (
-          <TxRow key={`${tx.arkTxid || tx.boardingTxid || tx.commitmentTxid}-${i}`} tx={tx} />
-        ))}
+        {unified.map((item, i) =>
+          item.kind === "ark" ? (
+            <TxRow key={`${item.data.arkTxid || item.data.boardingTxid || item.data.commitmentTxid}-${i}`} tx={item.data} />
+          ) : (
+            <StablecoinTxRow key={item.data.swapId} tx={item.data} />
+          )
+        )}
       </div>
     </div>
   );
@@ -819,6 +843,93 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
         {isSent ? "-" : "+"}{tx.amount.toLocaleString()}
         <span className="text-[10px] text-muted-foreground/30 ml-1">sats</span>
       </span>
+    </div>
+  );
+}
+
+function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const isSend = tx.direction === "send";
+  const timeStr = formatTxTime(new Date(tx.createdAt));
+  const isDone = tx.status === "complete";
+  const isFailed = tx.status === "failed";
+  const addr = tx.destinationAddress;
+
+  const statusLabel =
+    tx.status === "pending" ? "Pending" :
+    tx.status === "claiming" ? "Claiming" :
+    tx.status === "processing" ? "Processing" : null;
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-white/[0.02] transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+          isSend
+            ? "bg-red-500/[0.08] text-red-400/70"
+            : "bg-emerald-500/[0.08] text-emerald-400/70"
+        }`}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
+            <path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3Zm9 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-6.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM12.5 6a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
+            <path d="M2 11.5a1 1 0 0 0-1 1v.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.5a1 1 0 0 0-1-1H2Z" />
+          </svg>
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">
+              {isDone ? (isSend ? "Sent" : "Received") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
+            </p>
+            {statusLabel && !isFailed && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
+                <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
+                {statusLabel}
+              </span>
+            )}
+            {isFailed && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]">
+                Failed
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground/35 mt-0.5">
+            {timeStr}
+            <span className="mx-1.5 text-white/[0.06]">&middot;</span>
+            <span className="font-mono">{addr.slice(0, 6)}...{addr.slice(-4)}</span>
+          </p>
+        </div>
+
+        <span className={`text-sm font-semibold tabular-nums ${
+          isSend ? "text-red-400/80" : "text-emerald-400/80"
+        }`}>
+          {isSend ? "-" : "+"}{tx.stablecoinDisplay}
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-3 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/30">Status</span>
+            <span className="text-[10px] text-muted-foreground/50 font-mono uppercase">{tx.backendStatus}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/30">Sats</span>
+            <span className="text-[10px] text-muted-foreground/50 tabular-nums">{tx.satsAmount.toLocaleString()} sats</span>
+          </div>
+          {tx.claimTxHash && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground/30">Claim TX</span>
+              <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.claimTxHash.slice(0, 10)}...{tx.claimTxHash.slice(-6)}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/30">Swap ID</span>
+            <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.swapId.slice(0, 8)}...{tx.swapId.slice(-4)}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

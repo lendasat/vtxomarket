@@ -2,6 +2,7 @@
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthGate } from "@/components/auth-gate";
+import { EvmProviders } from "@/components/evm-providers";
 import { useWallet } from "@/hooks/useWallet";
 
 function WalletInit() {
@@ -11,11 +12,13 @@ function WalletInit() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <TooltipProvider>
-      <AuthGate>
-        <WalletInit />
-        {children}
-      </AuthGate>
-    </TooltipProvider>
+    <EvmProviders>
+      <TooltipProvider>
+        <AuthGate>
+          <WalletInit />
+          {children}
+        </AuthGate>
+      </TooltipProvider>
+    </EvmProviders>
   );
 }

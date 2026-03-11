@@ -16,6 +16,8 @@ const ARKADE_SERVER_URL =
   process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL =
   process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
+const LENDASWAP_API_KEY =
+  process.env.NEXT_PUBLIC_LENDASWAP_API_KEY || "";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let clientPromise: Promise<any> | null = null;
@@ -53,13 +55,18 @@ async function initClient() {
     "@lendasat/lendaswap-sdk-pure"
   );
 
-  const client = await Client.builder()
+  const builder = Client.builder()
     .withBaseUrl(LENDASWAP_API_URL)
     .withArkadeServerUrl(ARKADE_SERVER_URL)
     .withEsploraUrl(ESPLORA_URL)
     .withSignerStorage(new IdbWalletStorage())
-    .withSwapStorage(new IdbSwapStorage())
-    .build();
+    .withSwapStorage(new IdbSwapStorage());
+
+  if (LENDASWAP_API_KEY) {
+    builder.withApiKey(LENDASWAP_API_KEY);
+  }
+
+  const client = await builder.build();
 
   // Verify connectivity
   try {

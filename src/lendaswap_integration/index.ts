@@ -37,6 +37,7 @@ export type {
   SwapState,
   QuoteInfo,
   ActiveSwap,
+  StablecoinTxItem,
 } from "./lib/types";
 
 // ── Hook ────────────────────────────────────────────────────────────────────
@@ -46,5 +47,6 @@ export { useLendaswap } from "./hooks/useLendaswap";
 export { StablecoinReceive } from "./components/StablecoinReceive";
 export { StablecoinSend } from "./components/StablecoinSend";
 export { CoinChainSelectors } from "./components/CoinChainSelectors";
+export { EvmConnectButton, useEvmAddress } from "./components/EvmConnectButton";
 export { SwapStatusTracker } from "./components/SwapStatusTracker";
 export { QuoteDisplay } from "./components/QuoteDisplay";

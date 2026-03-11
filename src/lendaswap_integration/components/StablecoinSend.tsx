@@ -17,10 +17,12 @@
  *   <StablecoinSend />
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
+import { useAccount } from "wagmi";
 import { useLendaswap } from "../hooks/useLendaswap";
 import { CoinChainSelectors } from "./CoinChainSelectors";
+import { EvmConnectButton } from "./EvmConnectButton";
 import { QuoteDisplay } from "./QuoteDisplay";
 import { SwapStatusTracker } from "./SwapStatusTracker";
 import { getChainName, type EvmChainKey, type StablecoinKey } from "../lib/constants";
@@ -36,12 +38,21 @@ export function StablecoinSend() {
     setStep,
   } = useLendaswap();
 
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+
   // ── Local form state ────────────────────────────────────────────────
 
   const [coin, setCoin] = useState<StablecoinKey>("USDC");
   const [chain, setChain] = useState<EvmChainKey>("arbitrum");
   const [amount, setAmount] = useState("");
   const [address, setAddress] = useState("");
+
+  // Auto-fill address when wallet connects
+  useEffect(() => {
+    if (evmConnected && evmAddress && !address) {
+      setAddress(evmAddress);
+    }
+  }, [evmConnected, evmAddress, address]);
 
   const sats = parseInt(amount, 10);
   const isValidAmount = !isNaN(sats) && sats > 0;
@@ -193,13 +204,29 @@ export function StablecoinSend() {
     <div className="space-y-4">
       <CoinChainSelectors coin={coin} setCoin={setCoin} chain={chain} setChain={setChain} />
 
-      {/* Recipient address */}
-      <input
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        placeholder={`Recipient address on ${chainLabel} (0x...)`}
-        className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
-      />
+      {/* Connect wallet + Recipient address */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">Recipient on {chainLabel}</span>
+          <EvmConnectButton />
+        </div>
+        <div className="relative">
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder={`Recipient address (0x...)`}
+            className="w-full h-11 px-4 pr-16 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
+          />
+          {evmConnected && evmAddress && address !== evmAddress && (
+            <button
+              onClick={() => setAddress(evmAddress)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-[10px] font-medium text-blue-400/70 hover:text-blue-400 bg-blue-500/[0.1] rounded-md transition-colors"
+            >
+              Use wallet
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Amount input */}
       <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 space-y-2">
