@@ -884,17 +884,28 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const isFailed = tx.status === "failed";
   const isAlreadyRefunded = ALREADY_REFUNDED_STATUSES.has(tx.backendStatus);
 
-  // Refundable: only for send (arkade_to_evm) direction, since EVM refunds need an EVM wallet
-  // Collaborative refund (instant) for clearly-failed statuses, locktime-based for stuck statuses
   const isRefundable = isSend && !isAlreadyRefunded && (
     COLLAB_REFUNDABLE_STATUSES.has(tx.backendStatus) ||
     LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus)
   );
 
-  const statusLabel =
-    tx.status === "pending" ? "Pending" :
-    tx.status === "claiming" ? "Claiming" :
-    tx.status === "processing" ? "Processing" : null;
+  const statusBadge = isAlreadyRefunded
+    ? { label: "Refunded", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]" }
+    : isRefundable
+    ? { label: "Refundable", cls: "bg-orange-500/[0.06] text-orange-400/60 border-orange-500/[0.1]" }
+    : isFailed
+    ? { label: "Failed", cls: "bg-red-500/[0.06] text-red-400/60 border-red-500/[0.1]" }
+    : isDone
+    ? { label: "Complete", cls: "bg-emerald-500/[0.06] text-emerald-400/60 border-emerald-500/[0.1]" }
+    : tx.status === "claiming"
+    ? { label: "Claiming", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]", pulse: true }
+    : tx.status === "processing"
+    ? { label: "Processing", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]", pulse: true }
+    : tx.status === "pending"
+    ? { label: "Pending", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]", pulse: true }
+    : null;
+
+  const actionLabel = isAlreadyRefunded ? "Refunded" : isDone ? (isSend ? "Sent" : "Received") : isFailed ? (isSend ? "Send" : "Receive") : (isSend ? "Sending" : "Receiving");
 
   return (
     <div>
@@ -902,99 +913,54 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
         className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-white/[0.02] transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
+        {/* Icon */}
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-          isSend
-            ? "bg-red-500/[0.08] text-red-400/70"
-            : "bg-emerald-500/[0.08] text-emerald-400/70"
+          isSend ? "bg-red-500/[0.08] text-red-400/70" : "bg-emerald-500/[0.08] text-emerald-400/70"
         }`}>
-          {isSend ? (
-            <ArrowUpIcon className="size-4" />
-          ) : (
-            <ArrowDownIcon className="size-4" />
-          )}
+          {isSend ? <ArrowUpIcon className="size-4" /> : <ArrowDownIcon className="size-4" />}
         </div>
 
+        {/* Label + meta */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">
-              {isAlreadyRefunded ? "Refunded" : isDone ? (isSend ? "Sent" : "Received") : isFailed ? (isSend ? "Send" : "Receive") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
-            </p>
-            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/[0.08] text-purple-400/60 border border-purple-500/[0.1] uppercase tracking-wider">
-              LendaSwap
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[11px] text-muted-foreground/35">{timeStr}</span>
-            {statusLabel && !isFailed && !isAlreadyRefunded && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
-                <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
-                {statusLabel}
+          <p className="text-sm font-medium truncate">{actionLabel}</p>
+          <p className="text-[11px] text-muted-foreground/35 mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <span>{timeStr}</span>
+            <span className="text-white/[0.06]">&middot;</span>
+            <span className="text-[8px] font-semibold px-1 py-px rounded bg-purple-500/[0.08] text-purple-400/50 uppercase tracking-wider">Swap</span>
+            {statusBadge && (
+              <span className={`inline-flex items-center gap-1 text-[8px] font-medium px-1 py-px rounded border ${statusBadge.cls}`}>
+                {(statusBadge as { pulse?: boolean }).pulse && <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />}
+                {statusBadge.label}
               </span>
             )}
-            {isAlreadyRefunded && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
-                Refunded
-              </span>
-            )}
-            {isRefundable && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/[0.06] text-orange-400/60 border border-orange-500/[0.1]">
-                Refundable
-              </span>
-            )}
-            {isFailed && !isRefundable && !isAlreadyRefunded && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]">
-                Failed
-              </span>
-            )}
-            {isDone && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/[0.06] text-emerald-400/60 border border-emerald-500/[0.1]">
-                Complete
-              </span>
-            )}
-          </div>
+          </p>
         </div>
 
-        <span className={`text-sm font-semibold tabular-nums ${
-          isSend ? "text-red-400/80" : "text-emerald-400/80"
-        }`}>
-          {isSend ? "-" : "+"}{tx.stablecoinDisplay}
-        </span>
+        {/* Amount */}
+        <div className="shrink-0 text-right">
+          <span className={`text-sm font-semibold tabular-nums ${isSend ? "text-red-400/80" : "text-emerald-400/80"}`}>
+            {isSend ? "-" : "+"}{tx.stablecoinDisplay}
+          </span>
+        </div>
       </div>
 
+      {/* Expanded details */}
       {expanded && (
-        <div className="px-4 pb-3 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground/30">Status</span>
-            <span className="text-[10px] text-muted-foreground/50 font-mono uppercase">{tx.backendStatus}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground/30">Direction</span>
-            <span className="text-[10px] text-muted-foreground/50">{isSend ? "BTC → Stablecoin" : "Stablecoin → BTC"}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground/30">Sats</span>
-            <span className="text-[10px] text-muted-foreground/50 tabular-nums">{tx.satsAmount.toLocaleString()} sats</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground/30">Chain</span>
-            <span className="text-[10px] text-muted-foreground/50 capitalize">{tx.chain}</span>
-          </div>
-          {tx.destinationAddress && (
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground/30">Destination</span>
-              <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.destinationAddress.slice(0, 10)}...{tx.destinationAddress.slice(-6)}</span>
+        <div className="mx-4 mb-3 rounded-xl bg-white/[0.02] border border-white/[0.05] p-3 space-y-2">
+          {[
+            ["Status", tx.backendStatus.toUpperCase()],
+            ["Direction", isSend ? "BTC → Stablecoin" : "Stablecoin → BTC"],
+            ["Sats", `${tx.satsAmount.toLocaleString()} sats`],
+            ["Chain", tx.chain.charAt(0).toUpperCase() + tx.chain.slice(1)],
+            ...(tx.destinationAddress ? [["To", `${tx.destinationAddress.slice(0, 8)}...${tx.destinationAddress.slice(-4)}`]] : []),
+            ...(tx.claimTxHash ? [["Claim TX", `${tx.claimTxHash.slice(0, 8)}...${tx.claimTxHash.slice(-4)}`]] : []),
+            ["Swap ID", `${tx.swapId.slice(0, 8)}...${tx.swapId.slice(-4)}`],
+          ].map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4">
+              <span className="text-[10px] text-muted-foreground/30 shrink-0">{label}</span>
+              <span className="text-[10px] text-muted-foreground/50 font-mono text-right break-all">{value}</span>
             </div>
-          )}
-          {tx.claimTxHash && (
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground/30">Claim TX</span>
-              <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.claimTxHash.slice(0, 10)}...{tx.claimTxHash.slice(-6)}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-muted-foreground/30">Swap ID</span>
-            <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.swapId.slice(0, 8)}...{tx.swapId.slice(-4)}</span>
-          </div>
+          ))}
 
           {isRefundable && !refundResult && (
             <button
@@ -1022,13 +988,13 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
                   setRefunding(false);
                 }
               }}
-              className="w-full mt-2 h-8 rounded-lg bg-orange-500/[0.1] border border-orange-500/[0.15] text-[11px] font-semibold text-orange-400/80 transition-all hover:bg-orange-500/[0.15] disabled:opacity-40"
+              className="w-full h-8 rounded-lg bg-orange-500/[0.1] border border-orange-500/[0.15] text-[11px] font-semibold text-orange-400/80 transition-all hover:bg-orange-500/[0.15] disabled:opacity-40"
             >
               {refunding ? "Refunding..." : "Refund to Arkade wallet"}
             </button>
           )}
           {refundResult && (
-            <p className={`text-[10px] text-center mt-1 ${refundResult.startsWith("Refund successful") ? "text-emerald-400/70" : "text-muted-foreground/50"}`}>{refundResult}</p>
+            <p className={`text-[10px] text-center ${refundResult.startsWith("Refund successful") ? "text-emerald-400/70" : "text-muted-foreground/50"}`}>{refundResult}</p>
           )}
         </div>
       )}
