@@ -6,6 +6,7 @@ import {
   getRawBalance,
   getVtxoDetails,
   settleVtxos,
+  renewVtxos,
   getBalance,
   type WalletBalance,
   type VtxoInfo,
@@ -36,6 +37,7 @@ export function WalletDebug() {
   const [vtxos, setVtxos] = useState<VtxoInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [actionResult, setActionResult] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
 
@@ -79,8 +81,31 @@ export function WalletDebug() {
     }
   };
 
+  const handleRecover = async () => {
+    if (!arkWallet) return;
+    setRecovering(true);
+    setActionResult(null);
+    setActionError("");
+    try {
+      const txid = await renewVtxos(arkWallet);
+      if (txid) {
+        setActionResult(`Recovered! ${txid.slice(0, 20)}...`);
+      } else {
+        setActionResult("Nothing to recover");
+      }
+      const bal = await getBalance(arkWallet);
+      setBalance(bal);
+      await loadDebugInfo();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Recovery failed");
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   const hasSettleable =
     rawBalance && (rawBalance.boarding?.confirmed ?? 0) > 0;
+  const hasRecoverable = rawBalance && rawBalance.recoverable > 0;
 
   return (
     <div className="space-y-4">
@@ -159,6 +184,14 @@ export function WalletDebug() {
           onClick={handleSettle}
         >
           {settling ? "Settling..." : "Settle Confirmed UTXOs"}
+        </Button>
+        <Button
+          className="w-full"
+          variant={hasRecoverable ? "default" : "secondary"}
+          disabled={recovering || !hasRecoverable}
+          onClick={handleRecover}
+        >
+          {recovering ? "Recovering..." : `Recover Sats${hasRecoverable ? ` (${rawBalance!.recoverable.toLocaleString()})` : ""}`}
         </Button>
         {actionResult && (
           <p className="text-xs text-green-400 font-mono">{actionResult}</p>

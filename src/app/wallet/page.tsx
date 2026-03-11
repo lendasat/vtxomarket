@@ -5,7 +5,7 @@ import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
 import { useTokens } from "@/hooks/useTokens";
-import { getBalance, getReceivingAddresses, sendPayment, sendAsset, getTransactionHistory, getAspOnchainFee } from "@/lib/ark-wallet";
+import { getBalance, getReceivingAddresses, sendPayment, sendAsset, getTransactionHistory, getAspOnchainFee, renewVtxos } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
 import {
@@ -163,6 +163,33 @@ export default function WalletPage() {
     setAddresses(addrs);
   }, [arkWallet, setBalance, setAddresses]);
 
+  // Auto-recover swept/recoverable VTXOs when detected
+  const autoRecoverAttempted = useRef(false);
+  useEffect(() => {
+    if (!arkWallet || !balance || balance.recoverable <= 0) return;
+    if (autoRecoverAttempted.current) return;
+    autoRecoverAttempted.current = true;
+    console.log("[wallet] Auto-recovering %d recoverable sats...", balance.recoverable);
+    renewVtxos(arkWallet)
+      .then(async (txid) => {
+        if (txid) {
+          console.log("[wallet] Auto-recovery complete, txid:", txid);
+          // Refresh balance to reflect recovered sats
+          const bal = await getBalance(arkWallet);
+          setBalance(bal);
+        } else {
+          console.log("[wallet] Auto-recovery: nothing to recover");
+        }
+      })
+      .catch((err) => {
+        console.warn("[wallet] Auto-recovery failed:", err);
+      })
+      .finally(() => {
+        // Allow retry on next balance change
+        autoRecoverAttempted.current = false;
+      });
+  }, [arkWallet, balance, setBalance]);
+
   // Fetch ASP's onchain output fee (flat service fee, not mining fee)
   useEffect(() => {
     if (tab !== "onchain") {
@@ -258,7 +285,7 @@ export default function WalletPage() {
     return "";
   };
 
-  const totalSats = balance?.total ?? 0;
+  const totalSats = balance?.available ?? 0;
 
   return (
     <>
@@ -266,7 +293,7 @@ export default function WalletPage() {
         {/* ── Balance hero ── */}
         <div className="pt-4 sm:pt-8 pb-2 text-center">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40 font-medium">
-            Total Balance
+            Spendable Balance
           </p>
           {walletReady ? (
             <>
