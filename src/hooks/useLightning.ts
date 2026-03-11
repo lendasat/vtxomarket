@@ -21,16 +21,19 @@ export function useLightning() {
   const lightningRef = useRef<any>(null);
   const [fees, setFees] = useState<FeesResponse | null>(null);
   const [ready, setReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!arkWallet) {
       lightningRef.current = null;
       setFees(null);
       setReady(false);
+      setInitError(null);
       return;
     }
 
     let disposed = false;
+    setInitError(null);
 
     initLightning(arkWallet)
       .then(async (ln) => {
@@ -46,6 +49,11 @@ export function useLightning() {
       })
       .catch((err) => {
         console.error("[lightning] init failed:", err);
+        if (!disposed) {
+          setInitError(
+            "Could not connect to Boltz swap service. Switch to Mutinynet for local development, or check your network connection."
+          );
+        }
       });
 
     return () => {
@@ -119,6 +127,7 @@ export function useLightning() {
 
   return {
     ready,
+    initError,
     fees,
     calcSendFee,
     calcReceiveFee,

@@ -103,6 +103,7 @@ export default function WalletPage() {
 
   const {
     ready: lnReady,
+    initError: lnInitError,
     calcSendFee,
     calcReceiveFee,
     sendLightning,
@@ -546,6 +547,7 @@ export default function WalletPage() {
                     ) : tab === "lightning" ? (
                       <LightningReceive
                         lnReady={lnReady}
+                        lnInitError={lnInitError}
                         lnSuccess={lnSuccess}
                         lnWaiting={lnWaiting}
                         lnInvoice={lnInvoice}
@@ -598,6 +600,7 @@ export default function WalletPage() {
                     ) : tab === "lightning" ? (
                       <LightningSend
                         lnReady={lnReady}
+                        lnInitError={lnInitError}
                         lnSendInvoice={lnSendInvoice}
                         lnSendLoading={lnSendLoading}
                         lnSendResult={lnSendResult}
@@ -1022,11 +1025,11 @@ function SuccessView({
 }
 
 function LightningReceive({
-  lnReady, lnSuccess, lnWaiting, lnInvoice, lnReceiveAmount, lnError, copied,
+  lnReady, lnInitError, lnSuccess, lnWaiting, lnInvoice, lnReceiveAmount, lnError, copied,
   calcReceiveFee, setLnReceiveAmount, setLnError, setLnInvoice, setLnWaiting, setLnSuccess,
   receiveLightning, waitForReceive, copyToClipboard, truncateAddr, refreshBalance,
 }: {
-  lnReady: boolean; lnSuccess: boolean; lnWaiting: boolean; lnInvoice: string;
+  lnReady: boolean; lnInitError: string | null; lnSuccess: boolean; lnWaiting: boolean; lnInvoice: string;
   lnReceiveAmount: string; lnError: string; copied: boolean;
   calcReceiveFee: (sats: number) => number; setLnReceiveAmount: (v: string) => void;
   setLnError: (v: string) => void; setLnInvoice: (v: string) => void;
@@ -1078,8 +1081,19 @@ function LightningReceive({
   if (!lnReady) {
     return (
       <div className="text-center py-8 space-y-3">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
-        <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
+        {lnInitError ? (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6 text-amber-400/70 mx-auto">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <p className="text-xs text-amber-400/70 max-w-[260px] mx-auto">{lnInitError}</p>
+          </>
+        ) : (
+          <>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
+            <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
+          </>
+        )}
       </div>
     );
   }
@@ -1127,11 +1141,11 @@ function LightningReceive({
 }
 
 function LightningSend({
-  lnReady, lnSendInvoice, lnSendLoading, lnSendResult, lnError, copied,
+  lnReady, lnInitError, lnSendInvoice, lnSendLoading, lnSendResult, lnError, copied,
   calcSendFee, setLnSendInvoice, setLnError, sendLightning, setLnSendResult, setLnSendLoading,
   copyToClipboard, truncateAddr, refreshBalance,
 }: {
-  lnReady: boolean; lnSendInvoice: string; lnSendLoading: boolean; lnSendResult: string | null;
+  lnReady: boolean; lnInitError: string | null; lnSendInvoice: string; lnSendLoading: boolean; lnSendResult: string | null;
   lnError: string; copied: boolean; calcSendFee: (sats: number) => number;
   setLnSendInvoice: (v: string) => void; setLnError: (v: string) => void;
   sendLightning: (invoice: string) => Promise<{ txid: string }>;
@@ -1171,8 +1185,19 @@ function LightningSend({
   if (!lnReady) {
     return (
       <div className="text-center py-8 space-y-3">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
-        <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
+        {lnInitError ? (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6 text-amber-400/70 mx-auto">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <p className="text-xs text-amber-400/70 max-w-[260px] mx-auto">{lnInitError}</p>
+          </>
+        ) : (
+          <>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
+            <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
+          </>
+        )}
       </div>
     );
   }
