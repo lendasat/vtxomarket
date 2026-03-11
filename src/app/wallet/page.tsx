@@ -866,7 +866,6 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const timeStr = formatTxTime(new Date(tx.createdAt));
   const isDone = tx.status === "complete";
   const isFailed = tx.status === "failed";
-  const addr = tx.destinationAddress;
   const isRefundable = isFailed && REFUNDABLE_BACKEND_STATUSES.has(tx.backendStatus);
 
   const statusLabel =
@@ -885,20 +884,24 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
             ? "bg-red-500/[0.08] text-red-400/70"
             : "bg-emerald-500/[0.08] text-emerald-400/70"
         }`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
-            <path d="M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3Zm9 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-6.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM12.5 6a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z" />
-            <path d="M2 11.5a1 1 0 0 0-1 1v.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.5a1 1 0 0 0-1-1H2Z" />
-          </svg>
+          {isSend ? (
+            <ArrowUpIcon className="size-4" />
+          ) : (
+            <ArrowDownIcon className="size-4" />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">
-              {isDone ? (isSend ? "Sent" : "Received") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
+              {isDone ? (isSend ? "Sent" : "Received") : isFailed ? (isSend ? "Send" : "Receive") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
             </p>
             <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/[0.08] text-purple-400/60 border border-purple-500/[0.1] uppercase tracking-wider">
               LendaSwap
             </span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[11px] text-muted-foreground/35">{timeStr}</span>
             {statusLabel && !isFailed && (
               <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
                 <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
@@ -914,16 +917,12 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
                 {isRefundable ? "Refundable" : "Failed"}
               </span>
             )}
-          </div>
-          <p className="text-[11px] text-muted-foreground/35 mt-0.5">
-            {timeStr}
-            {addr && (
-              <>
-                <span className="mx-1.5 text-white/[0.06]">&middot;</span>
-                <span className="font-mono">{addr.slice(0, 6)}...{addr.slice(-4)}</span>
-              </>
+            {isDone && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/[0.06] text-emerald-400/60 border border-emerald-500/[0.1]">
+                Complete
+              </span>
             )}
-          </p>
+          </div>
         </div>
 
         <span className={`text-sm font-semibold tabular-nums ${
@@ -940,9 +939,23 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
             <span className="text-[10px] text-muted-foreground/50 font-mono uppercase">{tx.backendStatus}</span>
           </div>
           <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/30">Direction</span>
+            <span className="text-[10px] text-muted-foreground/50">{isSend ? "BTC → Stablecoin" : "Stablecoin → BTC"}</span>
+          </div>
+          <div className="flex items-center justify-between">
             <span className="text-[10px] text-muted-foreground/30">Sats</span>
             <span className="text-[10px] text-muted-foreground/50 tabular-nums">{tx.satsAmount.toLocaleString()} sats</span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground/30">Chain</span>
+            <span className="text-[10px] text-muted-foreground/50 capitalize">{tx.chain}</span>
+          </div>
+          {tx.destinationAddress && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground/30">Destination</span>
+              <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.destinationAddress.slice(0, 10)}...{tx.destinationAddress.slice(-6)}</span>
+            </div>
+          )}
           {tx.claimTxHash && (
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-muted-foreground/30">Claim TX</span>
