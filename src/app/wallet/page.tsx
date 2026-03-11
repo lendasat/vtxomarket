@@ -852,10 +852,26 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
   );
 }
 
-const REFUNDABLE_BACKEND_STATUSES = new Set([
+// Statuses where collaborative refund is available immediately (arkade_to_evm only)
+const COLLAB_REFUNDABLE_STATUSES = new Set([
   "clientfundedserverrefunded",
   "clientinvalidfunded",
   "clientfundedtoolate",
+]);
+
+// Additional statuses that may be refundable (locktime-based, SDK checks internally)
+const LOCKTIME_REFUNDABLE_STATUSES = new Set([
+  "expired",
+  "clientfundingseen",
+  "clientfunded",
+  "serverfunded",
+]);
+
+// Statuses where the swap was already refunded
+const ALREADY_REFUNDED_STATUSES = new Set([
+  "clientrefunded",
+  "clientrefundedserverfunded",
+  "clientrefundedserverrefunded",
 ]);
 
 function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
@@ -866,7 +882,14 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const timeStr = formatTxTime(new Date(tx.createdAt));
   const isDone = tx.status === "complete";
   const isFailed = tx.status === "failed";
-  const isRefundable = isFailed && REFUNDABLE_BACKEND_STATUSES.has(tx.backendStatus);
+  const isAlreadyRefunded = ALREADY_REFUNDED_STATUSES.has(tx.backendStatus);
+
+  // Refundable: only for send (arkade_to_evm) direction, since EVM refunds need an EVM wallet
+  // Collaborative refund (instant) for clearly-failed statuses, locktime-based for stuck statuses
+  const isRefundable = isSend && !isAlreadyRefunded && (
+    COLLAB_REFUNDABLE_STATUSES.has(tx.backendStatus) ||
+    LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus)
+  );
 
   const statusLabel =
     tx.status === "pending" ? "Pending" :
@@ -894,7 +917,7 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">
-              {isDone ? (isSend ? "Sent" : "Received") : isFailed ? (isSend ? "Send" : "Receive") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
+              {isAlreadyRefunded ? "Refunded" : isDone ? (isSend ? "Sent" : "Received") : isFailed ? (isSend ? "Send" : "Receive") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
             </p>
             <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/[0.08] text-purple-400/60 border border-purple-500/[0.1] uppercase tracking-wider">
               LendaSwap
@@ -902,19 +925,25 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[11px] text-muted-foreground/35">{timeStr}</span>
-            {statusLabel && !isFailed && (
+            {statusLabel && !isFailed && !isAlreadyRefunded && (
               <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
                 <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
                 {statusLabel}
               </span>
             )}
-            {isFailed && (
-              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
-                isRefundable
-                  ? "bg-orange-500/[0.06] text-orange-400/60 border border-orange-500/[0.1]"
-                  : "bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]"
-              }`}>
-                {isRefundable ? "Refundable" : "Failed"}
+            {isAlreadyRefunded && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
+                Refunded
+              </span>
+            )}
+            {isRefundable && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/[0.06] text-orange-400/60 border border-orange-500/[0.1]">
+                Refundable
+              </span>
+            )}
+            {isFailed && !isRefundable && !isAlreadyRefunded && (
+              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]">
+                Failed
               </span>
             )}
             {isDone && (
@@ -977,8 +1006,16 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
                   const { getLendaswapClient } = await import("@/lendaswap_integration/lib/client");
                   const client = await getLendaswapClient();
                   const addresses = useAppStore.getState().addresses;
-                  const result = await client.refundSwap(tx.swapId, addresses?.offchainAddr ? { destinationAddress: addresses.offchainAddr } : undefined);
-                  setRefundResult(result.success ? "Refund submitted" : result.message || "Refund failed");
+                  if (!addresses?.offchainAddr) {
+                    setRefundResult("No Arkade address available");
+                    return;
+                  }
+                  const result = await client.refundSwap(tx.swapId, { destinationAddress: addresses.offchainAddr });
+                  if (result.success) {
+                    setRefundResult(result.txId ? `Refund successful! TX: ${result.txId.slice(0, 12)}...` : "Refund submitted");
+                  } else {
+                    setRefundResult(result.message || "Refund failed");
+                  }
                 } catch (err) {
                   setRefundResult(err instanceof Error ? err.message : "Refund failed");
                 } finally {
@@ -991,7 +1028,7 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
             </button>
           )}
           {refundResult && (
-            <p className="text-[10px] text-center mt-1 text-muted-foreground/50">{refundResult}</p>
+            <p className={`text-[10px] text-center mt-1 ${refundResult.startsWith("Refund successful") ? "text-emerald-400/70" : "text-muted-foreground/50"}`}>{refundResult}</p>
           )}
         </div>
       )}
