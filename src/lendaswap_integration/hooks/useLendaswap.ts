@@ -141,7 +141,7 @@ export function useLendaswap() {
               status: mapBackendStatus(status),
               backendStatus: status,
               claimTxHash: resp.evm_claim_txid || resp.btc_claim_txid,
-              createdAt: resp.created_at ? new Date(resp.created_at).getTime() : s.storedAt || Date.now(),
+              createdAt: (resp.created_at ? new Date(resp.created_at as string).getTime() : 0) || s.storedAt || Date.now(),
             });
           }
         } catch (err) {
@@ -269,14 +269,17 @@ export function useLendaswap() {
           setState((prev) => {
             if (!prev.swap || prev.swap.id !== swapId) return prev;
             // Defer store sync out of setState to avoid updating another component mid-render
+            // Only update status fields — don't spread ActiveSwap which lacks StablecoinTxItem fields
             queueMicrotask(() => {
-              upsertStablecoinTx({
-                ...prev.swap as unknown as StablecoinTxItem,
-                swapId,
-                backendStatus: status,
-                status: mapBackendStatus(status),
-                claimTxHash: prev.swap!.claimTxHash,
-              });
+              const existing = useAppStore.getState().stablecoinTxs.find((t) => t.swapId === swapId);
+              if (existing) {
+                upsertStablecoinTx({
+                  ...existing,
+                  backendStatus: status,
+                  status: mapBackendStatus(status),
+                  claimTxHash: prev.swap!.claimTxHash ?? existing.claimTxHash,
+                });
+              }
             });
             return {
               ...prev,

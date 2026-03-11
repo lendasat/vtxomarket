@@ -87,7 +87,7 @@ export function useLendaswapHistory() {
               status: mapBackendStatus(status),
               backendStatus: status,
               claimTxHash: resp.evm_claim_txid || resp.btc_claim_txid,
-              createdAt: resp.created_at ? new Date(resp.created_at).getTime() : s.storedAt || Date.now(),
+              createdAt: (resp.created_at ? new Date(resp.created_at as string).getTime() : 0) || s.storedAt || Date.now(),
             });
           }
         } catch (err) {

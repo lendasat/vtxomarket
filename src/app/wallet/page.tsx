@@ -759,10 +759,12 @@ function TransactionHistoryView({
   const unified: UnifiedTxItem[] = useMemo(() => {
     const ark: UnifiedTxItem[] = txHistory.map((tx) => ({ kind: "ark" as const, data: tx }));
     const stable: UnifiedTxItem[] = stablecoinTxs.map((tx) => ({ kind: "stablecoin" as const, data: tx }));
+    const now = Date.now();
     return [...ark, ...stable].sort((a, b) => {
       const aTime = a.kind === "ark" ? a.data.createdAt * 1000 : a.data.createdAt;
       const bTime = b.kind === "ark" ? b.data.createdAt * 1000 : b.data.createdAt;
-      return bTime - aTime;
+      // Treat NaN/0 as "now" so new swaps without a timestamp sort to the top
+      return (bTime || now) - (aTime || now);
     });
   }, [txHistory, stablecoinTxs]);
 
@@ -906,7 +908,8 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const [refunding, setRefunding] = useState(false);
   const [refundResult, setRefundResult] = useState<string | null>(null);
   const isSend = tx.direction === "send";
-  const timeStr = formatTxTime(new Date(tx.createdAt));
+  const txDate = new Date(tx.createdAt);
+  const timeStr = isNaN(txDate.getTime()) ? "Unknown" : formatTxTime(txDate);
   const isDone = tx.status === "complete";
   const isFailed = tx.status === "failed";
   const isAlreadyRefunded = ALREADY_REFUNDED_STATUSES.has(tx.backendStatus);
