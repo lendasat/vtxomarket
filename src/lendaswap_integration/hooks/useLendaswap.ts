@@ -94,12 +94,59 @@ export function useLendaswap() {
     };
   }, []);
 
-  // Lazily init the client when the hook first mounts
+  // Lazily init the client and load stored swap history into the store
   useEffect(() => {
     let cancelled = false;
     getLendaswapClient()
-      .then(() => {
-        if (!cancelled) setReady(true);
+      .then(async (client) => {
+        if (cancelled) return;
+        setReady(true);
+
+        // Load stored swaps into the Zustand store for transaction history
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const stored: any[] = await client.listAllSwaps();
+          for (const s of stored) {
+            const resp = s.response;
+            if (!resp) continue;
+            const dir = resp.direction;
+            const isSend = dir === "arkade_to_evm";
+            const isReceive = dir === "evm_to_arkade";
+            if (!isSend && !isReceive) continue;
+
+            const chainId = resp.evm_chain_id;
+            const chain: EvmChainKey =
+              chainId === 42161 ? "arbitrum" :
+              chainId === 1 ? "ethereum" : "polygon";
+
+            const targetToken = resp.target_token;
+            const sourceToken = resp.source_token;
+            const tokenSymbol = isSend
+              ? (targetToken?.symbol || "USDC")
+              : (sourceToken?.symbol || "USDC");
+            const coin: StablecoinKey = tokenSymbol === "USDT" ? "USDT" : "USDC";
+
+            const stablecoinAmt = isSend ? resp.target_amount : resp.source_amount;
+            const satsAmt = isSend ? resp.source_amount : resp.target_amount;
+            const status = (resp.status as string) || "pending";
+
+            upsertStablecoinTx({
+              swapId: s.swapId,
+              direction: isSend ? "send" : "receive",
+              coin,
+              chain,
+              stablecoinDisplay: `${fromSmallestUnit(stablecoinAmt || "0", coin)} ${coin}`,
+              satsAmount: parseInt(satsAmt || "0", 10),
+              destinationAddress: s.targetAddress || resp.target_evm_address || resp.target_arkade_address || "",
+              status: mapBackendStatus(status),
+              backendStatus: status,
+              claimTxHash: resp.evm_claim_txid || resp.btc_claim_txid,
+              createdAt: resp.created_at ? new Date(resp.created_at).getTime() : s.storedAt || Date.now(),
+            });
+          }
+        } catch (err) {
+          console.warn("[lendaswap] Failed to load stored swaps:", err);
+        }
       })
       .catch((err) => {
         console.error("[lendaswap] Client init failed:", err);
@@ -107,7 +154,7 @@ export function useLendaswap() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [upsertStablecoinTx]);
 
   // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -221,13 +268,15 @@ export function useLendaswap() {
           // Update the active swap's backend status
           setState((prev) => {
             if (!prev.swap || prev.swap.id !== swapId) return prev;
-            // Also sync to store for transaction history
-            upsertStablecoinTx({
-              ...prev.swap as unknown as StablecoinTxItem,
-              swapId,
-              backendStatus: status,
-              status: mapBackendStatus(status),
-              claimTxHash: prev.swap.claimTxHash,
+            // Defer store sync out of setState to avoid updating another component mid-render
+            queueMicrotask(() => {
+              upsertStablecoinTx({
+                ...prev.swap as unknown as StablecoinTxItem,
+                swapId,
+                backendStatus: status,
+                status: mapBackendStatus(status),
+                claimTxHash: prev.swap!.claimTxHash,
+              });
             });
             return {
               ...prev,

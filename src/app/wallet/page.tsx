@@ -850,13 +850,22 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
   );
 }
 
+const REFUNDABLE_BACKEND_STATUSES = new Set([
+  "clientfundedserverrefunded",
+  "clientinvalidfunded",
+  "clientfundedtoolate",
+]);
+
 function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const [expanded, setExpanded] = useState(false);
+  const [refunding, setRefunding] = useState(false);
+  const [refundResult, setRefundResult] = useState<string | null>(null);
   const isSend = tx.direction === "send";
   const timeStr = formatTxTime(new Date(tx.createdAt));
   const isDone = tx.status === "complete";
   const isFailed = tx.status === "failed";
   const addr = tx.destinationAddress;
+  const isRefundable = isFailed && REFUNDABLE_BACKEND_STATUSES.has(tx.backendStatus);
 
   const statusLabel =
     tx.status === "pending" ? "Pending" :
@@ -885,6 +894,9 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
             <p className="text-sm font-medium">
               {isDone ? (isSend ? "Sent" : "Received") : (isSend ? "Sending" : "Receiving")} {tx.stablecoinDisplay}
             </p>
+            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-500/[0.08] text-purple-400/60 border border-purple-500/[0.1] uppercase tracking-wider">
+              LendaSwap
+            </span>
             {statusLabel && !isFailed && (
               <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/[0.06] text-blue-400/60 border border-blue-500/[0.1]">
                 <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
@@ -892,15 +904,23 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
               </span>
             )}
             {isFailed && (
-              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]">
-                Failed
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                isRefundable
+                  ? "bg-orange-500/[0.06] text-orange-400/60 border border-orange-500/[0.1]"
+                  : "bg-red-500/[0.06] text-red-400/60 border border-red-500/[0.1]"
+              }`}>
+                {isRefundable ? "Refundable" : "Failed"}
               </span>
             )}
           </div>
           <p className="text-[11px] text-muted-foreground/35 mt-0.5">
             {timeStr}
-            <span className="mx-1.5 text-white/[0.06]">&middot;</span>
-            <span className="font-mono">{addr.slice(0, 6)}...{addr.slice(-4)}</span>
+            {addr && (
+              <>
+                <span className="mx-1.5 text-white/[0.06]">&middot;</span>
+                <span className="font-mono">{addr.slice(0, 6)}...{addr.slice(-4)}</span>
+              </>
+            )}
           </p>
         </div>
 
@@ -931,6 +951,33 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
             <span className="text-[10px] text-muted-foreground/30">Swap ID</span>
             <span className="text-[10px] text-muted-foreground/50 font-mono">{tx.swapId.slice(0, 8)}...{tx.swapId.slice(-4)}</span>
           </div>
+
+          {isRefundable && !refundResult && (
+            <button
+              disabled={refunding}
+              onClick={async (e) => {
+                e.stopPropagation();
+                setRefunding(true);
+                try {
+                  const { getLendaswapClient } = await import("@/lendaswap_integration/lib/client");
+                  const client = await getLendaswapClient();
+                  const addresses = useAppStore.getState().addresses;
+                  const result = await client.refundSwap(tx.swapId, addresses?.offchainAddr ? { destinationAddress: addresses.offchainAddr } : undefined);
+                  setRefundResult(result.success ? "Refund submitted" : result.message || "Refund failed");
+                } catch (err) {
+                  setRefundResult(err instanceof Error ? err.message : "Refund failed");
+                } finally {
+                  setRefunding(false);
+                }
+              }}
+              className="w-full mt-2 h-8 rounded-lg bg-orange-500/[0.1] border border-orange-500/[0.15] text-[11px] font-semibold text-orange-400/80 transition-all hover:bg-orange-500/[0.15] disabled:opacity-40"
+            >
+              {refunding ? "Refunding..." : "Refund to Arkade wallet"}
+            </button>
+          )}
+          {refundResult && (
+            <p className="text-[10px] text-center mt-1 text-muted-foreground/50">{refundResult}</p>
+          )}
         </div>
       )}
     </div>

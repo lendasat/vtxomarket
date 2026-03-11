@@ -11,7 +11,7 @@
  */
 
 const LENDASWAP_API_URL =
-  process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com/";
+  (process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com").replace(/\/+$/, "");
 const ARKADE_SERVER_URL =
   process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL =
