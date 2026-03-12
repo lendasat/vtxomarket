@@ -11,6 +11,7 @@ import { fetchTokenByTicker, publishTokenListing } from "@/lib/nostr-market";
 import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer } from "@/lib/ark-wallet";
 import { TokenChart } from "@/components/token-chart";
 import { useOffers } from "@/hooks/useOffers";
+import { formatTokenAmount, parseTokenInput, formatSats, formatPrice } from "@/lib/format";
 import type { Token } from "@/lib/store";
 
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
@@ -23,12 +24,6 @@ function timeAgo(ts: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
-}
-
-function formatSats(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
 }
 
 function shortPubkey(pk: string): string {
@@ -140,7 +135,7 @@ export default function TokenPage() {
   // Reissue handler
   const handleReissue = async () => {
     if (!arkWallet || !token || !token.controlAssetId) return;
-    const amt = parseInt(reissueAmount, 10);
+    const amt = parseTokenInput(reissueAmount, token.decimals);
     if (!amt || amt <= 0) return;
     setReissueLoading(true);
     setReissueError("");
@@ -163,7 +158,7 @@ export default function TokenPage() {
         ...(token.telegram && { telegram: token.telegram }),
       });
       upsertToken({ ...token, supply: newSupply });
-      setReissueSuccess(`Minted ${amt.toLocaleString()} tokens. New supply: ${newSupply.toLocaleString()}`);
+      setReissueSuccess(`Minted ${formatTokenAmount(amt, token.decimals)} tokens. New supply: ${formatTokenAmount(newSupply, token.decimals)}`);
       setReissueAmount("");
     } catch (err) {
       setReissueError(err instanceof Error ? err.message : "Reissue failed");
@@ -175,11 +170,11 @@ export default function TokenPage() {
   // Create swap offer handler
   const handleCreateOffer = async () => {
     if (!arkWallet || !token) return;
-    const tokenAmt = parseInt(offerTokenAmount, 10);
+    const tokenAmt = parseTokenInput(offerTokenAmount, token.decimals);
     const satAmt = parseInt(offerSatAmount, 10);
     if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
     if (tokenAmt > userHolding) {
-      setOfferError(`Insufficient balance: you hold ${userHolding} ${token.ticker}`);
+      setOfferError(`Insufficient balance: you hold ${formatTokenAmount(userHolding, token.decimals)} ${token.ticker}`);
       return;
     }
 
@@ -305,7 +300,7 @@ export default function TokenPage() {
         </div>
         <div className="shrink-0 text-right">
           <p className="text-sm tabular-nums text-muted-foreground/50">
-            {token.supply.toLocaleString()} <span className="text-muted-foreground/30 text-xs">supply</span>
+            {formatTokenAmount(token.supply, token.decimals)} <span className="text-muted-foreground/30 text-xs">supply</span>
           </p>
         </div>
       </div>
@@ -454,7 +449,7 @@ export default function TokenPage() {
                             {isBuy ? "bought" : "sold"}
                           </span>
                           <span className="text-[11px] font-semibold tabular-nums">
-                            {t.tokens.toLocaleString()}
+                            {formatTokenAmount(t.tokens, token?.decimals)}
                             <span className="text-muted-foreground/35 font-normal ml-0.5">${t.ticker}</span>
                           </span>
                           <div className="flex-1" />
@@ -499,11 +494,11 @@ export default function TokenPage() {
                           return (
                             <div key={offer.offerOutpoint} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
                               <span className="text-xs tabular-nums">
-                                {offer.tokenAmount.toLocaleString()}
+                                {formatTokenAmount(offer.tokenAmount, token.decimals)}
                                 <span className="text-muted-foreground/35 text-[10px] ml-0.5">${token.ticker}</span>
                               </span>
                               <span className="text-xs tabular-nums text-muted-foreground/70">
-                                {offer.price.toFixed(1)} <span className="text-[10px] text-muted-foreground/35">sat/t</span>
+                                {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
                               </span>
                               <span className="text-xs tabular-nums text-muted-foreground/70">
                                 {formatSats(offer.satAmount)}
@@ -602,7 +597,7 @@ export default function TokenPage() {
                               max={userHolding}
                               value={offerTokenAmount}
                               onChange={(e) => setOfferTokenAmount(e.target.value)}
-                              placeholder={`Max ${userHolding}`}
+                              placeholder={`Max ${formatTokenAmount(userHolding, token.decimals)}`}
                               className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
                             />
                           </div>
@@ -621,7 +616,7 @@ export default function TokenPage() {
 
                         {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
                           <p className="text-[11px] text-muted-foreground/50 tabular-nums">
-                            Price: {(Number(offerSatAmount) / Number(offerTokenAmount)).toFixed(2)} sat / token
+                            Price: {formatPrice(Number(offerSatAmount), Number(offerTokenAmount), token.decimals)}
                           </p>
                         )}
 
@@ -685,7 +680,7 @@ export default function TokenPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-muted-foreground/50">Total supply</span>
-                      <span className="text-xs font-medium tabular-nums">{token.supply.toLocaleString()} tokens</span>
+                      <span className="text-xs font-medium tabular-nums">{formatTokenAmount(token.supply, token.decimals)} tokens</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-muted-foreground/50">Control asset</span>
@@ -749,7 +744,7 @@ export default function TokenPage() {
               <h3 className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
                 Your Holdings
               </h3>
-              <span className="text-sm font-semibold tabular-nums">{userHolding.toLocaleString()} ${token.ticker}</span>
+              <span className="text-sm font-semibold tabular-nums">{formatTokenAmount(userHolding, token.decimals)} ${token.ticker}</span>
             </div>
           )}
 
@@ -759,7 +754,7 @@ export default function TokenPage() {
               Token Info
             </h3>
             <div className="space-y-2.5">
-              <InfoRow label="Supply" value={token.supply.toLocaleString()} />
+              <InfoRow label="Supply" value={formatTokenAmount(token.supply, token.decimals)} />
               <InfoRow label="Replies" value={String(comments.length)} />
               <InfoRow label="Creator" value={shortPubkey(token.creator)} mono />
               <InfoRow label="Asset ID" value={`${token.assetId.slice(0, 8)}…`} mono />

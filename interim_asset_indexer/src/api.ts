@@ -7,6 +7,7 @@
  *   GET /assets/:id           → single asset metadata
  *   GET /assets/:id/vtxos     → VTXOs holding this asset (?spendable=true for live holders)
  *   GET /assets/:id/holders   → balances grouped by script (spendable only)
+ *   GET /market-summary        → per-asset market stats (open offer count, best price, last fill)
  */
 
 import { Hono } from "hono";
@@ -24,6 +25,7 @@ import {
   getOpenOffersForAsset,
   getAllOpenOffers,
   markOfferCancelled,
+  getMarketSummary,
 } from "./db";
 import { fetchVtxosByOutpoints } from "./ark-client";
 import { getRecentLogs } from "./log-buffer";
@@ -107,6 +109,12 @@ export function buildApp(): Hono {
         amount: h.totalAmount,
       })),
     });
+  });
+
+  // ── Market summary ───────────────────────────────────────────────────────
+  app.get("/market-summary", (c) => {
+    const summary = getMarketSummary();
+    return c.json({ summary });
   });
 
   // ── Offers ─────────────────────────────────────────────────────────────────

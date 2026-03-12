@@ -218,6 +218,40 @@ export function subscribeToTradesForToken(
   return sub;
 }
 
+/** Subscribe to ALL trade receipt events across all tokens */
+export function subscribeToAllTrades(callbacks: {
+  onTrade: (trade: TradeReceiptData) => void;
+  onEose?: () => void;
+}): NDKSubscription | null {
+  const ndk = getNDK();
+  const networkId = getNetworkId();
+  const filter: NDKFilter = {
+    kinds: [VTXO_TOKEN_KIND as number],
+    "#l": ["trade"],
+    "#t": ["vtxomarket-token"],
+    limit: 20,
+  };
+
+  const sub = ndk.subscribe(filter, { closeOnEose: false });
+
+  sub.on("event", (event: NDKEvent) => {
+    // Filter by network
+    const eventNetwork = event.tags.find((t) => t[0] === "network")?.[1];
+    if (eventNetwork && eventNetwork !== networkId) return;
+
+    try {
+      const trade = JSON.parse(event.content) as TradeReceiptData;
+      callbacks.onTrade(trade);
+    } catch { /* ignore malformed */ }
+  });
+
+  if (callbacks.onEose) {
+    sub.on("eose", callbacks.onEose);
+  }
+
+  return sub;
+}
+
 /** Subscribe to comments (kind 1) for a token event */
 export function subscribeToComments(
   tokenEventId: string,

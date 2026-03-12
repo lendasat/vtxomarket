@@ -3,7 +3,10 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { TokenCard } from "@/components/token-card";
+import { ActivityFeed } from "@/components/activity-feed";
 import { useTokens } from "@/hooks/useTokens";
+import { useMarketSummary } from "@/hooks/useMarketSummary";
+import { formatTokenAmount } from "@/lib/format";
 
 type SortMode = "trending" | "new";
 
@@ -14,6 +17,7 @@ const SORT_TABS: { key: SortMode; label: string }[] = [
 
 export default function Home() {
   const { tokens, loading } = useTokens();
+  const { data: marketData } = useMarketSummary();
   const [sort, setSort] = useState<SortMode>("trending");
   const [search, setSearch] = useState("");
 
@@ -48,12 +52,6 @@ export default function Home() {
   );
 
   const heroTokens = topMovers.slice(0, 2);
-
-  function formatSats(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return n.toLocaleString();
-  }
 
   return (
     <div className="space-y-5">
@@ -93,55 +91,74 @@ export default function Home() {
             </div>
           )}
 
-          {/* Hero cards — top 2 by market cap */}
+          {/* Hero cards — top 2 by recency */}
           {heroTokens.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {heroTokens.map((t, i) => (
-                <Link
-                  key={t.id}
-                  href={`/token/${t.ticker}`}
-                  className="group glass-card relative rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden transition-all hover:bg-white/[0.06] hover:border-white/[0.1]"
-                >
-                  <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl pointer-events-none bg-emerald-500/[0.04]" />
+              {heroTokens.map((t, i) => {
+                const md = marketData.get(t.assetId);
+                const price = md?.bestOfferPrice ?? md?.lastTradePrice ?? null;
+                return (
+                  <Link
+                    key={t.id}
+                    href={`/token/${t.ticker}`}
+                    className="group glass-card relative rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden transition-all hover:bg-white/[0.06] hover:border-white/[0.1]"
+                  >
+                    <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl pointer-events-none bg-emerald-500/[0.04]" />
 
-                  <div className="relative p-4 sm:p-5 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold bg-white/[0.06] border border-white/[0.08] text-muted-foreground/50">
-                        {t.image ? (
-                          <img src={t.image} alt={t.name} className="h-full w-full rounded-xl object-cover" />
-                        ) : (
-                          t.ticker.slice(0, 2)
+                    <div className="relative p-4 sm:p-5 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold bg-white/[0.06] border border-white/[0.08] text-muted-foreground/50">
+                          {t.image ? (
+                            <img src={t.image} alt={t.name} className="h-full w-full rounded-xl object-cover" />
+                          ) : (
+                            t.ticker.slice(0, 2)
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm sm:text-base font-bold truncate">{t.name}</p>
+                          <p className="text-[11px] font-mono text-muted-foreground/40">${t.ticker}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {price != null ? (
+                            <span className="text-xs tabular-nums font-medium text-emerald-400/70">
+                              {price.toLocaleString(undefined, { maximumFractionDigits: 2 })} sat/tk
+                            </span>
+                          ) : (
+                            <span className="text-xs tabular-nums text-muted-foreground/50">
+                              {formatTokenAmount(t.supply, t.decimals)} supply
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[9px] uppercase tracking-[0.2em] font-medium px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.07] text-muted-foreground/40">
+                          {i === 0 ? "Latest" : "Recent"}
+                        </span>
+                        <div className="h-5 w-px bg-white/[0.06]" />
+                        <div>
+                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Replies</p>
+                          <p className="text-xs font-semibold tabular-nums">{t.replies}</p>
+                        </div>
+                        <div className="h-5 w-px bg-white/[0.06]" />
+                        <div>
+                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Trades</p>
+                          <p className="text-xs font-semibold tabular-nums">{t.tradeCount}</p>
+                        </div>
+                        {md && md.openOfferCount > 0 && (
+                          <>
+                            <div className="h-5 w-px bg-white/[0.06]" />
+                            <div>
+                              <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Offers</p>
+                              <p className="text-xs font-semibold tabular-nums text-emerald-400/60">{md.openOfferCount}</p>
+                            </div>
+                          </>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm sm:text-base font-bold truncate">{t.name}</p>
-                        <p className="text-[11px] font-mono text-muted-foreground/40">${t.ticker}</p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <span className="text-xs tabular-nums text-muted-foreground/50">
-                          {formatSats(t.supply)} supply
-                        </span>
-                      </div>
                     </div>
-
-                    <div className="flex items-center gap-3 pt-1">
-                      <span className="text-[9px] uppercase tracking-[0.2em] font-medium px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.07] text-muted-foreground/40">
-                        {i === 0 ? "Latest" : "Recent"}
-                      </span>
-                      <div className="h-5 w-px bg-white/[0.06]" />
-                      <div>
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Replies</p>
-                        <p className="text-xs font-semibold tabular-nums">{t.replies}</p>
-                      </div>
-                      <div className="h-5 w-px bg-white/[0.06]" />
-                      <div>
-                        <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Trades</p>
-                        <p className="text-xs font-semibold tabular-nums">{t.tradeCount}</p>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           )}
 
@@ -159,7 +176,7 @@ export default function Home() {
                 >
                   <span className="font-mono font-medium text-muted-foreground/70">${t.ticker}</span>
                   <span className="font-medium tabular-nums text-muted-foreground/50">
-                    {formatSats(t.supply)}
+                    {formatTokenAmount(t.supply, t.decimals)}
                   </span>
                 </Link>
               ))}
@@ -167,6 +184,9 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* ── Recent Activity ── */}
+      <ActivityFeed />
 
       {/* Filter bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
@@ -222,7 +242,11 @@ export default function Home() {
       {filtered.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((token) => (
-            <TokenCard key={token.id} token={token} />
+            <TokenCard
+              key={token.id}
+              token={token}
+              marketData={marketData.get(token.assetId)}
+            />
           ))}
         </div>
       )}

@@ -21,6 +21,7 @@ import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
 import { StablecoinSend as LendaswapStablecoinSend, StablecoinReceive as LendaswapStablecoinReceive, useLendaswapHistory } from "@/lendaswap_integration";
 import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
+import { formatSats, formatTokenAmount, parseTokenInput } from "@/lib/format";
 
 type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
 type Mode = null | "send" | "receive" | "debug";
@@ -67,12 +68,6 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 
-function formatSats(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
 export default function WalletPage() {
   const balance = useAppStore((s) => s.balance);
   const addresses = useAppStore((s) => s.addresses);
@@ -97,6 +92,7 @@ export default function WalletPage() {
       return {
         assetId: a.assetId,
         amount: a.amount,
+        decimals: token?.decimals,
         name: token?.name ?? "Unknown",
         ticker: token?.ticker ?? "???",
         image: token?.image,
@@ -234,7 +230,8 @@ export default function WalletPage() {
 
   const handleSend = async () => {
     if (!arkWallet || !sendAddress || !sendAmount) return;
-    const amt = parseInt(sendAmount, 10);
+    const selectedToken = sendAssetId && tab === "arkade" ? userTokens.find((t) => t.assetId === sendAssetId) : null;
+    const amt = selectedToken ? parseTokenInput(sendAmount, selectedToken.decimals) : parseInt(sendAmount, 10);
     if (isNaN(amt) || amt <= 0) {
       setSendError("Invalid amount");
       return;
@@ -465,14 +462,14 @@ export default function WalletPage() {
                         <span className="text-[10px] font-mono text-muted-foreground/40">${token.ticker}</span>
                       </div>
                       <p className="text-[11px] text-muted-foreground/40 tabular-nums">
-                        {token.amount.toLocaleString()} tokens
+                        {formatTokenAmount(token.amount, token.decimals)} tokens
                       </p>
                     </div>
 
                     {/* Amount */}
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-semibold tabular-nums">
-                        {token.amount.toLocaleString()}
+                        {formatTokenAmount(token.amount, token.decimals)}
                         <span className="text-[10px] text-muted-foreground/30 ml-0.5">tokens</span>
                       </p>
                     </div>
@@ -665,7 +662,7 @@ export default function WalletPage() {
                                   <option value="" className="bg-[#1a1a1a]">Bitcoin (BTC)</option>
                                   {userTokens.map((t) => (
                                     <option key={t.assetId} value={t.assetId} className="bg-[#1a1a1a]">
-                                      {t.name} ({t.ticker}) — {t.amount.toLocaleString()}
+                                      {t.name} ({t.ticker}) — {formatTokenAmount(t.amount, t.decimals)}
                                     </option>
                                   ))}
                                 </select>
@@ -696,8 +693,8 @@ export default function WalletPage() {
                                 className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
                               />
                               {sendAssetId && tab === "arkade" ? (
-                                <button type="button" className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors" onClick={() => setSendAmount(String(userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0))}>
-                                  Max: {(userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0).toLocaleString()} {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"}
+                                <button type="button" className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors" onClick={() => { const t = userTokens.find((t) => t.assetId === sendAssetId); setSendAmount(String(t?.amount ?? 0)); }}>
+                                  Max: {formatTokenAmount(userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0, userTokens.find((t) => t.assetId === sendAssetId)?.decimals)} {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"}
                                 </button>
                               ) : balance && (
                                 <button type="button" className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors" onClick={() => setSendAmount(String(balance.available))}>

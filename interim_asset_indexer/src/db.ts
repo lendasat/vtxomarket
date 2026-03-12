@@ -378,6 +378,47 @@ export function markOfferCancelled(offerOutpoint: string): void {
   );
 }
 
+export interface MarketSummaryRow {
+  assetId: string;
+  openOfferCount: number;
+  bestOfferPrice: number | null;   // cheapest satAmount/tokenAmount ratio
+  lastFilledPrice: number | null;  // most recent filled offer price
+  lastFilledAt: number | null;     // unix timestamp of last fill
+}
+
+export function getMarketSummary(): MarketSummaryRow[] {
+  const db = getDb();
+  // Single query: aggregate open-offer stats + join with the most-recently-filled
+  // offer per asset via a correlated subquery to get its price.
+  const rows = db
+    .query(
+      `SELECT
+         o.assetId,
+         SUM(CASE WHEN o.status = 'open' THEN 1 ELSE 0 END) AS openOfferCount,
+         MIN(CASE WHEN o.status = 'open'
+             THEN CAST(o.satAmount AS REAL) / CAST(o.tokenAmount AS REAL)
+         END) AS bestOfferPrice,
+         MAX(CASE WHEN o.status = 'filled' THEN o.updatedAt END) AS lastFilledAt,
+         (SELECT CAST(f.satAmount AS REAL) / CAST(f.tokenAmount AS REAL)
+          FROM offers f
+          WHERE f.assetId = o.assetId AND f.status = 'filled'
+          ORDER BY f.updatedAt DESC
+          LIMIT 1
+         ) AS lastFilledPrice
+       FROM offers o
+       GROUP BY o.assetId`
+    )
+    .all() as any[];
+
+  return rows.map((r) => ({
+    assetId: r.assetId,
+    openOfferCount: r.openOfferCount ?? 0,
+    bestOfferPrice: r.bestOfferPrice ?? null,
+    lastFilledPrice: r.lastFilledPrice ?? null,
+    lastFilledAt: r.lastFilledAt ?? null,
+  }));
+}
+
 export function expireStaleOffers(): void {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
