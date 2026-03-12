@@ -10,8 +10,9 @@
  * load it at runtime, matching the pattern used in ark-wallet.ts.
  */
 
-const LENDASWAP_API_URL =
-  (process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com").replace(/\/+$/, "");
+// Proxy all Lendaswap API calls through Next.js rewrites (/api/lendaswap/*)
+// to avoid CORS issues with the remote API (x-api-key header blocked by preflight).
+const LENDASWAP_API_URL = "/api/lendaswap";
 const ARKADE_SERVER_URL =
   process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL =
