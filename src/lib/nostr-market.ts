@@ -49,11 +49,12 @@ export interface PublishTokenListingParams {
   telegram?: string;
   controlAssetId?: string; // present when token is reissuable
   supply: number;
+  decimals?: number;
 }
 
 export async function publishTokenListing(params: PublishTokenListingParams): Promise<NDKEvent> {
   const ndk = ensureNostrReady();
-  const { name, ticker, description, image, assetId, arkTxId, creatorArkAddress, website, twitter, telegram, controlAssetId, supply } = params;
+  const { name, ticker, description, image, assetId, arkTxId, creatorArkAddress, website, twitter, telegram, controlAssetId, supply, decimals } = params;
 
   const event = new NDKEvent(ndk);
   event.kind = VTXO_TOKEN_KIND;
@@ -70,6 +71,7 @@ export async function publishTokenListing(params: PublishTokenListingParams): Pr
     ...(twitter && { twitter }),
     ...(telegram && { telegram }),
     ...(controlAssetId && { controlAssetId }),
+    ...(decimals != null && decimals > 0 && { decimals }),
   });
   event.tags = [
     ["d", `vtxomarket/token/${ticker}`],
@@ -138,6 +140,7 @@ function parseTokenEvent(event: NDKEvent): Token | null {
       creatorArkAddress: data.creatorArkAddress || "",
       createdAt: event.created_at ?? Math.floor(Date.now() / 1000),
       supply: data.supply ?? 0,
+      decimals: data.decimals ?? undefined,
       controlAssetId: data.controlAssetId || undefined,
       replies: 0,
       tradeCount: 0,

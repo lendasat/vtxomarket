@@ -14,6 +14,7 @@ export interface Token {
   creatorArkAddress: string;     // for trading
   createdAt: number;
   supply: number;
+  decimals?: number;               // 0–18, default 0 (whole units)
   controlAssetId?: string;        // present when token is reissuable
   // Social
   replies: number;

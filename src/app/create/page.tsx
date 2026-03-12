@@ -51,6 +51,7 @@ export default function CreatePage() {
 
   const [supply, setSupply] = useState("");
   const supplyNum = parseInt(supply, 10);
+  const [decimals, setDecimals] = useState("0");
 
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState("");
@@ -148,11 +149,12 @@ export default function CreatePage() {
         setStep("Issuing token on Arkade...");
       }
 
+      const decimalsNum = parseInt(decimals, 10) || 0;
       const result = await issueToken(arkWallet, {
         amount: supplyNum,
         name,
         ticker: tickerUp,
-        decimals: 0,
+        decimals: decimalsNum,
         icon: finalImage || undefined,
         ...(controlAssetId && { controlAssetId }),
       });
@@ -172,6 +174,7 @@ export default function CreatePage() {
         arkTxId: result.arkTxId,
         creatorArkAddress,
         supply: supplyNum,
+        ...(decimalsNum > 0 && { decimals: decimalsNum }),
         ...(website && { website }),
         ...(twitter && { twitter }),
         ...(telegram && { telegram }),
@@ -190,6 +193,7 @@ export default function CreatePage() {
         creatorArkAddress,
         createdAt: Math.floor(Date.now() / 1000),
         supply: supplyNum,
+        ...(decimalsNum > 0 && { decimals: decimalsNum }),
         ...(controlAssetId && { controlAssetId }),
         replies: 0,
         tradeCount: 0,
@@ -433,24 +437,46 @@ export default function CreatePage() {
             />
           </div>
 
-          {/* Supply */}
-          <div className="space-y-2">
-            <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
-              Total Supply <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="number"
-              min={1}
-              placeholder="e.g. 1000000"
-              value={supply}
-              onChange={(e) => setSupply(e.target.value)}
-              className={`${inputClass} h-11`}
-            />
-            {supply && supplyNum > 0 && (
+          {/* Supply + Decimals row */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,120px] gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+                Total Supply <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                placeholder="e.g. 1000000"
+                value={supply}
+                onChange={(e) => setSupply(e.target.value)}
+                className={`${inputClass} h-11`}
+              />
+              {supply && supplyNum > 0 && (
+                <p className="text-[11px] text-muted-foreground/40">
+                  {supplyNum.toLocaleString()} tokens will be issued
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/50 font-medium">
+                Decimals
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={18}
+                placeholder="0"
+                value={decimals}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (e.target.value === "" || (v >= 0 && v <= 18)) setDecimals(e.target.value);
+                }}
+                className={`${inputClass} h-11`}
+              />
               <p className="text-[11px] text-muted-foreground/40">
-                {supplyNum.toLocaleString()} tokens will be issued
+                0–18
               </p>
-            )}
+            </div>
           </div>
 
           {/* Social links toggle */}
