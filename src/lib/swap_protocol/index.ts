@@ -32,19 +32,20 @@
  *     8. Signs returned checkpoints with taker identity (skips swap checkpoint — not taker's key)
  *     9. Finalizes via finalizeTx → done
  *
- *   CANCEL FLOW (maker reclaims tokens):
- *     1. After CSV timelock expires, maker calls cancelSwapOffer()
- *     2. Uses cancel leaf (CSV + maker CHECKSIG) — no introspector needed
- *     3. Forfeit uses cancel forfeit leaf (MultisigClosure maker + ASP)
+ *   CANCEL FLOW (maker reclaims tokens) — light path via submitTx/finalizeTx:
+ *     1. Maker calls cancelSwapOffer() with their wallet + offer
+ *     2. Builds offchain ark tx using cancel forfeit leaf (MultisigClosure maker + ASP)
+ *     3. Signs with maker identity → submitTx → ASP co-signs
+ *     4. Signs returned checkpoints → finalizeTx → done
+ *     No introspector needed — standard collaborative closure.
  *
  * Module structure:
  *   opcodes.ts              — Arkade opcode constants + @scure/btc-signer registration
  *   script.ts               — Swap script construction + decoding (taproot tree, arkade script)
- *   offers.ts               — Offer lifecycle (create, cancel) + legacy heavy fill
+ *   offers.ts               — Offer lifecycle (create, cancel via light path)
  *   light-fill.ts           — Light fill via submitTx/finalizeTx (no rounds, no forfeits)
  *   introspector-client.ts  — REST client for the Arkade Introspector service
- *   introspector-provider.ts — ArkProvider wrapper (used by create/cancel, NOT by light fill)
- *   psbt-combiner.ts        — Raw BIP-174 PSBT utilities (combine, strip tapScriptSig)
+ *   psbt-combiner.ts        — Raw BIP-174 PSBT utilities (combine signatures)
  */
 
 // Opcodes

@@ -25,10 +25,14 @@ src/
 │   ├── settings/         # Profile, keys, about, ToS
 │   └── dev/              # Debug panel
 ├── lib/
-│   ├── ark-wallet.ts     # Arkade SDK wrapper (issue, reissue, send, swap, settle)
-│   ├── introspector-client.ts  # REST client for Introspector API
-│   ├── introspector-provider.ts # ArkProvider wrapper for co-signing + forfeit creation
-│   ├── psbt-combiner.ts  # Raw BIP-174 PSBT merge + tapScriptSig stripping
+│   ├── ark-wallet.ts     # Arkade SDK wrapper (issue, reissue, send, swap)
+│   ├── swap_protocol/    # Non-interactive swap implementation
+│   │   ├── opcodes.ts    # Arkade opcode constants + runtime registration
+│   │   ├── script.ts     # 3-leaf taproot + arkade script construction
+│   │   ├── offers.ts     # Create + cancel offers (light path)
+│   │   ├── light-fill.ts # Fill offers (light path, submitTx/finalizeTx)
+│   │   ├── introspector-client.ts  # REST client for Introspector API
+│   │   └── psbt-combiner.ts       # BIP-174 PSBT signature merging
 │   ├── nostr-market.ts   # Nostr event publish/subscribe (listings, trades)
 │   ├── nostr.ts          # NDK singleton + NIP-98 auth
 │   ├── image-upload.ts   # NIP-96 image upload → nostr.build
@@ -126,6 +130,10 @@ called the "arkade script", NOT inside the tapscript leaves themselves. The
 Introspector reads this field, executes the conditions against the spending
 transaction, and co-signs if they pass.
 
+Both fill and cancel use the **light offchain tx path** — `buildOffchainTx` to
+construct the ark tx + checkpoints directly, then `submitTx`/`finalizeTx` to
+send to the ASP. No round participation, no forfeits, no connector trees.
+
 ```
 Maker                  Introspector        ASP (arkd)           Taker
   │                         │                  │                   │
@@ -143,22 +151,20 @@ Maker                  Introspector        ASP (arkd)           Taker
   ├─ POST /offers ──────────────────────────────────────────────▶ indexer
   │  (includes arkadeScriptHex)                           shows offer in UI
   │                         │                  │                   │
-  │                         │                  │◀── settle() ──────┤
+  │                    lightFillSwapOffer():                        │
   │                         │                  │                   │
-  │                   IntrospectorArkProvider intercepts:          │
-  │                         │                  │                   │
-  │            ┌────────────┤                  │                   │
-  │            │  1. inject arkadescript PSBT field                │
-  │            │  2. POST /v1/intent                               │
-  │            │     → validate conditions                         │
-  │            │     → co-sign MultisigClosure                     │
-  │            │  3. forward co-signed PSBT to ASP                 │
-  │            │  4. POST /v1/finalization                          │
-  │            │     → co-sign forfeits                             │
+  │            ┌────────────┤                  │◀── buildOffchain ─┤
+  │            │  1. validate arkade script    │    Tx + sign      │
+  │            │     POST /v1/tx              │                   │
+  │            │  2. co-sign swap input       │                   │
   │            └────────────┤                  │                   │
+  │                         │                  │◀── submitTx ──────┤
+  │                         │                  │    (merged sigs)  │
+  │                         │                  │──▶ signed CPs ───▶│
+  │                         │                  │◀── finalizeTx ────┤
   │                         │                  │                   │
   │◀── satAmount ───────────────────────────────────── tokens ───▶│
-                         atomic in one round
+                    atomic via offchain tx
 ```
 
 ---
@@ -166,14 +172,14 @@ Maker                  Introspector        ASP (arkd)           Taker
 ### Selling Tokens (Maker)
 
 1. **Pick terms** — enter `tokenAmount`, `satAmount`, expiry in the Trade tab
-2. **`createSwapOffer(wallet, params)`** in `src/lib/ark-wallet.ts`:
+2. **`createSwapOffer(wallet, params)`** in `src/lib/swap_protocol/offers.ts`:
    - Fetches Introspector base pubkey from `GET /v1/info`
    - Derives `makerPkScript`, `makerXOnlyPubkey` from wallet identity
    - Calls `buildArkadeScript()` — creates standalone introspection conditions
    - Calls `buildSwapScript()` — produces a 3-leaf taproot tree:
      - Leaf 0: MultisigClosure(introspectorTweaked, ASP) — for taker fills
-     - Leaf 1: CLTV + maker CHECKSIG — for maker cancellation
-     - Leaf 2: MultisigClosure(maker, ASP) — forfeit for cancel path
+     - Leaf 1: CSV + maker CHECKSIG — for maker cancellation (on-chain)
+     - Leaf 2: MultisigClosure(maker, ASP) — cooperative cancel + forfeit
    - Derives the swap script's Ark address
    - Calls `wallet.send({ address: swapArkAddress, amount: 0, assets: [...] })`
    - Returns `SwapOffer` including `arkadeScriptHex` and `swapScriptHex`
@@ -182,57 +188,48 @@ Maker                  Introspector        ASP (arkd)           Taker
 4. **Offer appears** in the order book (polled every 30s via `useOffers`)
 
 The maker's tokens are now locked in the swap VTXO. The maker cannot spend them
-unilaterally until `expiresAt` (enforced by the cancel leaf's CLTV).
+unilaterally until the CSV timelock expires (enforced by the cancel leaf's CHECKSEQUENCEVERIFY).
 
 ---
 
-### Buying Tokens (Taker)
+### Buying Tokens (Taker) — Light Fill
 
 1. **Browse order book** — open offers sorted by price (sat/token) in the Trade tab
-2. **Click "Buy"** — calls `fillSwapOffer(wallet, offer)`:
-   - Fetches Introspector base pubkey, decodes swap script (verifies 3 leaves)
-   - Sets swap context on `IntrospectorArkProvider` (offer outpoint + arkade script)
-   - Builds swap VTXO input with `intentTapLeafScript = leaf 0` (MultisigClosure)
-   - Calls `wallet.settle({ inputs: [swapVtxo], outputs: [{ address: makerArkAddress, amount: satAmount }] })`
-3. **IntrospectorArkProvider intercepts the settle flow**:
-   - `registerIntent()`: strips tapScriptSig from non-swap inputs (via `psbt-combiner.ts`),
-     injects `arkadescript` + `taptree` PSBT fields → `POST /v1/intent`
-     → Introspector validates conditions (amount + destination), co-signs
-     → re-injects stripped fields, forwards co-signed PSBT to ASP
-   - `getEventStream()`: captures connector tree chunks from TreeTx events
-   - `submitSignedForfeitTxs()`: builds the **swap VTXO forfeit** that the SDK
-     can't create (the swap VTXO isn't in the taker's wallet, so the SDK skips it),
-     then sends all forfeits to `POST /v1/finalization` → Introspector co-signs
-     the swap forfeit → combines introspector's co-signed forfeits with taker's
-     original forfeits → merges commitment tx via `Psbt.combine()` → forwards to ASP
+2. **Click "Buy"** — calls `lightFillSwapOffer(wallet, offer)` in `light-fill.ts`:
+   - Decodes swap script, verifies 3 leaves
+   - Prepares swap VTXO input with leaf 0 (MultisigClosure) as collaborative closure
+   - Coin-selects taker's funding VTXOs to cover `satAmount`
+   - Builds outputs: maker payment (output 0), taker change (output 1), OP_RETURN asset extension (output 2)
+   - Calls `buildOffchainTx(inputs, outputs, serverUnrollScript)` — produces ark tx + checkpoints
+   - Injects arkade script PSBT custom field on swap VTXO's ark tx input
+   - Signs taker's funding inputs (`identity.sign` — skips swap input, not taker's key)
+   - Sends to introspector `POST /v1/tx` → validates arkade script conditions, co-signs swap input + checkpoint[0]
+   - Merges introspector + taker signatures via `Psbt.combine()` (BIP-174 Combiner)
+   - Sends merged ark tx + checkpoints to ASP via `submitTx` → ASP co-signs
+   - Merges introspector sigs back into ASP-returned checkpoints (ASP strips pre-existing sigs)
+   - Signs checkpoints with taker identity
+   - `finalizeTx` → done
 
-   **Why the SDK can't build the swap VTXO forfeit:**
-   The SDK's `handleSettlementFinalizationEvent` looks up each input in
-   `getVirtualCoins()` to build forfeits. The swap VTXO belongs to the maker,
-   not the taker, so it's not in the taker's virtual coins. The SDK treats it
-   as a "boarding input" and silently skips forfeit creation. But the ASP knows
-   it's a VTXO and demands a forfeit. `buildSwapVtxoForfeit()` constructs it
-   manually: input 0 = swap VTXO (with tapLeafScript for leaf 2), input 1 =
-   connector from tree, output 0 = ASP forfeit address, output 1 = P2A anchor.
-
-4. **Round completes** — the swap settles atomically:
+3. **Result** — the swap settles atomically:
    - Maker receives `satAmount` sats (validated by introspection conditions)
    - Taker receives `tokenAmount` tokens (asset conservation enforced by ASP)
-5. **Indexer detects fill** — `commitmentTx` event sees the swap VTXO's outpoint in
+4. **Indexer detects fill** — `commitmentTx` event sees the swap VTXO's outpoint in
    `spentVtxos` → marks offer as `filled` → disappears from order book
 
 ---
 
-### Cancelling an Offer (Maker)
+### Cancelling an Offer (Maker) — Light Cancel
 
-After `expiresAt`, the maker can reclaim their tokens:
+The maker can reclaim their tokens at any time via cooperative cancel:
 
 1. Own offers show a **"Cancel"** button (detected by `offer.makerArkAddress === userArkAddress`)
-2. `cancelSwapOffer(wallet, offer)` — no Introspector needed:
-   - `intentTapLeafScript = leaf 1` (CLTV cancel: maker sig)
-   - `forfeitTapLeafScript = leaf 2` (MultisigClosure: maker + ASP)
-   - `wallet.settle({ inputs: [swapVtxo], outputs: [{ address: makerArkAddress, amount: vtxoSatsValue }] })`
-3. CLTV enforces that the transaction `locktime >= expiresAt` — early cancellation fails
+2. `cancelSwapOffer(wallet, offer)` in `offers.ts` — no Introspector needed:
+   - Uses leaf 2 (MultisigClosure: maker + ASP) as collaborative closure
+   - Builds offchain tx: swap VTXO → maker output (tokens returned)
+   - Signs with maker identity → `submitTx` → ASP co-signs
+   - Signs returned checkpoints → `finalizeTx` → done
+3. If the ASP is offline, the maker can exit unilaterally on-chain via leaf 1
+   (CSV + maker CHECKSIG) after the relative timelock expires
 
 ---
 
@@ -243,7 +240,7 @@ After `expiresAt`, the maker can reclaim their tokens:
 The swap VTXO uses a **dual-layer** design:
 
 **Layer 1 — Tapscript leaves (on-chain enforceable):**
-Only standard Bitcoin opcodes (CHECKSIG, CHECKSIGVERIFY, CHECKLOCKTIMEVERIFY).
+Only standard Bitcoin opcodes (CHECKSIG, CHECKSIGVERIFY, CHECKSEQUENCEVERIFY).
 These leaves are MultisigClosure patterns that the ASP and Introspector co-sign.
 
 **Layer 2 — Arkade script (off-chain, PSBT custom field):**
@@ -270,8 +267,8 @@ the tapscript, the on-chain security relies only on standard MultisigClosure sig
                     leaf0  leaf1     <maker> CHECKSIGVERIFY
                    (swap) (cancel)   <ASP> CHECKSIG
                     │        │
-                    │      <expiresAt>
-                    │      CHECKLOCKTIMEVERIFY
+                    │      <csvSequence>
+                    │      CHECKSEQUENCEVERIFY
                     │      DROP
                     │      <maker> CHECKSIG
                     │
@@ -282,16 +279,17 @@ the tapscript, the on-chain security relies only on standard MultisigClosure sig
 
 **Leaf 0 — Swap (MultisigClosure: introspectorTweaked + ASP)**
 Used by takers to fill offers. The Introspector validates the arkade script
-conditions (amount + destination) and co-signs. The ASP co-signs during the round.
+conditions (amount + destination) and co-signs. The ASP co-signs via submitTx.
 2-of-2 multisig — no taker key in the leaf (see design rationale below).
 
-**Leaf 1 — Cancel (CLTV + maker single-sig)**
-Used by makers to reclaim tokens after expiry. Standard Bitcoin timelock,
-no Introspector involvement.
+**Leaf 1 — Cancel (CSV + maker single-sig)**
+Used by makers to reclaim tokens unilaterally on-chain after CSV timelock expiry.
+Standard Bitcoin relative timelock, no Introspector involvement.
 
 **Leaf 2 — Cancel Forfeit (MultisigClosure: maker + ASP)**
-The forfeit leaf for the cancel path. When the maker cancels via leaf 1, the
-ASP requires a signed forfeit via this leaf. Standard Ark forfeit pattern.
+The collaborative closure leaf for the cancel path. Used cooperatively offchain
+via `submitTx`/`finalizeTx` — maker signs, ASP co-signs. Also serves as the
+forfeit leaf if needed.
 
 ### Introspector Key Tweaking
 
@@ -346,7 +344,7 @@ All hex values from `introspector/pkg/arkade/opcode.go` (authoritative source).
 | `OP_GREATERTHANOREQUAL64` | `0xDF` | Arkade script | `[... a b] → [... bool]` (a >= b) |
 | `OP_CHECKSIG` | `0xAC` | Leaf 0, 1 | Schnorr signature verification |
 | `OP_CHECKSIGVERIFY` | `0xAD` | Leaf 0, 2 | CHECKSIG + VERIFY |
-| `CHECKLOCKTIMEVERIFY` | `0xB1` | Leaf 1 | Expiry enforcement |
+| `CHECKSEQUENCEVERIFY` | `0xB2` | Leaf 1 | Relative timelock enforcement |
 
 Note: the docs at `docs.arkadeos.com/experimental/arkade-script` use the Liquid/Elements
 numbering for some opcodes. The Introspector remapped several (e.g., `OP_ADD64` is `0xD7`
@@ -368,8 +366,8 @@ correctly) gets the Introspector to co-sign.
 **Why no taker signature (OP_CHECKSIGFROMSTACK)?**
 The docs describe a `checkSig(takerSig, taker)` pattern where the taker provides their
 pubkey at execution time. This prevents frontrunning but makes fills more interactive.
-For an open order book, permissionless filling is preferred. The Ark round mechanism
-(ASP arbitration) handles concurrent fill attempts — only one intent per VTXO per round.
+For an open order book, permissionless filling is preferred. The Ark mechanism
+(ASP arbitration) handles concurrent fill attempts — only one submitTx per VTXO can succeed.
 
 **Why >= instead of == for the amount check?**
 `OP_GREATERTHANOREQUAL64` allows overpayment, which benefits the maker and is more robust
@@ -377,48 +375,51 @@ to dust/fee adjustments. The official Arkade docs also use `>=`.
 
 **Why not verify asset type (OP_INSPECTOUTPUTASSET)?**
 Our swap is token-for-sats. The arkade script validates the sats payment. Token transfer
-is handled by Ark round mechanics (ASP enforces asset conservation across inputs/outputs).
-The old `OP_INSPECTOUTPUTASSET` (0xCE) doesn't exist in the Introspector — asset
-inspection moved to new asset group opcodes (0xE5-0xF2).
+is handled by ASP asset conservation (OP_RETURN extension). The old `OP_INSPECTOUTPUTASSET`
+(0xCE) doesn't exist in the Introspector — asset inspection moved to new asset group
+opcodes (0xE5-0xF2).
 
-**Why SubmitIntent/SubmitFinalization instead of SubmitTx?**
-The Introspector supports both APIs. SubmitTx is for direct offchain transactions.
-SubmitIntent + SubmitFinalization is for round-based settlement, which is what
-`wallet.settle()` uses. Using the SDK's settle flow is more maintainable.
+**Why submitTx/finalizeTx instead of settle (rounds)?**
+The light path builds offchain transactions directly and submits them without
+participating in ASP rounds. This eliminates the need for: forfeit construction,
+connector tree parsing, event stream interception, and complex PSBT field injection
+workarounds. Same trust assumptions — the ASP still co-signs and enforces asset
+conservation — but dramatically less code and no SDK workarounds.
 
 ---
 
 ### Security Properties
 
-**✅ Maker receives exactly what was agreed**
+**Maker receives exactly what was agreed**
 The arkade script's `OP_INSPECTOUTPUTVALUE` + `OP_GREATERTHANOREQUAL64` ensures
 output[0] carries at least `satAmount` sats. `OP_INSPECTOUTPUTSCRIPTPUBKEY` ensures
 it goes to the maker's P2TR address. The Introspector only co-signs if both pass.
 
-**✅ Conditions cryptographically bound to the MultisigClosure**
+**Conditions cryptographically bound to the MultisigClosure**
 The Introspector's tweaked key = `basePubkey + TaggedHash("ArkScriptHash", arkadeScript) * G`.
 Changing the arkade script changes the tweaked key, which breaks the MultisigClosure.
 A malicious taker cannot substitute different conditions.
 
-**✅ Maker can always reclaim after expiry**
-Leaf 1's `CHECKLOCKTIMEVERIFY` enforces `tx.locktime >= expiresAt`. Uses only standard
-Bitcoin opcodes + maker's own key. Even if the ASP and Introspector go offline, the
-maker can exit unilaterally on-chain.
+**Maker can always reclaim**
+Cooperatively: cancel via leaf 2 (maker + ASP MultisigClosure) at any time.
+Unilaterally: leaf 1's `CHECKSEQUENCEVERIFY` enforces relative timelock, then maker
+can exit on-chain using only their own key. Even if the ASP and Introspector go
+offline, the maker can exit unilaterally.
 
-**✅ Keypath unspendable**
+**Keypath unspendable**
 `TAPROOT_UNSPENDABLE_KEY` as internal key means the VTXO cannot be spent via the
 keypath by anyone. Only the three named script leaves can spend.
 
-**✅ Non-custodial**
+**Non-custodial**
 Neither the ASP nor the Introspector can unilaterally spend the VTXO. The swap leaf
 requires BOTH signatures (introspectorTweaked + ASP). The Introspector only signs
-when conditions pass. The ASP only signs during valid rounds.
+when conditions pass. The ASP only signs during valid transactions.
 
 ---
 
 ### Known Risks
 
-**⚠️ OP_SUCCESS semantics on mainnet Bitcoin**
+**OP_SUCCESS semantics on mainnet Bitcoin**
 Introspection opcodes (0xCF, 0xD1, 0xDF) are `OP_SUCCESS` in standard Bitcoin
 Tapscript — they make the script succeed immediately. **On mainnet, anyone could
 steal the VTXO by broadcasting a spend with an OP_SUCCESS leaf.**
@@ -428,17 +429,17 @@ field and are validated off-chain by the Introspector. On-chain security relies
 only on the MultisigClosure signatures. For the unilateral exit path, only the
 cancel leaf (standard opcodes) is used.
 
-**⚠️ Output index 0 hardcoded**
+**Output index 0 hardcoded**
 The arkade script checks `output[0]`. The taker must ensure the maker's payment is
-at index 0 in the settle output list. The SDK's `wallet.settle()` preserves output
-order from the `outputs` array parameter.
+at index 0 in the output list. `buildOffchainTx` preserves output order from the
+`outputs` array parameter.
 
-**⚠️ Introspector availability**
+**Introspector availability**
 The swap leaf requires the Introspector to co-sign. If the Introspector is offline,
-takers cannot fill offers. Makers can still cancel after expiry (cancel leaf doesn't
-need the Introspector). This is an availability risk, not a security risk.
+takers cannot fill offers. Makers can still cancel (leaf 2 doesn't need the
+Introspector). This is an availability risk, not a security risk.
 
-**⚠️ tokenAmount self-reported by maker**
+**tokenAmount self-reported by maker**
 The indexer stores `tokenAmount` as reported by the maker. A dishonest maker could
 advertise more tokens than locked. Mitigation: takers should verify the VTXO's
 actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
@@ -455,7 +456,7 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
                            │ batch rounds (~1min)
 ┌──────────────────────────▼──────────────────────────────────┐
 │                    Ark Server (arkd)                         │
-│                    arkade.computer                           │
+│                 mutinynet.arkade.sh                          │
 │                                                              │
 │  ┌─────────────────┐   ┌──────────────────────────────┐    │
 │  │  Virtual VTXO   │   │  Swap VTXOs                   │    │
@@ -482,10 +483,11 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 │                     (Next.js, port 3000)                       │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────┐     │
-│  │  src/lib/                                             │     │
-│  │  ├── ark-wallet.ts      Wallet, swap scripts, opcodes│     │
-│  │  ├── introspector-client.ts   REST client for /v1/*  │     │
-│  │  └── introspector-provider.ts ArkProvider wrapper    │     │
+│  │  src/lib/swap_protocol/                               │     │
+│  │  ├── light-fill.ts     Fill offers (submitTx/finalize)│     │
+│  │  ├── offers.ts         Create + cancel (light path)   │     │
+│  │  ├── script.ts         Taproot tree + arkade script   │     │
+│  │  └── introspector-client.ts  REST client for /v1/*    │     │
 │  └──────────────────────────────────────────────────────┘     │
 │                                                                │
 │  Home   Create   Wallet   Token Detail   Lab   Settings        │
@@ -501,13 +503,12 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 │     Nostr Relays       │  │  Arkade Introspector            │
 │ relay.damus.io         │  │  (Go gRPC + REST gateway)       │
 │ relay.nostr.band       │  │                                  │
-│ nos.lol                │  │  GET  /v1/info   → signerPubkey  │
-│                        │  │  POST /v1/intent → co-sign PSBT  │
-│ Token listings         │  │  POST /v1/finalization           │
-│ Trade receipts         │  │       → co-sign forfeits         │
-│ Comments               │  │                                  │
-└────────────────────────┘  │  Validates arkade script         │
-                            │  conditions off-chain, co-signs  │
+│ nos.lol                │  │  GET  /v1/info → signerPubkey    │
+│                        │  │  POST /v1/tx   → validate +      │
+│ Token listings         │  │    co-sign offchain tx            │
+│ Trade receipts         │  │                                  │
+│ Comments               │  │  Validates arkade script         │
+└────────────────────────┘  │  conditions off-chain, co-signs  │
                             │  MultisigClosure if they pass    │
                             └────────────────────────────────┘
 ```
@@ -519,7 +520,7 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 | Layer | Technology | Role |
 |---|---|---|
 | Settlement | Bitcoin (via Ark) | Final settlement, atomicity |
-| Offchain execution | Arkade SDK (`@arkade-os/sdk`) | VTXO management, issuance, swaps |
+| Offchain execution | Arkade SDK (`@arkade-os/sdk`) | VTXO management, issuance, offchain txs |
 | Condition enforcement | Arkade Introspector (Go gRPC) | Validates arkade script, co-signs PSBTs |
 | Swap scripts | Arkade Script (experimental) | Non-interactive swap conditions |
 | Social / metadata | Nostr (NDK v3) | Token listings, trades, comments |
@@ -536,10 +537,12 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 
 | File | Purpose |
 |---|---|
-| `src/lib/ark-wallet.ts` | Wallet init, `buildArkadeScript()`, `buildSwapScript()`, `createSwapOffer()`, `fillSwapOffer()`, `cancelSwapOffer()`, opcode registration |
-| `src/lib/introspector-client.ts` | REST client for Introspector API (`/v1/info`, `/v1/intent`, `/v1/finalization`) |
-| `src/lib/introspector-provider.ts` | `IntrospectorArkProvider` — wraps ArkProvider, intercepts settle flow for co-signing + builds swap VTXO forfeit |
-| `src/lib/psbt-combiner.ts` | Raw BIP-174 PSBT utilities: `Psbt.combine()` (merge KV pairs), `Psbt.stripTapScriptSig()` (remove entries from specific inputs) |
+| `src/lib/ark-wallet.ts` | Wallet init, `createSwapOffer()`, `fillSwapOffer()` (alias for lightFillSwapOffer), `cancelSwapOffer()`, opcode registration |
+| `src/lib/swap_protocol/light-fill.ts` | Light fill — builds offchain tx, introspector co-signing, 3-way sig merging, submitTx/finalizeTx |
+| `src/lib/swap_protocol/offers.ts` | Offer lifecycle: create (maker sends tokens to swap script), cancel (light path via submitTx/finalizeTx) |
+| `src/lib/swap_protocol/script.ts` | 3-leaf taproot tree construction, arkade script assembly, decoding |
+| `src/lib/swap_protocol/introspector-client.ts` | REST client for Introspector API (`/v1/info`, `/v1/tx`) |
+| `src/lib/swap_protocol/psbt-combiner.ts` | Raw BIP-174 PSBT utilities: `Psbt.combine()` for merging multi-party signatures |
 | `interim_asset_indexer/src/db.ts` | SQLite schema + queries (offers include `arkadeScriptHex`) |
 | `interim_asset_indexer/src/api.ts` | REST API for assets, VTXOs, offers |
 | `introspector/` | Cloned from `github.com/ArkLabsHQ/introspector` (standalone, not a submodule) |
@@ -554,17 +557,14 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
   unilaterally access user funds.
 - **The indexer is temporary.** Once arkd ships native asset filtering, most of
   it becomes redundant.
-- **`psbt-combiner.ts` exists because `@scure/btc-signer` can't do two things:**
-  (1) `updateInput({ tapScriptSig: [] })` is a no-op — doesn't clear entries.
-  (2) `updateInput({ tapScriptSig: [...] })` replaces rather than merges.
-  Both are needed: stripping non-swap inputs before sending to the Introspector,
-  and merging the Introspector's co-signatures back into the PSBT. The file does
-  raw BIP-174 byte-level parsing/serialization. The Arkade team is working on an
-  IntrospectorPacket approach that may eliminate the need for stripping.
+- **`psbt-combiner.ts` exists because `@scure/btc-signer` can't merge signatures.**
+  `updateInput({ tapScriptSig: [...] })` replaces rather than merges entries. We
+  need proper BIP-174 Combiner behavior for the 3-way signing in light-fill (taker +
+  introspector + ASP). The file does raw BIP-174 byte-level parsing/serialization.
 - **Arkade Script is experimental.** The introspection opcodes (0xCF, 0xD1, 0xDF)
   are `OP_SUCCESS` extensions — they have defined semantics in the Introspector's
   off-chain engine but would succeed unconditionally on standard Bitcoin. The
-  on-chain tapscript leaves use only standard opcodes (CHECKSIG, CLTV). Security
+  on-chain tapscript leaves use only standard opcodes (CHECKSIG, CSV). Security
   relies on the MultisigClosure signatures, not on-chain script evaluation.
 - **Introspector not yet publicly hosted.** Must run locally for development.
   Ark Labs plans to run one per network. `NEXT_PUBLIC_INTROSPECTOR_URL` env var.
