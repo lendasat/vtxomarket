@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { issueToken, getDustAmount, getReceivingAddresses } from "@/lib/ark-wallet";
-import { publishTokenListing } from "@/lib/nostr-market";
 import { uploadImage } from "@/lib/image-upload";
+
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 
 const NAME_MAX = 32;
 const TICKER_MAX = 10;
@@ -17,7 +18,6 @@ export default function CreatePage() {
   const user = useAppStore((s) => s.user);
   const arkWallet = useAppStore((s) => s.arkWallet);
   const walletReady = useAppStore((s) => s.walletReady);
-  const nostrReady = useAppStore((s) => s.nostrReady);
   const upsertToken = useAppStore((s) => s.upsertToken);
 
   const balance = useAppStore((s) => s.balance);
@@ -119,7 +119,6 @@ export default function CreatePage() {
     supplyNum > 0 &&
     !isNaN(supplyNum) &&
     walletReady &&
-    nostrReady &&
     hasEnoughSats &&
     imageUploadState !== "uploading";
 
@@ -163,27 +162,36 @@ export default function CreatePage() {
       const addrs = await getReceivingAddresses(arkWallet);
       const creatorArkAddress = addrs.offchainAddr;
 
-      // Step 2: Publish token listing to Nostr
-      setStep("Publishing to Nostr...");
-      const event = await publishTokenListing({
-        name,
-        ticker: tickerUp,
-        description,
-        image: finalImage || undefined,
-        assetId: result.assetId,
-        arkTxId: result.arkTxId,
-        creatorArkAddress,
-        supply: supplyNum,
-        ...(decimalsNum > 0 && { decimals: decimalsNum }),
-        ...(website && { website }),
-        ...(twitter && { twitter }),
-        ...(telegram && { telegram }),
-        ...(controlAssetId && { controlAssetId }),
+      // Step 2: Submit metadata to indexer
+      setStep("Publishing metadata...");
+      // The indexer auto-indexes the asset from the Ark server SSE stream.
+      // Wait briefly for the indexer to see the new asset, then submit metadata.
+      await new Promise((r) => setTimeout(r, 2000));
+      const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          image: finalImage || undefined,
+          creator: user?.pubkey ?? "",
+          creatorArkAddress,
+          supply: supplyNum,
+          createdAt: Math.floor(Date.now() / 1000),
+          ...(decimalsNum > 0 && { decimals: decimalsNum }),
+          ...(website && { website }),
+          ...(twitter && { twitter }),
+          ...(telegram && { telegram }),
+          ...(controlAssetId && { controlAssetId }),
+        }),
       });
+      if (!metaResp.ok) {
+        console.warn("Metadata submit failed:", await metaResp.text());
+        // Non-fatal — the token is already issued on Ark
+      }
 
       // Step 3: Add to local state
       upsertToken({
-        id: event.id,
+        id: result.assetId,
         assetId: result.assetId,
         name,
         ticker: tickerUp,
@@ -236,7 +244,7 @@ export default function CreatePage() {
             Launch your token
           </h1>
           <p className="mt-3 text-sm text-muted-foreground/50 max-w-sm mx-auto leading-relaxed">
-            Issue on Arkade, publish on Nostr.
+            Issue on Arkade. Trade on vtxo.market.
             <br />
             <span className="text-muted-foreground/35">Immutable. Permissionless. Yours.</span>
           </p>
@@ -635,8 +643,8 @@ export default function CreatePage() {
             <div className="space-y-1">
               <p className="text-xs font-medium text-foreground/80">Token Issuance</p>
               <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                Your token is issued on Arkade (Ark protocol) and the listing metadata
-                is published to Nostr relays for discovery. Costs ~{minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats.
+                Your token is issued on Arkade (Ark protocol) and listed on vtxo.market
+                automatically. Costs ~{minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats.
               </p>
             </div>
           </div>

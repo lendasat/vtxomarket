@@ -12,7 +12,7 @@ export interface Comment {
   time: number;
 }
 
-export function useComments(tokenEventId: string | null, ticker: string) {
+export function useComments(ticker: string | null) {
   const nostrReady = useAppStore((s) => s.nostrReady);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,12 +20,12 @@ export function useComments(tokenEventId: string | null, ticker: string) {
   const seenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!nostrReady || !tokenEventId) return;
+    if (!nostrReady || !ticker) return;
 
     setLoading(true);
     seenRef.current.clear();
 
-    const sub = subscribeToComments(tokenEventId, {
+    const sub = subscribeToComments(ticker, {
       onComment: (comment) => {
         if (seenRef.current.has(comment.id)) return;
         seenRef.current.add(comment.id);
@@ -46,14 +46,14 @@ export function useComments(tokenEventId: string | null, ticker: string) {
         subRef.current = null;
       }
     };
-  }, [nostrReady, tokenEventId]);
+  }, [nostrReady, ticker]);
 
   const postComment = useCallback(
     async (text: string) => {
-      if (!tokenEventId || !text.trim()) return;
-      await publishComment(tokenEventId, ticker, text);
+      if (!ticker || !text.trim()) return;
+      await publishComment(ticker, text);
     },
-    [tokenEventId, ticker]
+    [ticker]
   );
 
   return { comments, loading, postComment };

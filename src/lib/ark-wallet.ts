@@ -92,16 +92,8 @@ export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
   console.log("[ark] SDK loaded, connecting to:", ARK_SERVER_URL);
   const identity = SingleKey.fromHex(privateKeyHex);
 
-  // Wrap the ArkProvider with IntrospectorArkProvider if introspector URL is configured
-  const introspectorUrl = process.env.NEXT_PUBLIC_INTROSPECTOR_URL;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let arkProvider: any = new RestArkProvider(ARK_SERVER_URL);
-
-  if (introspectorUrl) {
-    const { IntrospectorArkProvider } = await import("./swap_protocol/introspector-provider");
-    arkProvider = new IntrospectorArkProvider(arkProvider);
-    console.log("[ark] Introspector enabled at:", introspectorUrl);
-  }
+  const arkProvider: any = new RestArkProvider(ARK_SERVER_URL);
 
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= WALLET_MAX_RETRIES; attempt++) {
@@ -556,7 +548,7 @@ export async function settleAll(wallet: any): Promise<string> {
 export {
   encodeLE64,
   createSwapOffer,
-  fillSwapOffer,
+  lightFillSwapOffer as fillSwapOffer,
   cancelSwapOffer,
 } from "./swap_protocol";
 export type { SwapOfferParams, SwapOffer } from "./swap_protocol";

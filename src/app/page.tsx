@@ -285,7 +285,7 @@ export default function Home() {
       {/* Footer */}
       <div className="text-center pt-4 pb-6">
         <p className="text-[10px] text-muted-foreground/20 uppercase tracking-widest">
-          Powered by Ark &middot; Settled on Bitcoin &middot; Published via Nostr
+          Powered by Ark &middot; Settled on Bitcoin
         </p>
       </div>
     </div>

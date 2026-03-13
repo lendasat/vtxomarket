@@ -220,6 +220,10 @@ export class IdbWalletStorage implements WalletStorage {
 
   async clear(): Promise<void> {
     await this.#db.wallet.clear();
+    // Also delete legacy v1 database to prevent re-migration on next getMnemonic()
+    if (typeof indexedDB !== "undefined") {
+      indexedDB.deleteDatabase(V1_DB_NAME);
+    }
   }
 }
 

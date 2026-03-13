@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useAppStore } from "@/lib/store";
 import { useComments } from "@/hooks/useComments";
 import { useTrades } from "@/hooks/useTrades";
-import { fetchTokenByTicker, publishTokenListing } from "@/lib/nostr-market";
+import { useTokens } from "@/hooks/useTokens";
 import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer } from "@/lib/ark-wallet";
 import { TokenChart } from "@/components/token-chart";
 import { useOffers } from "@/hooks/useOffers";
@@ -36,7 +36,7 @@ export default function TokenPage() {
   const router = useRouter();
   const ticker = (params.id as string)?.toUpperCase();
 
-  const tokens = useAppStore((s) => s.tokens);
+  const { tokens, loading: tokensLoading } = useTokens();
   const upsertToken = useAppStore((s) => s.upsertToken);
   const nostrReady = useAppStore((s) => s.nostrReady);
   const walletReady = useAppStore((s) => s.walletReady);
@@ -44,38 +44,11 @@ export default function TokenPage() {
   const user = useAppStore((s) => s.user);
   const heldAssets = useAppStore((s) => s.heldAssets);
 
-  const [token, setToken] = useState<Token | null>(null);
-  const [fetching, setFetching] = useState(true);
-
-  // Find token from store or fetch from Nostr
-  useEffect(() => {
-    const found = tokens.find((t) => t.ticker === ticker);
-    if (found) {
-      setToken(found);
-      setFetching(false);
-      return;
-    }
-
-    if (!nostrReady) return;
-
-    setFetching(true);
-    fetchTokenByTicker(ticker).then((result) => {
-      if (result) {
-        upsertToken(result);
-        setToken(result);
-      }
-      setFetching(false);
-    });
-  }, [ticker, tokens, nostrReady, upsertToken]);
-
-  // Keep token in sync with store
-  useEffect(() => {
-    const found = tokens.find((t) => t.ticker === ticker);
-    if (found) setToken(found);
-  }, [tokens, ticker]);
+  const token = useMemo(() => tokens.find((t) => t.ticker === ticker) ?? null, [tokens, ticker]);
+  const fetching = tokensLoading && !token;
 
   // Comments & trades
-  const { comments, loading: commentsLoading, postComment } = useComments(token?.id ?? null, ticker);
+  const { comments, loading: commentsLoading, postComment } = useComments(ticker);
   const { trades, loading: tradesLoading } = useTrades(ticker);
 
   // Swap offers
@@ -143,20 +116,12 @@ export default function TokenPage() {
     try {
       await reissueToken(arkWallet, token.assetId, amt);
       const newSupply = token.supply + amt;
-      await publishTokenListing({
-        name: token.name,
-        ticker: token.ticker,
-        description: token.description,
-        image: token.image,
-        assetId: token.assetId,
-        arkTxId: token.assetId,
-        creatorArkAddress: token.creatorArkAddress,
-        supply: newSupply,
-        controlAssetId: token.controlAssetId,
-        ...(token.website && { website: token.website }),
-        ...(token.twitter && { twitter: token.twitter }),
-        ...(token.telegram && { telegram: token.telegram }),
-      });
+      // Update supply in indexer
+      await fetch(`${INDEXER_URL}/assets/${token.assetId}/metadata`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supply: newSupply }),
+      }).catch((err) => console.warn("Metadata update failed:", err));
       upsertToken({ ...token, supply: newSupply });
       setReissueSuccess(`Minted ${formatTokenAmount(amt, token.decimals)} tokens. New supply: ${formatTokenAmount(newSupply, token.decimals)}`);
       setReissueAmount("");
