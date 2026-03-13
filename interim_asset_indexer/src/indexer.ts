@@ -14,11 +14,13 @@ import {
   isTxProcessed,
   markTxProcessed,
   upsertAsset,
+  upsertAssetMetadata,
   upsertVtxo,
   markVtxosSpent,
   getOffer,
   markOfferFilled,
   markOfferCancelled,
+  getAllAssets,
 } from "./db";
 import { fetchVtxosByOutpoints, fetchAssetMetadata } from "./ark-client";
 import type { TxNotification } from "./types";
@@ -122,6 +124,11 @@ async function ensureAssetMetadata(assetId: string, txid: string): Promise<void>
     firstSeenTxid: txid,
   });
 
+  // Store icon URL from TLV metadata as image
+  if (meta?.icon) {
+    upsertAssetMetadata(assetId, { image: meta.icon });
+  }
+
   log.info("indexer: recorded asset", {
     assetId: assetId.slice(0, 16) + "…",
     name: meta?.name,
@@ -135,4 +142,24 @@ function chunk<T>(arr: T[], size: number): T[][] {
     result.push(arr.slice(i, i + size));
   }
   return result;
+}
+
+/**
+ * Backfill missing image URLs for assets already in the DB.
+ * Runs once on startup — re-fetches TLV metadata for any asset with image=NULL.
+ */
+export async function backfillAssetImages(): Promise<void> {
+  const assets = getAllAssets().filter((a) => !a.image);
+  if (assets.length === 0) return;
+
+  log.info("backfill: re-fetching metadata for assets missing image", { count: assets.length });
+
+  for (const asset of assets) {
+    const meta = await fetchAssetMetadata(asset.assetId);
+    if (meta?.icon) {
+      upsertAssetMetadata(asset.assetId, { image: meta.icon });
+      log.info("backfill: set image", { assetId: asset.assetId.slice(0, 16) + "…", icon: meta.icon });
+    }
+    assetMetadataFetched.add(asset.assetId);
+  }
 }
