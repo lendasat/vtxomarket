@@ -72,6 +72,8 @@ export function buildApp(): Hono {
   });
 
   // ── Update asset metadata (creator submits after issuance) ─────────────────
+  // First write sets the creator identity; subsequent writes must match it.
+  // Supply and createdAt are immutable after first set to prevent tampering.
   app.put("/assets/:id/metadata", async (c) => {
     const assetId = c.req.param("id");
     const asset = getAsset(assetId);
@@ -79,6 +81,14 @@ export function buildApp(): Hono {
 
     const body = await c.req.json();
     const { description, image, creator, creatorArkAddress, controlAssetId, website, twitter, telegram, supply, createdAt } = body;
+
+    // If a creator is already set, only that same creator can update metadata
+    if (asset.creator && creator && asset.creator !== creator) {
+      return c.json({ error: "Unauthorized: creator pubkey does not match" }, 403);
+    }
+    if (asset.creator && !creator) {
+      return c.json({ error: "Unauthorized: must provide creator pubkey" }, 403);
+    }
 
     upsertAssetMetadata(assetId, {
       description,
@@ -89,8 +99,9 @@ export function buildApp(): Hono {
       website,
       twitter,
       telegram,
-      supply,
-      createdAt,
+      // Only set supply/createdAt on first write (immutable after)
+      supply: asset.supply === "0" || !asset.supply ? supply : undefined,
+      createdAt: !asset.createdAt ? createdAt : undefined,
     });
 
     return c.json({ ok: true });

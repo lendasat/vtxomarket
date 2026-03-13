@@ -189,8 +189,8 @@ export function useWallet() {
           try {
             renewalThresholdRef.current = await computeRenewalThreshold(w);
             renewalThresholdComputedAt.current = Date.now();
-          } catch {
-            // Fall back to default (3 days) — computeRenewalThreshold handles this internally
+          } catch (err) {
+            console.warn("[wallet] Renewal threshold computation failed, using default:", err instanceof Error ? err.message : err);
           }
         }
 

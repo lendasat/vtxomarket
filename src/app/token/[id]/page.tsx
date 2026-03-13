@@ -82,12 +82,15 @@ export default function TokenPage() {
   const [cancelLoading, setCancelLoading] = useState<string | null>(null); // offerOutpoint being cancelled
   const [cancelError, setCancelError] = useState("");
   const [confirmAction, setConfirmAction] = useState<{ type: "buy" | "cancel"; outpoint: string } | null>(null);
+  const [commentError, setCommentError] = useState("");
   const [userArkAddress, setUserArkAddress] = useState("");
 
   // Fetch user's Ark address (for identifying own offers)
   useEffect(() => {
     if (!arkWallet) return;
-    arkWallet.getAddress().then(setUserArkAddress).catch(() => {});
+    arkWallet.getAddress().then(setUserArkAddress).catch((err: unknown) => {
+      console.warn("[token] Failed to fetch user Ark address:", err instanceof Error ? err.message : err);
+    });
   }, [arkWallet]);
 
   // Only creator who holds the control asset can manage
@@ -97,11 +100,12 @@ export default function TokenPage() {
   // Post comment
   const handlePostComment = async () => {
     if (!newComment.trim()) return;
+    setCommentError("");
     try {
       await postComment(newComment);
       setNewComment("");
     } catch (err) {
-      console.error("Failed to post comment:", err);
+      setCommentError(err instanceof Error ? err.message : "Failed to post comment");
     }
   };
 
@@ -357,6 +361,10 @@ export default function TokenPage() {
                       Post
                     </Button>
                   </div>
+
+                  {commentError && (
+                    <p className="text-xs text-red-400/80">{commentError}</p>
+                  )}
 
                   {commentsLoading && comments.length === 0 && (
                     <p className="text-xs text-muted-foreground/40 text-center py-4">Loading comments...</p>
