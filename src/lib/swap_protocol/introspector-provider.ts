@@ -34,6 +34,9 @@ interface SwapContext {
   vtxoSatsValue: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   forfeitTapLeafScript: any; // TapLeafScript = [{ version, internalKey, merklePath }, script]
+  // Used to verify the SDK placed the maker's payment at output[0] (the arkade script checks index 0)
+  satAmount: number;
+  makerPkScriptHex: string; // hex 34 bytes — P2TR scriptPubKey
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +102,11 @@ export class IntrospectorArkProvider {
       tapTreeBytes
     );
 
+    // Verify the SDK placed the maker's payment at output[0] — the arkade script
+    // hardcodes OP_INSPECTOUTPUTVALUE/SCRIPTPUBKEY at index 0. If the SDK reorders
+    // outputs, the introspector would validate the wrong output.
+    await this.verifyOutputZero(modifiedProof);
+
     const encodedMessage =
       typeof intent.message === "string"
         ? intent.message
@@ -144,7 +152,7 @@ export class IntrospectorArkProvider {
     // as a "boarding input" and silently skips forfeit creation. But the ASP
     // knows it's a VTXO and requires a forfeit. We build it here and let
     // the introspector co-sign it via /v1/finalization.
-    const swapVtxoForfeit = await this.buildSwapVtxoForfeit();
+    const swapVtxoForfeit = await this.buildSwapVtxoForfeit(signedForfeitTxs);
 
     const allForfeits = swapVtxoForfeit
       ? [swapVtxoForfeit, ...signedForfeitTxs]
@@ -368,6 +376,47 @@ export class IntrospectorArkProvider {
   }
 
   /**
+   * Verify that the PSBT's output[0] matches the maker's expected payment.
+   * The arkade script hardcodes checking output index 0, so if the SDK
+   * reorders outputs or inserts something before the user's first output,
+   * the introspector would validate the wrong output — fail early here
+   * with a clear error rather than a cryptic introspector rejection.
+   */
+  private async verifyOutputZero(base64Proof: string): Promise<void> {
+    if (!this.swapContext) return;
+    const { Transaction } = await import("@scure/btc-signer");
+    const { base64 } = await import("@scure/base");
+
+    const tx = Transaction.fromPSBT(base64.decode(base64Proof), { allowUnknown: true });
+    const out0 = tx.getOutput(0);
+    if (!out0 || !out0.script) {
+      throw new Error(
+        "[IntrospectorProvider] PSBT has no output[0] — the arkade script cannot validate the maker payment"
+      );
+    }
+
+    // Compare output[0].script with the maker's P2TR pkScript
+    const expectedScript = scureHex.decode(this.swapContext.makerPkScriptHex);
+    if (out0.script.length !== expectedScript.length ||
+        !out0.script.every((b, i) => b === expectedScript[i])) {
+      throw new Error(
+        `[IntrospectorProvider] Output[0] scriptPubKey does not match maker's address. ` +
+        `Got ${scureHex.encode(out0.script)}, expected ${this.swapContext.makerPkScriptHex}. ` +
+        `The SDK may have reordered outputs — the arkade script checks index 0.`
+      );
+    }
+
+    // Compare output[0].amount with the expected satAmount
+    const expectedAmount = BigInt(this.swapContext.satAmount);
+    if (out0.amount !== expectedAmount) {
+      throw new Error(
+        `[IntrospectorProvider] Output[0] amount ${out0.amount} !== expected ${expectedAmount} sats. ` +
+        `The arkade script requires output[0].value >= ${expectedAmount}.`
+      );
+    }
+  }
+
+  /**
    * Build a forfeit PSBT for the swap VTXO.
    *
    * The SDK's handleSettlementFinalizationEvent skips creating this forfeit because
@@ -379,15 +428,15 @@ export class IntrospectorArkProvider {
    * The forfeit is UNSIGNED — the introspector will co-sign it via /v1/finalization
    * (the introspector's tweaked key is in the swap leaf's MultisigClosure).
    */
-  private async buildSwapVtxoForfeit(): Promise<string | null> {
+  private async buildSwapVtxoForfeit(existingForfeits: string[]): Promise<string | null> {
     if (!this.swapContext) return null;
 
     try {
       const { Transaction, SigHash } = await import("@scure/btc-signer");
       const { base64 } = await import("@scure/base");
 
-      // Parse the connector tree to find an available connector leaf
-      const connector = await this.getConnectorLeaf();
+      // Parse the connector tree to find an available connector leaf (excluding ones the SDK already used)
+      const connector = await this.getConnectorLeaf(existingForfeits);
       if (!connector) {
         console.warn("[IntrospectorProvider] No connector available for swap VTXO forfeit");
         return null;
@@ -460,12 +509,12 @@ export class IntrospectorArkProvider {
   }
 
   /**
-   * Parse the connector tree chunks and return the first leaf connector.
-   * The SDK assigns connectors in input order, skipping boarding inputs.
-   * Since the SDK treats the swap VTXO as boarding, connector[0] went to the
-   * taker's VTXO. We use the next available connector (index 1+) for the swap VTXO.
+   * Parse the connector tree chunks and return a leaf connector NOT already
+   * used by the SDK's forfeits. Previous approach guessed which index the SDK
+   * used; this approach parses the SDK's forfeits to find exactly which
+   * connector outpoints are taken, then picks an unused one.
    */
-  private async getConnectorLeaf(): Promise<{
+  private async getConnectorLeaf(existingForfeits: string[]): Promise<{
     txid: string;
     amount: bigint;
     script: Uint8Array;
@@ -476,8 +525,7 @@ export class IntrospectorArkProvider {
       const { Transaction } = await import("@scure/btc-signer");
       const { base64 } = await import("@scure/base");
 
-      // Build the tree structure like the SDK does (TxTree.create)
-      // Parse all chunks into transactions
+      // Parse all connector tree chunks into transactions
       interface DecodedChunk {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tx: any; // Transaction
@@ -500,14 +548,33 @@ export class IntrospectorArkProvider {
       }
 
       console.log(`[IntrospectorProvider] Connector tree: ${leaves.length} leaves found`);
-
-      // The SDK used leaf[0] for the taker's VTXO forfeit.
-      // We need a different leaf for the swap VTXO.
-      // If there's only 1 leaf, use it (the ASP may have created just enough).
-      // If there are 2+, use leaf[1] since the SDK took leaf[0].
       if (leaves.length === 0) return null;
-      // Use the last leaf — the SDK assigns from index 0 upward
-      return leaves[leaves.length > 1 ? leaves.length - 1 : 0];
+
+      // Collect all input txids from existing SDK forfeits so we know which connectors are taken
+      const usedTxids = new Set<string>();
+      for (const forfeitB64 of existingForfeits) {
+        try {
+          const ftx = Transaction.fromPSBT(base64.decode(forfeitB64), { allowUnknown: true });
+          for (let i = 0; i < ftx.inputsLength; i++) {
+            const inp = ftx.getInput(i);
+            if (inp.txid) {
+              // txid bytes are internal order (LE); reverse to display order for comparison
+              const txidBytes = new Uint8Array(inp.txid);
+              txidBytes.reverse();
+              usedTxids.add(scureHex.encode(txidBytes));
+            }
+          }
+        } catch { /* skip unparseable forfeits */ }
+      }
+
+      // Pick the first leaf whose txid is NOT referenced by any existing forfeit
+      for (const leaf of leaves) {
+        if (!usedTxids.has(leaf.txid)) return leaf;
+      }
+
+      // All leaves are used — fall back to the last one and hope the ASP sorts it out
+      console.warn("[IntrospectorProvider] All connector leaves appear used by SDK forfeits, using last");
+      return leaves[leaves.length - 1];
     } catch (e) {
       console.error("[IntrospectorProvider] Failed to parse connector tree:", e);
       return null;
@@ -516,6 +583,7 @@ export class IntrospectorArkProvider {
 
   /**
    * Get the ASP's forfeit output script (the address forfeits pay to).
+   * Detects mainnet vs testnet from the address prefix.
    */
   private async getForfeitOutputScript(): Promise<Uint8Array | null> {
     try {
@@ -526,10 +594,14 @@ export class IntrospectorArkProvider {
       }
 
       const { Address, OutScript } = await import("@scure/btc-signer");
-      const { TEST_NETWORK } = await import("@scure/btc-signer/utils.js");
-      // Mutinynet/testnet/signet all use TEST_NETWORK (bech32: "tb")
-      const decoded = Address(TEST_NETWORK).decode(info.forfeitAddress as string);
-      return OutScript.encode(decoded);
+      const addr = info.forfeitAddress as string;
+      const isTestnet = addr.startsWith("tb1") || addr.startsWith("bcrt1") ||
+                         addr.startsWith("2") || addr.startsWith("m") || addr.startsWith("n");
+      if (isTestnet) {
+        const { TEST_NETWORK } = await import("@scure/btc-signer/utils.js");
+        return OutScript.encode(Address(TEST_NETWORK).decode(addr));
+      }
+      return OutScript.encode(Address().decode(addr));
     } catch (e) {
       console.error("[IntrospectorProvider] Failed to get forfeit output script:", e);
       return null;

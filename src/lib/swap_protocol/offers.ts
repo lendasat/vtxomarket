@@ -207,6 +207,8 @@ export async function fillSwapOffer(
       tapTreeHex: bytesToHex(tapTreeBytes),
       vtxoSatsValue,
       forfeitTapLeafScript: swapForfeitLeaf,
+      satAmount: offer.satAmount,
+      makerPkScriptHex: offer.makerPkScript,
     });
   }
 
