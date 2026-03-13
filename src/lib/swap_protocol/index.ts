@@ -21,21 +21,16 @@
  *   │    OP_INSPECTOUTPUTSCRIPTPUBKEY == makerPkScript               │
  *   └─────────────────────────────────────────────────────────────────┘
  *
- *   FILL FLOW (taker buys tokens):
- *     1. Taker calls fillSwapOffer() with the offer + their wallet
- *     2. wallet.settle() creates intent PSBT with swap VTXO + taker's funding VTXOs
- *     3. IntrospectorArkProvider intercepts registerIntent():
- *        a. Injects taptree + arkadescript PSBT fields (SDK bug workaround)
- *        b. Strips non-swap input signatures (introspector requires arkadescript per signed input)
- *        c. Sends stripped PSBT to introspector /v1/intent → gets co-signature
- *        d. Merges co-signature back into full PSBT (BIP-174 Combiner)
- *        e. Forwards merged PSBT to ASP
- *     4. IntrospectorArkProvider intercepts submitSignedForfeitTxs():
- *        a. Builds missing swap VTXO forfeit (SDK skips it — wrong key)
- *        b. Sends all forfeits to introspector /v1/finalization → gets co-signed
- *        c. Merges commitment tx signatures
- *        d. Forwards to ASP
- *     5. ASP validates asset conservation and finalizes the round
+ *   FILL FLOW (taker buys tokens) — light path via submitTx/finalizeTx:
+ *     1. Taker calls lightFillSwapOffer() with the offer + their wallet
+ *     2. Builds offchain ark tx + checkpoints directly (no round participation)
+ *     3. Injects arkade script PSBT field on swap VTXO input
+ *     4. Signs taker's funding VTXO inputs (identity.sign skips swap input)
+ *     5. Sends to introspector POST /v1/tx → validates conditions, co-signs swap input + checkpoint
+ *     6. Merges introspector + taker signatures (BIP-174 Combiner)
+ *     7. Submits to ASP via submitTx → ASP co-signs, returns signed checkpoints
+ *     8. Signs returned checkpoints with taker identity (skips swap checkpoint — not taker's key)
+ *     9. Finalizes via finalizeTx → done
  *
  *   CANCEL FLOW (maker reclaims tokens):
  *     1. After CSV timelock expires, maker calls cancelSwapOffer()
@@ -45,9 +40,10 @@
  * Module structure:
  *   opcodes.ts              — Arkade opcode constants + @scure/btc-signer registration
  *   script.ts               — Swap script construction + decoding (taproot tree, arkade script)
- *   offers.ts               — Offer lifecycle (create, fill, cancel)
+ *   offers.ts               — Offer lifecycle (create, cancel) + legacy heavy fill
+ *   light-fill.ts           — Light fill via submitTx/finalizeTx (no rounds, no forfeits)
  *   introspector-client.ts  — REST client for the Arkade Introspector service
- *   introspector-provider.ts — ArkProvider wrapper (PSBT injection, sig merging, forfeit construction)
+ *   introspector-provider.ts — ArkProvider wrapper (used by create/cancel, NOT by light fill)
  *   psbt-combiner.ts        — Raw BIP-174 PSBT utilities (combine, strip tapScriptSig)
  */
 
@@ -64,8 +60,11 @@ export { buildSwapScript, decodeSwapScript, buildArkadeScript, computeIntrospect
 export type { SwapScriptParams, SwapScriptResult, TapLeafScript } from "./script";
 
 // Offer lifecycle
-export { createSwapOffer, fillSwapOffer, cancelSwapOffer } from "./offers";
+export { createSwapOffer, cancelSwapOffer } from "./offers";
 export type { SwapOfferParams, SwapOffer } from "./offers";
+
+// Light fill (replaces heavy settle-based fillSwapOffer)
+export { lightFillSwapOffer } from "./light-fill";
 
 // Introspector client
 export {
@@ -81,9 +80,6 @@ export type {
   SubmitFinalizationResponse,
   TxTreeNode,
 } from "./introspector-client";
-
-// Introspector ArkProvider wrapper
-export { IntrospectorArkProvider } from "./introspector-provider";
 
 // PSBT utilities
 export { Psbt } from "./psbt-combiner";
