@@ -21,6 +21,7 @@ import {
   getHoldersForAsset,
   getStats,
   upsertOffer,
+  upsertAssetMetadata,
   getOffer,
   getOpenOffersForAsset,
   getAllOpenOffers,
@@ -68,6 +69,31 @@ export function buildApp(): Hono {
     const asset = getAsset(c.req.param("id"));
     if (!asset) return c.json({ error: "Not found" }, 404);
     return c.json({ asset });
+  });
+
+  // ── Update asset metadata (creator submits after issuance) ─────────────────
+  app.put("/assets/:id/metadata", async (c) => {
+    const assetId = c.req.param("id");
+    const asset = getAsset(assetId);
+    if (!asset) return c.json({ error: "Asset not found — it may not have been indexed yet" }, 404);
+
+    const body = await c.req.json();
+    const { description, image, creator, creatorArkAddress, controlAssetId, website, twitter, telegram, supply, createdAt } = body;
+
+    upsertAssetMetadata(assetId, {
+      description,
+      image,
+      creator,
+      creatorArkAddress,
+      controlAssetId,
+      website,
+      twitter,
+      telegram,
+      supply,
+      createdAt,
+    });
+
+    return c.json({ ok: true });
   });
 
   // ── VTXOs for asset ────────────────────────────────────────────────────────

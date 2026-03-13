@@ -23,6 +23,16 @@ export interface AssetRow {
   supply: string;       // bigint stored as TEXT to avoid JS precision loss
   firstSeenTxid: string;
   updatedAt: number;    // unix seconds
+  // Creator-submitted metadata (via PUT /assets/:id/metadata)
+  description: string | null;
+  image: string | null;
+  creator: string | null;          // pubkey hex of the issuer
+  creatorArkAddress: string | null;
+  controlAssetId: string | null;   // present when token is reissuable
+  website: string | null;
+  twitter: string | null;
+  telegram: string | null;
+  createdAt: number | null;        // unix seconds of issuance
 }
 
 export interface VtxoRow {
@@ -159,6 +169,16 @@ function migrate(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_offers_asset_status ON offers(assetId, status)`);
 
+  // Add metadata columns to assets table (migration for existing DBs)
+  const assetCols = db.query("PRAGMA table_info(assets)").all() as { name: string }[];
+  const metadataCols = ["description", "image", "creator", "creatorArkAddress", "controlAssetId", "website", "twitter", "telegram", "createdAt"];
+  for (const col of metadataCols) {
+    if (!assetCols.some((c) => c.name === col)) {
+      db.run(`ALTER TABLE assets ADD COLUMN ${col} TEXT`);
+      log.info(`Database: added ${col} column to assets table`);
+    }
+  }
+
   // Add missing columns (migration for existing DBs)
   const offerCols = db.query("PRAGMA table_info(offers)").all() as { name: string }[];
   if (!offerCols.some((col) => col.name === "vtxoSatsValue")) {
@@ -282,6 +302,55 @@ export function getHoldersForAsset(assetId: string): HolderRow[] {
        ORDER BY CAST(totalAmount AS INTEGER) DESC`
     )
     .all(assetId) as HolderRow[];
+}
+
+/** Update creator-submitted metadata fields (description, image, socials, etc.) */
+export function upsertAssetMetadata(
+  assetId: string,
+  meta: {
+    description?: string;
+    image?: string;
+    creator?: string;
+    creatorArkAddress?: string;
+    controlAssetId?: string;
+    website?: string;
+    twitter?: string;
+    telegram?: string;
+    supply?: number;
+    createdAt?: number;
+  }
+): void {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.run(
+    `UPDATE assets SET
+       description = COALESCE(?, description),
+       image = COALESCE(?, image),
+       creator = COALESCE(?, creator),
+       creatorArkAddress = COALESCE(?, creatorArkAddress),
+       controlAssetId = COALESCE(?, controlAssetId),
+       website = COALESCE(?, website),
+       twitter = COALESCE(?, twitter),
+       telegram = COALESCE(?, telegram),
+       supply = COALESCE(?, supply),
+       createdAt = COALESCE(?, createdAt),
+       updatedAt = ?
+     WHERE assetId = ?`,
+    [
+      meta.description ?? null,
+      meta.image ?? null,
+      meta.creator ?? null,
+      meta.creatorArkAddress ?? null,
+      meta.controlAssetId ?? null,
+      meta.website ?? null,
+      meta.twitter ?? null,
+      meta.telegram ?? null,
+      meta.supply != null ? String(meta.supply) : null,
+      meta.createdAt ?? null,
+      now,
+      assetId,
+    ]
+  );
 }
 
 export function getStats() {
