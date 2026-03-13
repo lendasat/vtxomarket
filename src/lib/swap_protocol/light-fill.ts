@@ -94,17 +94,21 @@ export async function lightFillSwapOffer(
     (a: { value: number }, b: { value: number }) => b.value - a.value
   );
 
+  const dustAmount = Number(wallet.dustAmount ?? 330);
+  // Taker needs satAmount for the maker + at least dustAmount for their own change output
+  const requiredSats = offer.satAmount + dustAmount;
+
   let fundedSats = vtxoSatsValue; // swap VTXO contributes its dust
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fundingInputs: any[] = [];
   for (const v of sorted) {
-    if (fundedSats >= offer.satAmount) break;
+    if (fundedSats >= requiredSats) break;
     fundingInputs.push(v);
     fundedSats += v.value;
   }
-  if (fundedSats < offer.satAmount) {
+  if (fundedSats < requiredSats) {
     throw new Error(
-      `Insufficient funds: have ${fundedSats} sats, need ${offer.satAmount} sats`
+      `Insufficient funds: have ${fundedSats} sats, need ${requiredSats} sats (${offer.satAmount} + ${dustAmount} dust)`
     );
   }
 
@@ -120,7 +124,6 @@ export async function lightFillSwapOffer(
   // Taker change — always needed because the taker receives the tokens
   const takerAddress = await wallet.getAddress();
   const takerAddr = ArkAddress.decode(takerAddress);
-  const dustAmount = Number(wallet.dustAmount ?? 330);
   const changeSats = fundedSats - offer.satAmount;
   const takerOutputSats = Math.max(changeSats, dustAmount);
   const outputs = [

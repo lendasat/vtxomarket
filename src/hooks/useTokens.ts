@@ -55,8 +55,8 @@ export function useTokens() {
           setTokensLoaded(true);
           setTokensLoading(false);
         }
-      } catch {
-        // Network error — keep existing tokens, retry on next interval
+      } catch (err) {
+        console.warn("[tokens] Fetch failed:", err instanceof Error ? err.message : err);
       }
     }
 

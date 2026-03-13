@@ -179,8 +179,8 @@ export function useLendaswap() {
       ]);
       setBalance(bal);
       setAddresses(addrs);
-    } catch {
-      // Non-critical — balance will refresh on next wallet interaction
+    } catch (err) {
+      console.warn("[lendaswap] Balance refresh failed:", err instanceof Error ? err.message : err);
     }
   }, [arkWallet, setBalance, setAddresses]);
 
@@ -668,7 +668,8 @@ export function useLendaswap() {
       const client = await getLendaswapClient();
       const swaps = await client.listAllSwaps();
       return swaps;
-    } catch {
+    } catch (err) {
+      console.warn("[lendaswap] Failed to load swap history:", err instanceof Error ? err.message : err);
       return [];
     }
   }, []);
@@ -696,7 +697,8 @@ export function useLendaswap() {
         });
 
         return parseInt(quoteResp.target_amount, 10) || null;
-      } catch {
+      } catch (err) {
+        console.warn("[lendaswap] Quote estimate failed:", err instanceof Error ? err.message : err);
         return null;
       }
     },

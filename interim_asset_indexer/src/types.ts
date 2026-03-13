@@ -48,4 +48,5 @@ export interface AssetMetadata {
   decimals?: number;
   supply?: string;        // raw decimal string from the "supply" field
   controlAssetId?: string;
+  icon?: string;           // image URL from TLV "icon" key
 }

@@ -6,7 +6,7 @@ import { config } from "./config";
 import { log, setLogLevel } from "./logger";
 import { getDb, expireStaleOffers } from "./db";
 import { startStream, stopStream } from "./stream";
-import { handleTxNotification } from "./indexer";
+import { handleTxNotification, backfillAssetImages } from "./indexer";
 import { buildApp } from "./api";
 
 // Apply log level before anything else
@@ -22,6 +22,9 @@ log.info("Starting interim-asset-indexer", {
 // ── Initialize DB ─────────────────────────────────────────────────────────────
 getDb(); // ensures schema is created
 setInterval(expireStaleOffers, 60_000); // sweep expired offers every minute
+
+// ── Backfill missing image URLs for existing assets ──────────────────────────
+backfillAssetImages().catch((err) => log.warn("backfill failed", { error: String(err) }));
 
 // ── Start SSE stream ──────────────────────────────────────────────────────────
 startStream(handleTxNotification);

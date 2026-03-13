@@ -115,6 +115,7 @@ export default function WalletPage() {
   const [walletView, setWalletView] = useState<WalletView>("overview");
   const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([]);
   const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
 
   // Send state
   const [sendAddress, setSendAddress] = useState("");
@@ -202,13 +203,16 @@ export default function WalletPage() {
   const loadHistory = useCallback(async () => {
     if (!arkWallet) return;
     setTxLoading(true);
+    setTxError("");
     try {
       const history = await getTransactionHistory(arkWallet);
       // Sort newest first
       history.sort((a, b) => b.createdAt - a.createdAt);
       setTxHistory(history);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load history";
       console.error("[wallet] Failed to load tx history:", e);
+      setTxError(msg);
     } finally {
       setTxLoading(false);
     }
@@ -376,6 +380,7 @@ export default function WalletPage() {
             txHistory={txHistory}
             stablecoinTxs={stablecoinTxs}
             txLoading={txLoading}
+            txError={txError}
             walletReady={walletReady}
             onRefresh={loadHistory}
           />
@@ -743,12 +748,14 @@ function TransactionHistoryView({
   txHistory,
   stablecoinTxs,
   txLoading,
+  txError,
   walletReady,
   onRefresh,
 }: {
   txHistory: TxHistoryItem[];
   stablecoinTxs: StablecoinTxItem[];
   txLoading: boolean;
+  txError?: string;
   walletReady: boolean;
   onRefresh: () => void;
 }) {
@@ -779,6 +786,17 @@ function TransactionHistoryView({
       <div className="flex flex-col items-center justify-center py-16 gap-3">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
         <p className="text-xs text-muted-foreground/40">Loading transactions...</p>
+      </div>
+    );
+  }
+
+  if (txError && unified.length === 0) {
+    return (
+      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] p-8 text-center space-y-2">
+        <p className="text-xs text-red-400/80">{txError}</p>
+        <button onClick={onRefresh} className="text-[10px] text-muted-foreground/50 hover:text-foreground/60 transition-colors">
+          Retry
+        </button>
       </div>
     );
   }
