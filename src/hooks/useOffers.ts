@@ -59,8 +59,8 @@ export function useOffers(assetId: string | null): {
       // Sort by price asc (cheapest first)
       mapped.sort((a, b) => a.price - b.price);
       setOffers(mapped);
-    } catch {
-      // Network error — keep previous state
+    } catch (err) {
+      console.warn("[offers] Fetch failed:", err instanceof Error ? err.message : err);
     } finally {
       setLoading(false);
     }

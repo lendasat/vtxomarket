@@ -45,7 +45,9 @@ export function useLightning() {
           setReady(true);
         }
         // Restore any pending swaps from Boltz API (non-blocking)
-        restoreSwaps(ln).catch(() => {});
+        restoreSwaps(ln).catch((err: unknown) => {
+          console.warn("[lightning] Failed to restore pending swaps:", err instanceof Error ? err.message : err);
+        });
       })
       .catch((err) => {
         console.error("[lightning] init failed:", err);
@@ -59,7 +61,9 @@ export function useLightning() {
     return () => {
       disposed = true;
       if (lightningRef.current) {
-        lightningRef.current.dispose().catch(() => {});
+        lightningRef.current.dispose().catch((err: unknown) => {
+          console.warn("[lightning] Dispose failed:", err instanceof Error ? err.message : err);
+        });
         lightningRef.current = null;
         setReady(false);
       }

@@ -81,6 +81,7 @@ export async function fetchAssetMetadata(assetId: string): Promise<AssetMetadata
       ticker: meta["ticker"],
       decimals: meta["decimals"] !== undefined ? Number(meta["decimals"]) : undefined,
       supply: json.supply,
+      icon: meta["icon"],
     };
   } catch (err) {
     log.warn("fetchAssetMetadata: failed", { assetId, error: String(err) });

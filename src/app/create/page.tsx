@@ -31,7 +31,9 @@ export default function CreatePage() {
     if (!arkWallet) return;
     try {
       setDustAmount(getDustAmount(arkWallet));
-    } catch { /* */ }
+    } catch (err) {
+      console.warn("[create] Failed to get dust amount:", err instanceof Error ? err.message : err);
+    }
   }, [arkWallet]);
 
   const [name, setName] = useState("");
