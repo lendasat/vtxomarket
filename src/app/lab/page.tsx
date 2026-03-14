@@ -222,12 +222,16 @@ export default function LabPage() {
       });
       setLastOffer(offer);
       addLog("success", `Sell offer created: ${offer.offerOutpoint}`);
-      // Post to indexer so the offer shows up on token pages
-      try {
-        await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
-        addLog("info", "Posted to indexer");
-      } catch { addLog("info", "Indexer post failed (offer still valid on-chain)"); }
-      addLog("info", `expiresAt: ${new Date(offer.expiresAt * 1000).toISOString()}`);
+      // Post to indexer (retry on VTXO not found)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
+        try {
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          if (resp.ok) { addLog("info", "Posted to indexer"); break; }
+          const errText = await resp.text().catch(() => "");
+          if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }
+        } catch { addLog("info", "Indexer post failed (network error)"); break; }
+      }
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);
       setFcSwapScriptHex(offer.swapScriptHex);
@@ -262,12 +266,16 @@ export default function LabPage() {
       });
       setLastBuyOffer(offer);
       addLog("success", `Buy offer created: ${offer.offerOutpoint}`);
-      // Post to indexer so the offer shows up on token pages
-      try {
-        await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
-        addLog("info", "Posted to indexer");
-      } catch { addLog("info", "Indexer post failed (offer still valid on-chain)"); }
-      addLog("info", `expiresAt: ${new Date(offer.expiresAt * 1000).toISOString()}`);
+      // Post to indexer (retry on VTXO not found)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
+        try {
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          if (resp.ok) { addLog("info", "Posted to indexer"); break; }
+          const errText = await resp.text().catch(() => "");
+          if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }
+        } catch { addLog("info", "Indexer post failed (network error)"); break; }
+      }
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);
       setFcSwapScriptHex(offer.swapScriptHex);

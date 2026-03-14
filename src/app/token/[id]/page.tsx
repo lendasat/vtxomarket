@@ -177,12 +177,23 @@ export default function TokenPage() {
         satAmount: satAmt,
       });
 
-      // Self-report to indexer
-      await fetch(`${INDEXER_URL}/offers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(offer),
-      });
+      // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
+      let posted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+        const resp = await fetch(`${INDEXER_URL}/offers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(offer),
+        });
+        if (resp.ok) { posted = true; break; }
+        const errText = await resp.text().catch(() => "");
+        if (!errText.includes("VTXO not found")) {
+          console.warn("[offer] Indexer POST failed:", errText);
+          break;
+        }
+      }
+      if (!posted) console.warn("[offer] Could not register offer with indexer");
 
       setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setOfferTokenAmount("");
@@ -254,12 +265,23 @@ export default function TokenPage() {
         satAmount: satAmt,
       });
 
-      // Self-report to indexer
-      await fetch(`${INDEXER_URL}/offers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(offer),
-      });
+      // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
+      let posted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+        const resp = await fetch(`${INDEXER_URL}/offers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(offer),
+        });
+        if (resp.ok) { posted = true; break; }
+        const errText = await resp.text().catch(() => "");
+        if (!errText.includes("VTXO not found")) {
+          console.warn("[offer] Indexer POST failed:", errText);
+          break;
+        }
+      }
+      if (!posted) console.warn("[offer] Could not register offer with indexer");
 
       setBuyOfferSuccess(`Buy offer created! Buying ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setBuyOfferTokenAmount("");
