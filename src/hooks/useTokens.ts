@@ -50,7 +50,12 @@ export function useTokens() {
             telegram: (a.telegram as string) || undefined,
           }));
 
-        setTokens(mapped);
+        // Merge with existing local tokens so locally upserted tokens
+        // (e.g. just-created tokens the indexer hasn't seen yet) aren't wiped.
+        const existingTokens = useAppStore.getState().tokens;
+        const indexerIds = new Set(mapped.map((t) => t.assetId));
+        const localOnly = existingTokens.filter((t) => t.assetId && !indexerIds.has(t.assetId));
+        setTokens([...mapped, ...localOnly]);
         if (!tokensLoaded) {
           setTokensLoaded(true);
           setTokensLoading(false);
