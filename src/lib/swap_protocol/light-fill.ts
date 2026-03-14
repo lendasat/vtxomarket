@@ -583,7 +583,12 @@ export async function lightFillBuyOffer(
       (inp: { inputIndex: number; amount: bigint }) => asset.AssetInput.create(inp.inputIndex, inp.amount)
     );
     const totalAmount = totalByAssetId.get(offer.assetId)!;
-    const assetOutputs = [asset.AssetOutput.create(0, totalAmount)]; // all to buyer (output 0)
+    const requiredAmount = BigInt(offer.tokenAmount);
+    const assetOutputs = [asset.AssetOutput.create(0, requiredAmount)]; // buyer gets requested amount
+    // Return excess tokens to seller (output 1) if seller provided more than needed
+    if (totalAmount > requiredAmount) {
+      assetOutputs.push(asset.AssetOutput.create(1, totalAmount - requiredAmount));
+    }
     groups.push(asset.AssetGroup.create(assetIdObj, null, assetInputs, assetOutputs, []));
   }
 

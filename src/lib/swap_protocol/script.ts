@@ -190,7 +190,7 @@ export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number):
 
 /**
  * Build the arkade script for a buy offer — introspection conditions validated by the introspector.
- * Embedded as a PSBT custom field (key 0xDE + "arkadescript"), NOT as a tapscript leaf.
+ * Embedded in the OP_RETURN as an IntrospectorPacket (type 0x01), NOT as a tapscript leaf.
  *
  * Conditions:
  *   output[0].scriptPubKey == buyerPkScript (P2TR)
