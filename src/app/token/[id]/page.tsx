@@ -362,21 +362,31 @@ export default function TokenPage() {
             />
           </div>
 
-          {/* Buy / Sell buttons */}
+          {/* Buy / Sell offer buttons */}
           {walletReady && token && (
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button
                 onClick={() => setShowBuyDialog(true)}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/30"
+                className="flex-1 group relative py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(52,211,153,0.08)]"
               >
-                Buy
+                <span className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                    <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+                  </svg>
+                  Buy Offer
+                </span>
               </button>
               <button
                 onClick={() => setShowSellDialog(true)}
                 disabled={userHolding <= 0}
-                className="flex-1 py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="flex-1 group relative py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(248,113,113,0.08)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
-                Sell
+                <span className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                    <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+                  </svg>
+                  Sell Offer
+                </span>
               </button>
             </div>
           )}
@@ -422,95 +432,147 @@ export default function TokenPage() {
             <div className="p-4">
               {/* Buy Offers */}
               {infoTab === "buy-offers" && token && (
-                <div>
+                <div className="space-y-3">
                   {offersLoading && buyOffers.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">Loading offers...</p>
+                    <div className="flex items-center justify-center gap-2 py-8">
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-400" />
+                      <span className="text-xs text-muted-foreground/40">Loading buy offers...</span>
+                    </div>
                   )}
                   {!offersLoading && buyOffers.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">No buy offers yet.</p>
+                    <div className="text-center py-8 space-y-2">
+                      <div className="h-10 w-10 mx-auto rounded-xl bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-emerald-400/40">
+                          <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-muted-foreground/40">No buy offers yet</p>
+                      {walletReady && (
+                        <button onClick={() => setShowBuyDialog(true)} className="text-[11px] text-emerald-400/70 hover:text-emerald-400 transition-colors">
+                          Create the first buy offer
+                        </button>
+                      )}
+                    </div>
                   )}
                   {buyOffers.length > 0 && (
-                    <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
-                      <div className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 px-3 py-2 border-b border-white/[0.05]">
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Wants</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Price</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Paying</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase w-20 text-right">Action</span>
-                      </div>
+                    <div className="space-y-2">
                       {buyOffers.map((offer) => {
                         const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
                         return (
-                          <div key={offer.offerOutpoint} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-                            <span className="text-xs tabular-nums">
-                              {formatTokenAmount(offer.tokenAmount, token.decimals)}
-                              <span className="text-muted-foreground/35 text-[10px] ml-0.5">${token.ticker}</span>
-                            </span>
-                            <span className="text-xs tabular-nums text-muted-foreground/70">
-                              {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
-                            </span>
-                            <span className="text-xs tabular-nums text-muted-foreground/70">
-                              {formatSats(offer.satAmount)}
-                              <span className="text-[10px] text-muted-foreground/35 ml-0.5">sat</span>
-                            </span>
-                            {isOwn ? (
-                              <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
-                            ) : (
-                              <OfferFillButton offer={offer} type="sell" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFillBuyOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} disabled={userHolding < offer.tokenAmount} label="Sell" />
-                            )}
+                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-emerald-500/[0.03] border-emerald-500/10 hover:border-emerald-500/20"}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-sm font-semibold tabular-nums">
+                                    {formatTokenAmount(offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/30">|</span>
+                                  <span className="text-[11px] text-emerald-400/60 tabular-nums font-medium">
+                                    {formatSats(offer.satAmount)} sat
+                                  </span>
+                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                </div>
+                              </div>
+                              {isOwn ? (
+                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                              ) : (
+                                <OfferFillButton offer={offer} type="sell" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFillBuyOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} disabled={userHolding < offer.tokenAmount} label="Sell" />
+                              )}
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
-                  {fillError && <p className="text-xs text-red-400 mt-2">{fillError}</p>}
-                  {cancelError && <p className="text-xs text-red-400 mt-2">{cancelError}</p>}
+                  {fillError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{fillError}</p>
+                    </div>
+                  )}
+                  {cancelError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{cancelError}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Sell Offers */}
               {infoTab === "sell-offers" && token && (
-                <div>
+                <div className="space-y-3">
                   {offersLoading && sellOffers.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">Loading offers...</p>
+                    <div className="flex items-center justify-center gap-2 py-8">
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/30 border-t-red-400" />
+                      <span className="text-xs text-muted-foreground/40">Loading sell offers...</span>
+                    </div>
                   )}
                   {!offersLoading && sellOffers.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">No sell offers yet.</p>
+                    <div className="text-center py-8 space-y-2">
+                      <div className="h-10 w-10 mx-auto rounded-xl bg-red-500/10 border border-red-500/15 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-red-400/40">
+                          <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-muted-foreground/40">No sell offers yet</p>
+                      {walletReady && userHolding > 0 && (
+                        <button onClick={() => setShowSellDialog(true)} className="text-[11px] text-red-400/70 hover:text-red-400 transition-colors">
+                          Create the first sell offer
+                        </button>
+                      )}
+                    </div>
                   )}
                   {sellOffers.length > 0 && (
-                    <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
-                      <div className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 px-3 py-2 border-b border-white/[0.05]">
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Amount</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Price</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Total</span>
-                        <span className="text-[10px] text-muted-foreground/40 font-medium uppercase w-20 text-right">Action</span>
-                      </div>
+                    <div className="space-y-2">
                       {sellOffers.map((offer) => {
                         const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
                         return (
-                          <div key={offer.offerOutpoint} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-                            <span className="text-xs tabular-nums">
-                              {formatTokenAmount(offer.tokenAmount, token.decimals)}
-                              <span className="text-muted-foreground/35 text-[10px] ml-0.5">${token.ticker}</span>
-                            </span>
-                            <span className="text-xs tabular-nums text-muted-foreground/70">
-                              {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
-                            </span>
-                            <span className="text-xs tabular-nums text-muted-foreground/70">
-                              {formatSats(offer.satAmount)}
-                              <span className="text-[10px] text-muted-foreground/35 ml-0.5">sat</span>
-                            </span>
-                            {isOwn ? (
-                              <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
-                            ) : (
-                              <OfferFillButton offer={offer} type="buy" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFill} walletReady={walletReady} tradeInFlight={tradeInFlight} label="Buy" />
-                            )}
+                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-red-500/[0.03] border-red-500/10 hover:border-red-500/20"}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-sm font-semibold tabular-nums">
+                                    {formatTokenAmount(offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/30">|</span>
+                                  <span className="text-[11px] text-red-400/60 tabular-nums font-medium">
+                                    {formatSats(offer.satAmount)} sat
+                                  </span>
+                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                </div>
+                              </div>
+                              {isOwn ? (
+                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                              ) : (
+                                <OfferFillButton offer={offer} type="buy" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFill} walletReady={walletReady} tradeInFlight={tradeInFlight} label="Buy" />
+                              )}
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
-                  {fillError && <p className="text-xs text-red-400 mt-2">{fillError}</p>}
-                  {cancelError && <p className="text-xs text-red-400 mt-2">{cancelError}</p>}
+                  {fillError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{fillError}</p>
+                    </div>
+                  )}
+                  {cancelError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{cancelError}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
