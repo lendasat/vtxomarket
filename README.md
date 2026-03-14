@@ -24,8 +24,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full swap protocol design, secu
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/lendasat/vtxofun.git
-cd vtxofun
+git clone https://github.com/lendasat/vtxomarket.git
+cd vtxomarket
 npm install
 cp .env.example .env
 ```

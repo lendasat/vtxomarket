@@ -29,7 +29,7 @@ Since arkd already has the data internally (it comes back on individual VTXOs vi
 - Subscribes to `GET /v1/txs` SSE from the Arkade server
 - Parses the OP_RETURN asset packet in each virtual transaction
 - Maintains a local SQLite database: `assetId → [VTXOs]`
-- Exposes a minimal REST API for the vtxofun frontend
+- Exposes a minimal REST API for the vtxomarket frontend
 
 ## API
 

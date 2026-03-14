@@ -1,7 +1,7 @@
 {
   "name": "interim-asset-indexer",
   "version": "1.0.0",
-  "description": "Temporary asset VTXO indexer for vtxo.fun — bridges the gap until arkd ships native asset filtering",
+  "description": "Temporary asset VTXO indexer for vtxo.market — bridges the gap until arkd ships native asset filtering",
   "module": "src/index.ts",
   "scripts": {
     "dev": "bun --hot src/index.ts",
