@@ -43,12 +43,24 @@ bun run src/index.ts
 
 The indexer will connect to the Ark server (mutinynet by default) and start indexing assets.
 
-### 3. Set up the Introspector
+### 3. Set up external dependencies
 
-The Introspector is required for swap fills (not needed for token issuance, sending, or offer cancellation). It validates Arkade Script introspection conditions and co-signs PSBTs.
+#### Arkade TypeScript SDK
+
+The frontend depends on [`@arkade-os/sdk`](https://github.com/arkade-os/wallet). It's installed via npm — no extra setup needed. If you want to hack on the SDK locally, you can clone it into the project root:
 
 ```bash
-# Clone the Introspector repo
+git clone https://github.com/arkade-os/wallet.git arkade-ts-sdk
+```
+
+The `arkade-ts-sdk/` directory is gitignored and won't interfere with the project.
+
+#### Introspector
+
+The [Introspector](https://github.com/ArkLabsHQ/introspector) is required for swap fills (not needed for token issuance, sending, or offer cancellation). It validates Arkade Script introspection conditions and co-signs PSBTs.
+
+```bash
+# Clone the Introspector repo (gitignored — clone into project root or elsewhere)
 git clone https://github.com/ArkLabsHQ/introspector.git
 
 # Run with Docker
@@ -68,6 +80,10 @@ curl http://localhost:7073/v1/info
 ```
 
 The `signerPubkey` is the Introspector's base public key. It gets tweaked per-swap-script to cryptographically bind it to specific swap conditions.
+
+#### LendaSwap (stablecoin swaps)
+
+The wallet includes BTC-to-stablecoin swaps powered by the [`@lendasat/lendaswap-sdk-pure`](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) TypeScript SDK. The `src/lendaswap_integration/` folder contains a full reference wallet implementation (UI components, hooks, and SDK client) that can be used as a starting point for integrating LendaSwap into your own project. You'll need a LendaSwap API key — set `NEXT_PUBLIC_LENDASWAP_API_KEY` in your `.env`.
 
 ### 4. Start the frontend
 
@@ -116,7 +132,8 @@ vtxo.market/
 │   │   │   └── psbt-combiner.ts
 │   │   ├── nostr-market.ts     # Nostr events (comments, trade receipts)
 │   │   └── store.ts            # Zustand state
-│   └── hooks/                  # React hooks (useWallet, useOffers, useTokens, etc.)
+│   ├── hooks/                  # React hooks (useWallet, useOffers, useTokens, etc.)
+│   └── lendaswap_integration/  # LendaSwap reference wallet (components, hooks, SDK client)
 ├── indexer/                    # Asset indexer (Bun + SQLite + Hono)
 │   ├── src/
 │   │   ├── index.ts            # Entry point
@@ -142,6 +159,7 @@ vtxo.market/
 | Frontend | Next.js 16 + Tailwind v4 |
 | State | Zustand |
 | Lightning | [Boltz](https://boltz.exchange) atomic swaps |
+| Stablecoin swaps | [@lendasat/lendaswap-sdk-pure](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) |
 
 ## Network support
 
