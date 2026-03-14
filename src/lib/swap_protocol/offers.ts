@@ -59,10 +59,6 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
     );
   }
 
-  // bip68 seconds must be a multiple of 512 — round up
-  const rawSeconds = params.expiresInSeconds ?? 3600;
-  const cancelSeconds = Math.ceil(rawSeconds / 512) * 512;
-
   const makerArkAddress = await wallet.getAddress();
   const decodedAddr = ArkAddress.decode(makerArkAddress);
   const makerPkScript: Uint8Array = decodedAddr.pkScript;
@@ -73,6 +69,10 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
   let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
   if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1);
+
+  // Use the ASP's unilateralExitDelay as the CSV sequence value.
+  // The ASP rejects scripts with shorter exit delays.
+  const cancelSeconds = Number(aspInfo.unilateralExitDelay);
 
   const introspectorInfo = await getIntrospectorInfo();
   let introspectorPubkey = hexToBytes(introspectorInfo.signerPubkey);
@@ -101,9 +101,10 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   const offerOutpoint = `${arkTxId}:0`;
   const vtxoSatsValue = Number(wallet.dustAmount ?? 330);
 
-  // Compute approximate absolute expiry for UI display
+  // User-facing expiry for indexer listing (not the on-chain CSV)
+  const expirySeconds = params.expiresInSeconds ?? 3600;
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + cancelSeconds;
+  const expiresAt = now + expirySeconds;
 
   return {
     offerOutpoint,
@@ -296,9 +297,6 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
     );
   }
 
-  const rawSeconds = params.expiresInSeconds ?? 3600;
-  const cancelSeconds = Math.ceil(rawSeconds / 512) * 512;
-
   const buyerArkAddress = await wallet.getAddress();
   const decodedAddr = ArkAddress.decode(buyerArkAddress);
   const buyerPkScript: Uint8Array = decodedAddr.pkScript;
@@ -309,6 +307,9 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
   const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
   let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
   if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1);
+
+  // Use the ASP's unilateralExitDelay as the CSV sequence value.
+  const cancelSeconds = Number(aspInfo.unilateralExitDelay);
 
   const introspectorInfo = await getIntrospectorInfo();
   let introspectorPubkey = hexToBytes(introspectorInfo.signerPubkey);
@@ -347,8 +348,9 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
 
   const offerOutpoint = `${arkTxId}:0`;
 
+  const expirySeconds = params.expiresInSeconds ?? 3600;
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + cancelSeconds;
+  const expiresAt = now + expirySeconds;
 
   return {
     offerOutpoint,

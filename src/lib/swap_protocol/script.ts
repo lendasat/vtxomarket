@@ -48,7 +48,7 @@ export interface SwapScriptParams {
   makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
   makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   satAmount: number;
-  cancelSeconds: number;          // relative seconds (CSV) for cancel exit leaf
+  cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
 }
@@ -58,7 +58,7 @@ export interface BuySwapScriptParams {
   buyerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   assetTxidBytes: Uint8Array;    // 32-byte asset ID (txid bytes for OP_INSPECTOUTASSETLOOKUP)
   tokenAmount: number;           // required token amount
-  cancelSeconds: number;          // relative seconds (CSV) for cancel exit leaf
+  cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
 }
@@ -282,13 +282,10 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
   ]);
 
   // ── Leaf 1: Cancel exit (CSV — relative timelock + maker CHECKSIG) ──
-  // The ASP requires an exit leaf with CHECKSEQUENCEVERIFY (seconds-based, not blocks).
-  const bip68Module = await import("bip68");
-  const bip68Encode = bip68Module.encode ?? bip68Module.default?.encode ?? bip68Module.default;
-  const csvSequence = bip68Encode({ seconds: cancelSeconds });
+  // cancelSeconds is the raw BIP68 sequence value from the ASP's unilateralExitDelay.
   const { ScriptNum } = btc;
   const MinimalScriptNum = ScriptNum(undefined, true);
-  const sequenceBytes = MinimalScriptNum.encode(BigInt(csvSequence));
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(cancelSeconds));
   const cancelLeafBytes = btc.Script.encode([
     sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
     "CHECKSEQUENCEVERIFY",
@@ -298,7 +295,6 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
   ]);
 
   // ── Leaf 2: Cancel Forfeit (MultisigClosure — maker + ASP, no introspector) ──
-  // <maker> CHECKSIGVERIFY <ASP> CHECKSIG
   const cancelForfeitLeafBytes = btc.Script.encode([
     makerXOnlyPubkey,
     "CHECKSIGVERIFY",
@@ -306,14 +302,6 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
     "CHECKSIG",
   ]);
 
-  // ── Manual 3-leaf taproot tree ──
-  // Tree structure (balanced):
-  //        root
-  //       /    \
-  //   branch    leaf2 (cancelForfeit)
-  //   /    \
-  // leaf0   leaf1
-  //
   const scripts: [Uint8Array, Uint8Array, Uint8Array] = [swapLeafBytes, cancelLeafBytes, cancelForfeitLeafBytes];
   const version = TAP_LEAF_VERSION;
   const internalKey = TAPROOT_UNSPENDABLE_KEY;
@@ -404,12 +392,10 @@ export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<S
   ]);
 
   // Leaf 1: Cancel exit (CSV — relative timelock + buyer CHECKSIG)
-  const bip68Module = await import("bip68");
-  const bip68Encode = bip68Module.encode ?? bip68Module.default?.encode ?? bip68Module.default;
-  const csvSequence = bip68Encode({ seconds: cancelSeconds });
+  // cancelSeconds is the raw BIP68 sequence value from the ASP's unilateralExitDelay.
   const { ScriptNum } = btc;
   const MinimalScriptNum = ScriptNum(undefined, true);
-  const sequenceBytes = MinimalScriptNum.encode(BigInt(csvSequence));
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(cancelSeconds));
   const cancelLeafBytes = btc.Script.encode([
     sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
     "CHECKSEQUENCEVERIFY",
