@@ -76,7 +76,7 @@ that would cause TX_TOO_LARGE on issuance).
 
 ---
 
-### 3. Interim Asset Indexer (`interim_asset_indexer/`)
+### 3. Asset Indexer (`indexer/`)
 
 A lightweight Bun + SQLite + Hono service that bridges the gap until arkd ships
 native asset filtering on its VTXO query API.
@@ -468,7 +468,7 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
             │                           │
             ▼                           │
 ┌───────────────────────┐               │
-│   Interim Indexer     │               │
+│   Asset Indexer     │               │
 │   (Bun + SQLite +     │               │
 │    Hono, port 3001)   │               │
 │                       │               │
@@ -543,8 +543,8 @@ actual balance via `GET ${ASP}/v1/indexer/vtxos?outpoints=...` before filling.
 | `src/lib/swap_protocol/script.ts` | 3-leaf taproot tree construction, arkade script assembly, decoding |
 | `src/lib/swap_protocol/introspector-client.ts` | REST client for Introspector API (`/v1/info`, `/v1/tx`) |
 | `src/lib/swap_protocol/psbt-combiner.ts` | Raw BIP-174 PSBT utilities: `Psbt.combine()` for merging multi-party signatures |
-| `interim_asset_indexer/src/db.ts` | SQLite schema + queries (offers include `arkadeScriptHex`) |
-| `interim_asset_indexer/src/api.ts` | REST API for assets, VTXOs, offers |
+| `indexer/src/db.ts` | SQLite schema + queries (offers include `arkadeScriptHex`) |
+| `indexer/src/api.ts` | REST API for assets, VTXOs, offers |
 | `introspector/` | Cloned from `github.com/ArkLabsHQ/introspector` (standalone, not a submodule) |
 
 ---

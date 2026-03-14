@@ -33,11 +33,23 @@ yarn-error.log*
 # env files (plaintext — never commit)
 .env*
 !.env.example
-# encrypted envs (SOPS — safe to commit)
-!.envs/
 
-# introspector (standalone clone — not a submodule)
+# SOPS encrypted env files
+.envs/
+.sops.yaml
+
+# external repos (clone separately — see README)
 introspector/
+arkade-ts-sdk/
+
+# test/scratch pages
+src/app/test-ark/
+
+# indexer data
+indexer/data/
+
+# firebase
+firebase-debug.log
 
 # vercel
 .vercel

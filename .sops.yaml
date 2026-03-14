@@ -1,9 +1,0 @@
-creation_rules:
-  - path_regex: \.envs/.*
-    age: >-
-      age1rdk0r2u0ssr7jjm7jqmnh7uz75h642y3fzd664pnvjf0n07mhceqk3gkzt,
-      age1runtj8awz92lqmcyjc4n4r85zx8ptjjwflyy86q8uphc6dwckvss6hv8s6,
-      age14gsjuhpkpfx39dfpq009l7edymv5s3pnvkdetxuhq7vvrcdlrgaq69zveg,
-      age1arkaamu7t428y95kpr0uca99w05u2zwcqxx45ulw96tpqa9ru5xq5v9axr,
-      age1wulvzlr939zkudwch0zlwfkgjguf9qhdhrjlrhxj5mmfrhcex9aq9y92l7
-    # luckysori (defn, fmwk), bonomat (2), weltitob
