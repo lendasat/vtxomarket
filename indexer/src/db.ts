@@ -552,11 +552,3 @@ export function getRecentTrades(limit = 20): TradeRow[] {
     .all(limit) as TradeRow[];
 }
 
-export function expireStaleOffers(): void {
-  const db = getDb();
-  const now = Math.floor(Date.now() / 1000);
-  db.run(
-    "UPDATE offers SET status = 'expired', updatedAt = ? WHERE expiresAt < ? AND status = 'open'",
-    [now, now]
-  );
-}

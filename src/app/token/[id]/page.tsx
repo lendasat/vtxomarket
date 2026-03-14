@@ -76,14 +76,12 @@ export default function TokenPage() {
   // Trade tab state — sell offer form
   const [offerTokenAmount, setOfferTokenAmount] = useState("");
   const [offerSatAmount, setOfferSatAmount] = useState("");
-  const [offerExpiry, setOfferExpiry] = useState<3600 | 21600 | 86400>(3600);
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState("");
   const [offerSuccess, setOfferSuccess] = useState("");
   // Buy offer form
   const [buyOfferTokenAmount, setBuyOfferTokenAmount] = useState("");
   const [buyOfferSatAmount, setBuyOfferSatAmount] = useState("");
-  const [buyOfferExpiry, setBuyOfferExpiry] = useState<3600 | 21600 | 86400>(3600);
   const [buyOfferLoading, setBuyOfferLoading] = useState(false);
   const [buyOfferError, setBuyOfferError] = useState("");
   const [buyOfferSuccess, setBuyOfferSuccess] = useState("");
@@ -177,7 +175,6 @@ export default function TokenPage() {
         assetId: token.assetId,
         tokenAmount: tokenAmt,
         satAmount: satAmt,
-        expiresInSeconds: offerExpiry,
       });
 
       // Self-report to indexer
@@ -255,7 +252,6 @@ export default function TokenPage() {
         assetId: token.assetId,
         tokenAmount: tokenAmt,
         satAmount: satAmt,
-        expiresInSeconds: buyOfferExpiry,
       });
 
       // Self-report to indexer
@@ -765,11 +761,6 @@ export default function TokenPage() {
                   Price: {formatPrice(Number(buyOfferSatAmount), Number(buyOfferTokenAmount), token.decimals)}
                 </p>
               )}
-              <div className="flex gap-1">
-                {([["1h", 3600], ["6h", 21600], ["24h", 86400]] as const).map(([label, val]) => (
-                  <button key={val} onClick={() => setBuyOfferExpiry(val)} className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${buyOfferExpiry === val ? "bg-white/[0.1] border-white/[0.2] text-foreground" : "bg-white/[0.03] border-white/[0.06] text-muted-foreground/50 hover:text-muted-foreground"}`}>{label}</button>
-                ))}
-              </div>
               {buyOfferError && <p className="text-xs text-red-400">{buyOfferError}</p>}
               {buyOfferSuccess && <p className="text-xs text-emerald-400">{buyOfferSuccess}</p>}
               <button
@@ -810,11 +801,6 @@ export default function TokenPage() {
                       Price: {formatPrice(Number(offerSatAmount), Number(offerTokenAmount), token.decimals)}
                     </p>
                   )}
-                  <div className="flex gap-1">
-                    {([["1h", 3600], ["6h", 21600], ["24h", 86400]] as const).map(([label, val]) => (
-                      <button key={val} onClick={() => setOfferExpiry(val)} className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${offerExpiry === val ? "bg-white/[0.1] border-white/[0.2] text-foreground" : "bg-white/[0.03] border-white/[0.06] text-muted-foreground/50 hover:text-muted-foreground"}`}>{label}</button>
-                    ))}
-                  </div>
                   {offerError && <p className="text-xs text-red-400">{offerError}</p>}
                   {offerSuccess && <p className="text-xs text-emerald-400">{offerSuccess}</p>}
                   <button

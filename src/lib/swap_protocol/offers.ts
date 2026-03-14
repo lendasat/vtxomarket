@@ -23,7 +23,6 @@ export interface SwapOfferParams {
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  expiresInSeconds?: number;  // default 3600
 }
 
 export interface SwapOffer {
@@ -101,10 +100,8 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   const offerOutpoint = `${arkTxId}:0`;
   const vtxoSatsValue = Number(wallet.dustAmount ?? 330);
 
-  // User-facing expiry for indexer listing (not the on-chain CSV)
-  const expirySeconds = params.expiresInSeconds ?? 3600;
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + expirySeconds;
+  // Offers stay open until manually cancelled; use far-future expiry (year 2100)
+  const expiresAt = 4102444800;
 
   return {
     offerOutpoint,
@@ -261,7 +258,6 @@ export interface BuyOfferParams {
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  expiresInSeconds?: number;  // default 3600
 }
 
 export interface BuyOffer {
@@ -348,9 +344,8 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
 
   const offerOutpoint = `${arkTxId}:0`;
 
-  const expirySeconds = params.expiresInSeconds ?? 3600;
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + expirySeconds;
+  // Offers stay open until manually cancelled; use far-future expiry (year 2100)
+  const expiresAt = 4102444800;
 
   return {
     offerOutpoint,

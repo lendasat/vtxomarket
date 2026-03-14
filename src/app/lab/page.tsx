@@ -148,14 +148,12 @@ export default function LabPage() {
   const [coAssetId, setCoAssetId]         = useState("");
   const [coTokenAmount, setCoTokenAmount] = useState("");
   const [coSatAmount, setCoSatAmount]     = useState("");
-  const [coExpiry, setCoExpiry]           = useState("3600");
   const [lastOffer, setLastOffer]         = useState<SwapOffer | null>(null);
 
   // Create buy offer
   const [cbAssetId, setCbAssetId]         = useState("");
   const [cbTokenAmount, setCbTokenAmount] = useState("");
   const [cbSatAmount, setCbSatAmount]     = useState("");
-  const [cbExpiry, setCbExpiry]           = useState("3600");
   const [lastBuyOffer, setLastBuyOffer]   = useState<BuyOffer | null>(null);
   const [cbSearch, setCbSearch]           = useState("");
   const [cbDropdownOpen, setCbDropdownOpen] = useState(false);
@@ -210,7 +208,6 @@ export default function LabPage() {
     if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
     const tokenAmount = parseInt(coTokenAmount, 10);
     const satAmount   = parseInt(coSatAmount, 10);
-    const expiresInSeconds = parseInt(coExpiry, 10);
     if (!coAssetId || isNaN(tokenAmount) || isNaN(satAmount)) {
       addLog("error", "Fill in assetId, tokenAmount, and satAmount");
       return;
@@ -222,7 +219,6 @@ export default function LabPage() {
         assetId: coAssetId,
         tokenAmount,
         satAmount,
-        expiresInSeconds,
       });
       setLastOffer(offer);
       addLog("success", `Sell offer created: ${offer.offerOutpoint}`);
@@ -252,7 +248,6 @@ export default function LabPage() {
     if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
     const tokenAmount = parseInt(cbTokenAmount, 10);
     const satAmount   = parseInt(cbSatAmount, 10);
-    const expiresInSeconds = parseInt(cbExpiry, 10);
     if (!cbAssetId || isNaN(tokenAmount) || isNaN(satAmount)) {
       addLog("error", "Fill in assetId, tokenAmount, and satAmount");
       return;
@@ -264,7 +259,6 @@ export default function LabPage() {
         assetId: cbAssetId,
         tokenAmount,
         satAmount,
-        expiresInSeconds,
       });
       setLastBuyOffer(offer);
       addLog("success", `Buy offer created: ${offer.offerOutpoint}`);
@@ -660,16 +654,6 @@ export default function LabPage() {
                         placeholder="10000"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Expires in (seconds)</label>
-                      <input
-                        type="number"
-                        value={coExpiry}
-                        onChange={(e) => setCoExpiry(e.target.value)}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
-                        placeholder="3600"
-                      />
-                    </div>
                   </div>
                   <button
                     onClick={handleCreateSellOffer}
@@ -768,16 +752,6 @@ export default function LabPage() {
                         onChange={(e) => setCbSatAmount(e.target.value)}
                         className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
                         placeholder="10000"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Expires in (seconds)</label>
-                      <input
-                        type="number"
-                        value={cbExpiry}
-                        onChange={(e) => setCbExpiry(e.target.value)}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
-                        placeholder="3600"
                       />
                     </div>
                   </div>
