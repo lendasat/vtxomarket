@@ -848,14 +848,30 @@ export default function TokenPage() {
             <div className="space-y-3">
               {userHolding > 0 ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Balance display */}
+                  <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground/50">Available balance</span>
+                    <span className="text-xs font-semibold tabular-nums">
+                      {formatTokenAmount(userHolding, token.decimals)} <span className="text-muted-foreground/40 font-normal">${token.ticker}</span>
+                    </span>
+                  </div>
+                  <div className="space-y-2">
                     <div>
-                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">Token amount</label>
-                      <input type="number" min={1} max={userHolding} value={offerTokenAmount} onChange={(e) => setOfferTokenAmount(e.target.value)} placeholder={`Max ${formatTokenAmount(userHolding, token.decimals)}`} className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-muted-foreground/40">Token amount</label>
+                        <button
+                          type="button"
+                          onClick={() => setOfferTokenAmount(formatTokenAmount(userHolding, token.decimals).replace(/,/g, ""))}
+                          className="text-[10px] font-medium text-red-400/70 hover:text-red-400 transition-colors"
+                        >
+                          Max
+                        </button>
+                      </div>
+                      <input type="number" min={1} max={userHolding} value={offerTokenAmount} onChange={(e) => setOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                     </div>
                     <div>
                       <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to receive</label>
-                      <input type="number" min={1} value={offerSatAmount} onChange={(e) => setOfferSatAmount(e.target.value)} placeholder="Sats" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                      <input type="number" min={1} value={offerSatAmount} onChange={(e) => setOfferSatAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                     </div>
                   </div>
                   {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
