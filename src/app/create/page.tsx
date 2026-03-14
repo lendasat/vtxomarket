@@ -166,38 +166,28 @@ export default function CreatePage() {
 
       // Step 2: Submit metadata to indexer
       setStep("Publishing metadata...");
-      // The indexer auto-indexes the asset from the Ark server SSE stream.
-      // Retry metadata PUT until the indexer has seen the asset (up to 15s).
-      const metaBody = JSON.stringify({
-        description,
-        image: finalImage || undefined,
-        creator: user?.pubkey ?? "",
-        creatorArkAddress,
-        supply: supplyNum,
-        createdAt: Math.floor(Date.now() / 1000),
-        ...(decimalsNum > 0 && { decimals: decimalsNum }),
-        ...(website && { website }),
-        ...(twitter && { twitter }),
-        ...(telegram && { telegram }),
-        ...(controlAssetId && { controlAssetId }),
+      // Brief wait for the indexer to pick up the asset from the SSE stream.
+      await new Promise((r) => setTimeout(r, 3000));
+      const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          image: finalImage || undefined,
+          creator: user?.pubkey ?? "",
+          creatorArkAddress,
+          supply: supplyNum,
+          createdAt: Math.floor(Date.now() / 1000),
+          ...(decimalsNum > 0 && { decimals: decimalsNum }),
+          ...(website && { website }),
+          ...(twitter && { twitter }),
+          ...(telegram && { telegram }),
+          ...(controlAssetId && { controlAssetId }),
+        }),
       });
-      let metaOk = false;
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await new Promise((r) => setTimeout(r, attempt === 0 ? 2000 : 2500));
-        const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: metaBody,
-        });
-        if (metaResp.ok) { metaOk = true; break; }
-        if (metaResp.status !== 404) {
-          console.warn("Metadata submit failed:", await metaResp.text());
-          break;
-        }
-        // 404 = indexer hasn't seen the asset yet, retry
-      }
-      if (!metaOk) {
-        console.warn("Metadata submit failed after retries — token is issued on Ark but metadata may be missing");
+      if (!metaResp.ok) {
+        const errText = await metaResp.text().catch(() => "Unknown error");
+        throw new Error(`Failed to publish metadata: ${errText}`);
       }
 
       // Step 3: Add to local state
