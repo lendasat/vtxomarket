@@ -53,19 +53,21 @@ export { registerArkadeOpcodes, encodeLE64 } from "./opcodes";
 export {
   OP_INSPECTOUTPUTVALUE,
   OP_INSPECTOUTPUTSCRIPTPUBKEY,
+  OP_INSPECTOUTASSETLOOKUP,
   OP_GREATERTHANOREQUAL64,
+  OP_SCRIPTNUMTOLE64,
 } from "./opcodes";
 
 // Script construction
-export { buildSwapScript, decodeSwapScript, buildArkadeScript, computeIntrospectorTweakedPubkey } from "./script";
-export type { SwapScriptParams, SwapScriptResult, TapLeafScript } from "./script";
+export { buildSwapScript, buildBuySwapScript, decodeSwapScript, buildArkadeScript, buildBuyArkadeScript, computeIntrospectorTweakedPubkey } from "./script";
+export type { SwapScriptParams, BuySwapScriptParams, SwapScriptResult, TapLeafScript } from "./script";
 
 // Offer lifecycle
-export { createSwapOffer, cancelSwapOffer } from "./offers";
-export type { SwapOfferParams, SwapOffer } from "./offers";
+export { createSwapOffer, cancelSwapOffer, createBuyOffer, cancelBuyOffer } from "./offers";
+export type { SwapOfferParams, SwapOffer, BuyOfferParams, BuyOffer } from "./offers";
 
 // Light fill (replaces heavy settle-based fillSwapOffer)
-export { lightFillSwapOffer } from "./light-fill";
+export { lightFillSwapOffer, lightFillBuyOffer } from "./light-fill";
 
 // Introspector client
 export {

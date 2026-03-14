@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import type { TradeReceiptData } from "@/lib/nostr-market";
+import type { Trade } from "@/hooks/useTrades";
 
 type Timeframe = "1m" | "5m" | "15m" | "1H" | "4H" | "1D";
 
@@ -34,7 +34,7 @@ function getIntervalSec(tf: Timeframe): number {
 
 /** Aggregate trade receipts into candles */
 function aggregateTrades(
-  trades: TradeReceiptData[],
+  trades: Trade[],
   intervalSec: number,
   basePrice: number
 ): { candles: CandleData[]; volumes: VolumeData[] } {
@@ -52,7 +52,7 @@ function aggregateTrades(
   }
 
   const sorted = [...trades].sort((a, b) => a.timestamp - b.timestamp);
-  const buckets = new Map<number, TradeReceiptData[]>();
+  const buckets = new Map<number, Trade[]>();
 
   for (const trade of sorted) {
     const bucket = Math.floor(trade.timestamp / intervalSec) * intervalSec;
@@ -72,7 +72,7 @@ function aggregateTrades(
     const close = prices[prices.length - 1];
     const high = Math.max(open, close, ...prices);
     const low = Math.min(open, close, ...prices);
-    const vol = bucketTrades.reduce((s, t) => s + t.sats, 0);
+    const vol = bucketTrades.reduce((s, t) => s + t.satAmount, 0);
 
     candles.push({
       time,
@@ -95,7 +95,7 @@ function aggregateTrades(
 }
 
 interface TokenChartProps {
-  trades?: TradeReceiptData[];
+  trades?: Trade[];
   basePrice: number;
 }
 

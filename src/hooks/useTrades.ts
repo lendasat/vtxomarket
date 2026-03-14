@@ -1,46 +1,76 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useAppStore } from "@/lib/store";
-import { subscribeToTradesForToken } from "@/lib/nostr-market";
-import type { TradeReceiptData } from "@/lib/nostr-market";
-import type { NDKSubscription } from "@nostr-dev-kit/ndk";
+import { useEffect, useRef, useState, useCallback } from "react";
 
-export function useTrades(ticker: string | null) {
-  const nostrReady = useAppStore((s) => s.nostrReady);
-  const [trades, setTrades] = useState<TradeReceiptData[]>([]);
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
+const POLL_INTERVAL = 30_000;
+
+export interface Trade {
+  offerOutpoint: string;
+  offerType: string;          // "sell" | "buy"
+  tokenAmount: number;
+  satAmount: number;
+  price: number;              // satAmount / tokenAmount
+  makerArkAddress: string;
+  filledInTxid: string;
+  timestamp: number;          // unix seconds
+}
+
+export function useTrades(assetId: string | null): {
+  trades: Trade[];
+  loading: boolean;
+} {
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const subRef = useRef<NDKSubscription | null>(null);
-  const seenRef = useRef<Set<string>>(new Set());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchTrades = useCallback(async () => {
+    if (!assetId) {
+      setTrades([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch(`${INDEXER_URL}/assets/${encodeURIComponent(assetId)}/trades`);
+      if (!res.ok) return;
+      const data = await res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mapped: Trade[] = (data.trades ?? []).map((t: any) => ({
+        offerOutpoint: t.offerOutpoint,
+        offerType: t.offerType ?? "sell",
+        tokenAmount: Number(t.tokenAmount),
+        satAmount: Number(t.satAmount),
+        price: Number(t.price),
+        makerArkAddress: t.makerArkAddress ?? "",
+        filledInTxid: t.filledInTxid ?? "",
+        timestamp: t.timestamp,
+      }));
+      setTrades(mapped);
+    } catch (err) {
+      console.warn("[trades] Fetch failed:", err instanceof Error ? err.message : err);
+    } finally {
+      setLoading(false);
+    }
+  }, [assetId]);
 
   useEffect(() => {
-    if (!nostrReady || !ticker) return;
+    if (!assetId) {
+      setTrades([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
-    seenRef.current.clear();
+    fetchTrades();
 
-    const sub = subscribeToTradesForToken(ticker, {
-      onTrade: (trade) => {
-        if (seenRef.current.has(trade.arkTxId)) return;
-        seenRef.current.add(trade.arkTxId);
-        setTrades((prev) =>
-          [...prev, trade].sort((a, b) => b.timestamp - a.timestamp)
-        );
-      },
-      onEose: () => {
-        setLoading(false);
-      },
-    });
-
-    subRef.current = sub;
-
+    intervalRef.current = setInterval(fetchTrades, POLL_INTERVAL);
     return () => {
-      if (subRef.current) {
-        subRef.current.stop();
-        subRef.current = null;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [nostrReady, ticker]);
+  }, [assetId, fetchTrades]);
 
   return { trades, loading };
 }

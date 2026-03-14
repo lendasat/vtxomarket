@@ -29,7 +29,9 @@ import { hex as scureHex } from "@scure/base";
 import {
   OP_INSPECTOUTPUTVALUE,
   OP_INSPECTOUTPUTSCRIPTPUBKEY,
+  OP_INSPECTOUTASSETLOOKUP,
   OP_GREATERTHANOREQUAL64,
+  OP_SCRIPTNUMTOLE64,
   OP_VERIFY,
   OP_EQUAL,
   OP_EQUALVERIFY,
@@ -46,6 +48,16 @@ export interface SwapScriptParams {
   makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
   makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   satAmount: number;
+  cancelSeconds: number;          // relative seconds (CSV) for cancel exit leaf
+  introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
+  aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
+}
+
+export interface BuySwapScriptParams {
+  buyerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey — buyer (maker) receives tokens here
+  buyerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
+  assetTxidBytes: Uint8Array;    // 32-byte asset ID (txid bytes for OP_INSPECTOUTASSETLOOKUP)
+  tokenAmount: number;           // required token amount
   cancelSeconds: number;          // relative seconds (CSV) for cancel exit leaf
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
@@ -174,6 +186,56 @@ export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number):
   ]);
 }
 
+// ── Buy offer arkade script ──────────────────────────────────────────────────
+
+/**
+ * Build the arkade script for a buy offer — introspection conditions validated by the introspector.
+ * Embedded as a PSBT custom field (key 0xDE + "arkadescript"), NOT as a tapscript leaf.
+ *
+ * Conditions:
+ *   output[0].scriptPubKey == buyerPkScript (P2TR)
+ *   output[0] has >= tokenAmount of the specified asset
+ *
+ * The buyer locks SATS into the swap VTXO. The arkade script verifies the taker
+ * delivers TOKENS to the buyer's address at output[0].
+ */
+export function buildBuyArkadeScript(
+  buyerPkScript: Uint8Array,
+  assetTxidBytes: Uint8Array,
+  tokenAmount: number
+): Uint8Array {
+  const tokenAmountLE64 = encodeLE64(tokenAmount);
+
+  // Extract 32-byte witness program from P2TR pkScript
+  if (buyerPkScript.length !== 34 || buyerPkScript[0] !== 0x51) {
+    throw new Error(`Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${buyerPkScript.length} bytes`);
+  }
+  const buyerWitnessProgram = buyerPkScript.slice(2); // skip OP_1 (0x51) + push length (0x20)
+
+  if (assetTxidBytes.length !== 32) {
+    throw new Error(`Expected 32-byte asset txid, got ${assetTxidBytes.length} bytes`);
+  }
+
+  return new Uint8Array([
+    // 1. Verify output[0].scriptPubKey == buyer's Ark address (P2TR)
+    0x00,                            // OP_0 — output index 0
+    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // pushes [program(32 bytes), version(int)]
+    OP_1,                            // push 1 (P2TR script type / segwit v1)
+    OP_EQUALVERIFY,                  // check version == 1
+    0x20, ...buyerWitnessProgram,    // push 32-byte expected witness program
+    OP_EQUALVERIFY,                  // check program matches
+
+    // 2. Verify output[0] has >= tokenAmount of the specified asset
+    0x00,                            // OP_0 — output index 0
+    0x20, ...assetTxidBytes,         // push 32-byte asset ID txid
+    0x00,                            // OP_0 — group index 0
+    OP_INSPECTOUTASSETLOOKUP,        // pushes token amount (scriptNum) or -1 if not found
+    OP_SCRIPTNUMTOLE64,              // convert to 8-byte LE64
+    0x08, ...tokenAmountLE64,        // push required amount (8 bytes LE64)
+    OP_GREATERTHANOREQUAL64,         // amount >= required — leaves bool on stack
+  ]);
+}
+
 // ── 3-leaf taproot swap script ────────────────────────────────────────────────
 
 // SDK loader — cached to avoid duplicate imports
@@ -298,6 +360,112 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
     introspectorTweakedPubkey,
     encode(): Uint8Array {
       // Encode as 3-leaf TapTree: leaf0 and leaf1 at depth 2, leaf2 at depth 1
+      return TapTreeCoder.encode([
+        { depth: 2, version, script: scripts[0] },
+        { depth: 2, version, script: scripts[1] },
+        { depth: 1, version, script: scripts[2] },
+      ]);
+    },
+    address(prefix: string, serverPubKey: Uint8Array): ArkAddress {
+      return new ArkAddr(serverPubKey, tweakedPubkey, prefix);
+    },
+  };
+}
+
+/**
+ * Build a 3-leaf taproot script for a buy offer with introspector co-signing.
+ * Same tree structure as sell offers, but with buy arkade script (asset introspection).
+ *
+ * Leaf 0 (swap):    MultisigClosure(introspectorTweaked, ASP) — introspector validates & co-signs
+ * Leaf 1 (cancel):  CSV + buyer CHECKSIG — buyer reclaims sats after timeout
+ * Leaf 2 (forfeit): MultisigClosure(buyer, ASP) — standard forfeit for cancel path
+ */
+export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<SwapScriptResult> {
+  const sdk = await getSDK();
+  const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
+  const btc = await import("@scure/btc-signer");
+  const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
+  const { buyerPkScript, buyerXOnlyPubkey, assetTxidBytes, tokenAmount, cancelSeconds, introspectorPubkey, aspPubkey } = params;
+
+  // Build standalone buy arkade script
+  const arkadeScript = buildBuyArkadeScript(buyerPkScript, assetTxidBytes, tokenAmount);
+
+  // Compute introspector's tweaked pubkey for this specific arkade script
+  const { tweakedPubkey: introspectorTweakedPubkey, scriptHash: arkadeScriptHash } =
+    await computeIntrospectorTweakedPubkey(introspectorPubkey, arkadeScript);
+
+  // Leaf 0: Swap (MultisigClosure — introspector validates, then both sign)
+  const swapLeafBytes = btc.Script.encode([
+    introspectorTweakedPubkey,
+    "CHECKSIGVERIFY",
+    aspPubkey,
+    "CHECKSIG",
+  ]);
+
+  // Leaf 1: Cancel exit (CSV — relative timelock + buyer CHECKSIG)
+  const bip68Module = await import("bip68");
+  const bip68Encode = bip68Module.encode ?? bip68Module.default?.encode ?? bip68Module.default;
+  const csvSequence = bip68Encode({ seconds: cancelSeconds });
+  const { ScriptNum } = btc;
+  const MinimalScriptNum = ScriptNum(undefined, true);
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(csvSequence));
+  const cancelLeafBytes = btc.Script.encode([
+    sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
+    "CHECKSEQUENCEVERIFY",
+    "DROP",
+    buyerXOnlyPubkey,
+    "CHECKSIG",
+  ]);
+
+  // Leaf 2: Cancel Forfeit (MultisigClosure — buyer + ASP)
+  const cancelForfeitLeafBytes = btc.Script.encode([
+    buyerXOnlyPubkey,
+    "CHECKSIGVERIFY",
+    aspPubkey,
+    "CHECKSIG",
+  ]);
+
+  // Manual 3-leaf taproot tree (same structure as sell offers)
+  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [swapLeafBytes, cancelLeafBytes, cancelForfeitLeafBytes];
+  const version = TAP_LEAF_VERSION;
+  const internalKey = TAPROOT_UNSPENDABLE_KEY;
+
+  const leafHash0 = tapLeafHash(scripts[0], version);
+  const leafHash1 = tapLeafHash(scripts[1], version);
+  const leafHash2 = tapLeafHash(scripts[2], version);
+
+  let [l0, l1] = [leafHash0, leafHash1];
+  if (compareBytes(l1, l0) === -1) [l0, l1] = [l1, l0];
+  const innerBranch = tagSchnorr("TapBranch", l0, l1);
+
+  let [lB, lR] = [innerBranch, leafHash2];
+  if (compareBytes(lR, lB) === -1) [lB, lR] = [lR, lB];
+  const rootHash = tagSchnorr("TapBranch", lB, lR);
+
+  const [tweakedPubkey, parity] = taprootTweakPubkey(internalKey, rootHash);
+
+  const leaf0: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash1, leafHash2] },
+    concatBytes(scripts[0], new Uint8Array([version])),
+  ];
+  const leaf1: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [leafHash0, leafHash2] },
+    concatBytes(scripts[1], new Uint8Array([version])),
+  ];
+  const leaf2: TapLeafScript = [
+    { version: version + parity, internalKey, merklePath: [innerBranch] },
+    concatBytes(scripts[2], new Uint8Array([version])),
+  ];
+
+  return {
+    leaves: [leaf0, leaf1, leaf2],
+    tweakedPublicKey: tweakedPubkey,
+    scripts,
+    arkadeScript,
+    arkadeScriptHash,
+    introspectorTweakedPubkey,
+    encode(): Uint8Array {
       return TapTreeCoder.encode([
         { depth: 2, version, script: scripts[0] },
         { depth: 2, version, script: scripts[1] },
