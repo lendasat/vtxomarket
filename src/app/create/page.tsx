@@ -164,34 +164,38 @@ export default function CreatePage() {
       const addrs = await getReceivingAddresses(arkWallet);
       const creatorArkAddress = addrs.offchainAddr;
 
-      // Step 2: Submit enrichment metadata to indexer (description, creator, socials).
-      // Basic info (name, ticker, decimals, icon) is already on-chain in the TLV metadata
-      // and will be indexed automatically from the SSE stream — this PUT is non-critical.
-      setStep("Publishing metadata...");
-      await new Promise((r) => setTimeout(r, 3000));
-      try {
-        const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            description,
-            image: finalImage || undefined,
-            creator: user?.pubkey ?? "",
-            creatorArkAddress,
-            supply: supplyNum,
-            createdAt: Math.floor(Date.now() / 1000),
-            ...(decimalsNum > 0 && { decimals: decimalsNum }),
-            ...(website && { website }),
-            ...(twitter && { twitter }),
-            ...(telegram && { telegram }),
-            ...(controlAssetId && { controlAssetId }),
-          }),
-        });
-        if (!metaResp.ok) {
-          console.warn("Metadata enrichment failed:", await metaResp.text().catch(() => ""));
-        }
-      } catch (err) {
-        console.warn("Metadata enrichment request failed:", err);
+      // Step 2: Submit metadata to indexer.
+      // Wait for the indexer to pick up the asset from the SSE stream, then PUT metadata.
+      setStep("Token issued! Waiting for indexer...");
+      const metaBody = JSON.stringify({
+        description,
+        image: finalImage || undefined,
+        creator: user?.pubkey ?? "",
+        creatorArkAddress,
+        supply: supplyNum,
+        createdAt: Math.floor(Date.now() / 1000),
+        ...(decimalsNum > 0 && { decimals: decimalsNum }),
+        ...(website && { website }),
+        ...(twitter && { twitter }),
+        ...(telegram && { telegram }),
+        ...(controlAssetId && { controlAssetId }),
+      });
+      let metaOk = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 3000 : 2000));
+        try {
+          const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: metaBody,
+          });
+          if (metaResp.ok) { metaOk = true; break; }
+          if (metaResp.status !== 404) break; // non-retryable error
+        } catch { /* network error, retry */ }
+        setStep("Token issued! Waiting for indexer...");
+      }
+      if (!metaOk) {
+        console.warn("Metadata submit failed — token is on-chain, metadata may update later");
       }
 
       // Step 3: Add to local state
