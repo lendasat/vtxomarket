@@ -28,11 +28,13 @@ import {
 } from "../lib/constants";
 import {
   INITIAL_SWAP_STATE,
+  TERMINAL_STATUSES,
+  SUCCESS_STATUSES,
+  mapBackendStatus,
   type SwapState,
   type QuoteInfo,
   type ActiveSwap,
   type SwapStep,
-  type StablecoinTxItem,
 } from "../lib/types";
 
 // ── Polling configuration ───────────────────────────────────────────────────
@@ -40,32 +42,6 @@ import {
 const POLL_INTERVAL_MS = 3_000;
 const MAX_POLL_DURATION_MS = 30 * 60 * 1_000; // 30 min timeout
 const MAX_CLAIM_RETRIES = 10;
-
-// ── Terminal statuses (stop polling when reached) ───────────────────────────
-
-const TERMINAL_STATUSES = new Set([
-  "serverredeemed",
-  "clientredeemed",
-  "expired",
-  "clientrefunded",
-  "clientfundedserverrefunded",
-  "clientrefundedserverfunded",
-  "clientrefundedserverrefunded",
-  "clientinvalidfunded",
-  "clientfundedtoolate",
-  "clientredeemedandclientrefunded",
-]);
-
-const SUCCESS_STATUSES = new Set(["serverredeemed", "clientredeemed", "clientredeeming"]);
-
-/** Map raw backend status to coarse UI status */
-function mapBackendStatus(raw: string): "pending" | "processing" | "claiming" | "complete" | "failed" {
-  if (SUCCESS_STATUSES.has(raw)) return "complete";
-  if (raw === "serverfunded") return "claiming";
-  if (TERMINAL_STATUSES.has(raw) && !SUCCESS_STATUSES.has(raw)) return "failed";
-  if (raw === "pending") return "pending";
-  return "processing";
-}
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 
@@ -94,59 +70,12 @@ export function useLendaswap() {
     };
   }, []);
 
-  // Lazily init the client and load stored swap history into the store
+  // Lazily init the client (history loading is handled by useLendaswapHistory)
   useEffect(() => {
     let cancelled = false;
     getLendaswapClient()
-      .then(async (client) => {
-        if (cancelled) return;
-        setReady(true);
-
-        // Load stored swaps into the Zustand store for transaction history
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const stored: any[] = await client.listAllSwaps();
-          for (const s of stored) {
-            const resp = s.response;
-            if (!resp) continue;
-            const dir = resp.direction;
-            const isSend = dir === "arkade_to_evm";
-            const isReceive = dir === "evm_to_arkade";
-            if (!isSend && !isReceive) continue;
-
-            const chainId = resp.evm_chain_id;
-            const chain: EvmChainKey =
-              chainId === 42161 ? "arbitrum" :
-              chainId === 1 ? "ethereum" : "polygon";
-
-            const targetToken = resp.target_token;
-            const sourceToken = resp.source_token;
-            const tokenSymbol = isSend
-              ? (targetToken?.symbol || "USDC")
-              : (sourceToken?.symbol || "USDC");
-            const coin: StablecoinKey = tokenSymbol === "USDT" ? "USDT" : "USDC";
-
-            const stablecoinAmt = isSend ? resp.target_amount : resp.source_amount;
-            const satsAmt = isSend ? resp.source_amount : resp.target_amount;
-            const status = (resp.status as string) || "pending";
-
-            upsertStablecoinTx({
-              swapId: s.swapId,
-              direction: isSend ? "send" : "receive",
-              coin,
-              chain,
-              stablecoinDisplay: `${fromSmallestUnit(stablecoinAmt || "0", coin)} ${coin}`,
-              satsAmount: parseInt(satsAmt || "0", 10),
-              destinationAddress: s.targetAddress || resp.target_evm_address || resp.target_arkade_address || "",
-              status: mapBackendStatus(status),
-              backendStatus: status,
-              claimTxHash: resp.evm_claim_txid || resp.btc_claim_txid,
-              createdAt: (resp.created_at ? new Date(resp.created_at as string).getTime() : 0) || s.storedAt || Date.now(),
-            });
-          }
-        } catch (err) {
-          console.warn("[lendaswap] Failed to load stored swaps:", err);
-        }
+      .then(() => {
+        if (!cancelled) setReady(true);
       })
       .catch((err) => {
         console.error("[lendaswap] Client init failed:", err);
@@ -154,7 +83,7 @@ export function useLendaswap() {
     return () => {
       cancelled = true;
     };
-  }, [upsertStablecoinTx]);
+  }, []);
 
   // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -208,9 +137,7 @@ export function useLendaswap() {
           sourceToken: isSend ? "btc" : tokenAddress,
           targetChain: isSend ? String(chainId) : "Arkade",
           targetToken: isSend ? tokenAddress : "btc",
-          ...(isSend
-            ? { sourceAmount: params.amount }
-            : { sourceAmount: params.amount }),
+          sourceAmount: params.amount,
         });
 
         const info: QuoteInfo = {

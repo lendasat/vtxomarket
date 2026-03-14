@@ -26,6 +26,7 @@ export {
   getTokenAddress,
   getChainId,
   getChainName,
+  chainIdToKey,
   type EvmChainKey,
   type StablecoinKey,
 } from "./lib/constants";
@@ -38,6 +39,11 @@ export type {
   QuoteInfo,
   ActiveSwap,
   StablecoinTxItem,
+} from "./lib/types";
+export {
+  TERMINAL_STATUSES,
+  SUCCESS_STATUSES,
+  mapBackendStatus,
 } from "./lib/types";
 
 // ── Hook ────────────────────────────────────────────────────────────────────

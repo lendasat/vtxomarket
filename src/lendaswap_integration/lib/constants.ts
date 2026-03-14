@@ -117,3 +117,15 @@ export function fromSmallestUnit(amount: string | bigint, coin: StablecoinKey): 
   const frac = str.slice(str.length - decimals).replace(/0+$/, "");
   return frac ? `${whole}.${frac}` : whole;
 }
+
+/**
+ * Map a numeric EVM chain ID to the corresponding EvmChainKey.
+ * Falls back to "polygon" for unknown chain IDs.
+ */
+export function chainIdToKey(chainId: number): EvmChainKey {
+  switch (chainId) {
+    case 42161: return "arbitrum";
+    case 1: return "ethereum";
+    default: return "polygon";
+  }
+}

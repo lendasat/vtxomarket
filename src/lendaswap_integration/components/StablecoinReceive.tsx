@@ -153,7 +153,7 @@ export function StablecoinReceive() {
     };
   }, [amount, coin, chain, ready, isValidAmount, getReceiveEstimate]);
 
-  const isLoading = step === "quoting" || step === "awaiting_deposit" && !swap?.evmDepositAddress;
+  const isLoading = step === "quoting" || (step === "awaiting_deposit" && !swap?.evmDepositAddress);
   const hasAddress = swap?.evmDepositAddress;
   const isActive = hasAddress || step === "processing" || step === "claiming";
 

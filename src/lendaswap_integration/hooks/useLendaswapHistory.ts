@@ -11,31 +11,8 @@
 import { useEffect } from "react";
 import { useAppStore } from "@/lib/store";
 import { getLendaswapClient } from "../lib/client";
-import { fromSmallestUnit, type EvmChainKey, type StablecoinKey } from "../lib/constants";
-import type { StablecoinTxItem } from "../lib/types";
-
-const TERMINAL_STATUSES = new Set([
-  "serverredeemed",
-  "clientredeemed",
-  "expired",
-  "clientrefunded",
-  "clientfundedserverrefunded",
-  "clientrefundedserverfunded",
-  "clientrefundedserverrefunded",
-  "clientinvalidfunded",
-  "clientfundedtoolate",
-  "clientredeemedandclientrefunded",
-]);
-
-const SUCCESS_STATUSES = new Set(["serverredeemed", "clientredeemed", "clientredeeming"]);
-
-function mapBackendStatus(raw: string): StablecoinTxItem["status"] {
-  if (SUCCESS_STATUSES.has(raw)) return "complete";
-  if (raw === "serverfunded") return "claiming";
-  if (TERMINAL_STATUSES.has(raw) && !SUCCESS_STATUSES.has(raw)) return "failed";
-  if (raw === "pending") return "pending";
-  return "processing";
-}
+import { fromSmallestUnit, chainIdToKey, type StablecoinKey } from "../lib/constants";
+import { mapBackendStatus } from "../lib/types";
 
 export function useLendaswapHistory() {
   const upsertStablecoinTx = useAppStore((s) => s.upsertStablecoinTx);
@@ -60,10 +37,7 @@ export function useLendaswapHistory() {
             const isReceive = dir === "evm_to_arkade";
             if (!isSend && !isReceive) continue;
 
-            const chainId = resp.evm_chain_id;
-            const chain: EvmChainKey =
-              chainId === 42161 ? "arbitrum" :
-              chainId === 1 ? "ethereum" : "polygon";
+            const chain = chainIdToKey(resp.evm_chain_id);
 
             const targetToken = resp.target_token;
             const sourceToken = resp.source_token;

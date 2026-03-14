@@ -107,7 +107,6 @@ export function SwapStatusTracker({ step, swap }: SwapStatusTrackerProps) {
         {steps.map((s, idx) => {
           const isDone = idx < currentIdx;
           const isCurrent = idx === currentIdx;
-          const isPending = idx > currentIdx;
 
           return (
             <div key={idx} className="flex gap-3 items-start">

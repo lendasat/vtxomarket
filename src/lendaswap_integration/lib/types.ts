@@ -120,3 +120,31 @@ export interface StablecoinTxItem {
   claimTxHash?: string;
   createdAt: number;
 }
+
+// ── Backend status mapping (shared by hooks) ─────────────────────────────────
+
+/** Statuses where polling should stop (swap is finalized). */
+export const TERMINAL_STATUSES = new Set([
+  "serverredeemed",
+  "clientredeemed",
+  "expired",
+  "clientrefunded",
+  "clientfundedserverrefunded",
+  "clientrefundedserverfunded",
+  "clientrefundedserverrefunded",
+  "clientinvalidfunded",
+  "clientfundedtoolate",
+  "clientredeemedandclientrefunded",
+]);
+
+/** Statuses that represent a successful swap outcome. */
+export const SUCCESS_STATUSES = new Set(["serverredeemed", "clientredeemed", "clientredeeming"]);
+
+/** Map raw backend status to a coarse UI status for display. */
+export function mapBackendStatus(raw: string): StablecoinTxItem["status"] {
+  if (SUCCESS_STATUSES.has(raw)) return "complete";
+  if (raw === "serverfunded") return "claiming";
+  if (TERMINAL_STATUSES.has(raw) && !SUCCESS_STATUSES.has(raw)) return "failed";
+  if (raw === "pending") return "pending";
+  return "processing";
+}
