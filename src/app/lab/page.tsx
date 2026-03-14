@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { hex as scureHex } from "@scure/base";
 import { useAppStore } from "@/lib/store";
+
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 import { useTokens } from "@/hooks/useTokens";
 import {
   encodeLE64,
@@ -224,7 +226,11 @@ export default function LabPage() {
       });
       setLastOffer(offer);
       addLog("success", `Sell offer created: ${offer.offerOutpoint}`);
-      addLog("info", `swapScriptHex: ${offer.swapScriptHex.slice(0, 40)}...`);
+      // Post to indexer so the offer shows up on token pages
+      try {
+        await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+        addLog("info", "Posted to indexer");
+      } catch { addLog("info", "Indexer post failed (offer still valid on-chain)"); }
       addLog("info", `expiresAt: ${new Date(offer.expiresAt * 1000).toISOString()}`);
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);
@@ -262,8 +268,11 @@ export default function LabPage() {
       });
       setLastBuyOffer(offer);
       addLog("success", `Buy offer created: ${offer.offerOutpoint}`);
-      addLog("info", `swapScriptHex: ${offer.swapScriptHex.slice(0, 40)}...`);
-      addLog("info", `arkadeScriptHex: ${offer.arkadeScriptHex.slice(0, 40)}...`);
+      // Post to indexer so the offer shows up on token pages
+      try {
+        await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+        addLog("info", "Posted to indexer");
+      } catch { addLog("info", "Indexer post failed (offer still valid on-chain)"); }
       addLog("info", `expiresAt: ${new Date(offer.expiresAt * 1000).toISOString()}`);
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);

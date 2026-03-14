@@ -185,6 +185,7 @@ export default function TokenPage() {
       setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setOfferTokenAmount("");
       setOfferSatAmount("");
+      setShowSellDialog(false);
       refetchOffers();
     } catch (err) {
       setOfferError(err instanceof Error ? err.message : "Failed to create offer");
@@ -262,6 +263,7 @@ export default function TokenPage() {
       setBuyOfferSuccess(`Buy offer created! Buying ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setBuyOfferTokenAmount("");
       setBuyOfferSatAmount("");
+      setShowBuyDialog(false);
       refetchOffers();
     } catch (err) {
       setBuyOfferError(err instanceof Error ? err.message : "Failed to create buy offer");
@@ -766,7 +768,7 @@ export default function TokenPage() {
               {buyOfferError && <p className="text-xs text-red-400">{buyOfferError}</p>}
               {buyOfferSuccess && <p className="text-xs text-emerald-400">{buyOfferSuccess}</p>}
               <button
-                onClick={async () => { await handleCreateBuyOffer(); if (!buyOfferError) setShowBuyDialog(false); }}
+                onClick={handleCreateBuyOffer}
                 disabled={!buyOfferTokenAmount || !buyOfferSatAmount || parseInt(buyOfferTokenAmount, 10) <= 0 || parseInt(buyOfferSatAmount, 10) <= 0 || buyOfferLoading || !walletReady}
                 className="w-full py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
               >
@@ -811,7 +813,7 @@ export default function TokenPage() {
                   {offerError && <p className="text-xs text-red-400">{offerError}</p>}
                   {offerSuccess && <p className="text-xs text-emerald-400">{offerSuccess}</p>}
                   <button
-                    onClick={async () => { await handleCreateOffer(); if (!offerError) setShowSellDialog(false); }}
+                    onClick={handleCreateOffer}
                     disabled={!offerTokenAmount || !offerSatAmount || parseInt(offerTokenAmount, 10) <= 0 || parseInt(offerSatAmount, 10) <= 0 || offerLoading || !walletReady}
                     className="w-full py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
