@@ -97,12 +97,17 @@ export default function TokenPage() {
   const [userArkAddress, setUserArkAddress] = useState("");
 
   // Fetch user's Ark address (for identifying own offers)
+  // Re-fetch on wallet/user change to avoid stale address from previous account
   useEffect(() => {
-    if (!arkWallet) return;
+    if (!arkWallet) {
+      setUserArkAddress("");
+      return;
+    }
     arkWallet.getAddress().then(setUserArkAddress).catch((err: unknown) => {
       console.warn("[token] Failed to fetch user Ark address:", err instanceof Error ? err.message : err);
+      setUserArkAddress("");
     });
-  }, [arkWallet]);
+  }, [arkWallet, walletReady, user]);
 
   // Only creator who holds the control asset can manage
   const isCreator = user?.pubkey === token?.creator;
