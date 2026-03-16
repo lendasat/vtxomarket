@@ -61,12 +61,13 @@ export interface OfferRow {
   assetId: string;
   tokenAmount: string;
   satAmount: string;
-  vtxoSatsValue: string;    // sats value of the swap VTXO (dust, e.g. "330")
+  vtxoSatsValue: string;    // sats value of the swap VTXO (dust for sell, satAmount for buy)
   makerArkAddress: string;
   makerPkScript: string;
   makerXOnlyPubkey: string;
   swapScriptHex: string;
   arkadeScriptHex: string;  // hex-encoded arkade script (introspection conditions for PSBT field)
+  offerType: 'sell' | 'buy'; // sell = maker locks tokens, buy = maker locks sats
   expiresAt: number;
   status: 'open' | 'filled' | 'expired' | 'cancelled';
   filledInTxid: string | null;
@@ -188,6 +189,10 @@ function migrate(db: Database): void {
   if (!offerCols.some((col) => col.name === "arkadeScriptHex")) {
     db.run("ALTER TABLE offers ADD COLUMN arkadeScriptHex TEXT NOT NULL DEFAULT ''");
     log.info("Database: added arkadeScriptHex column to offers table");
+  }
+  if (!offerCols.some((col) => col.name === "offerType")) {
+    db.run("ALTER TABLE offers ADD COLUMN offerType TEXT NOT NULL DEFAULT 'sell'");
+    log.info("Database: added offerType column to offers table");
   }
 }
 
@@ -369,8 +374,8 @@ export function upsertOffer(
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   db.run(
-    `INSERT INTO offers (offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt, status, filledInTxid, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)
+    `INSERT INTO offers (offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, offerType, expiresAt, status, filledInTxid, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, ?, ?)
      ON CONFLICT(offerOutpoint) DO UPDATE SET
        tokenAmount = excluded.tokenAmount,
        satAmount = excluded.satAmount,
@@ -380,6 +385,7 @@ export function upsertOffer(
        makerXOnlyPubkey = excluded.makerXOnlyPubkey,
        swapScriptHex = excluded.swapScriptHex,
        arkadeScriptHex = excluded.arkadeScriptHex,
+       offerType = excluded.offerType,
        expiresAt = excluded.expiresAt,
        updatedAt = excluded.updatedAt
      WHERE offers.status = 'open'`,
@@ -394,6 +400,7 @@ export function upsertOffer(
       offer.makerXOnlyPubkey,
       offer.swapScriptHex,
       offer.arkadeScriptHex ?? '',
+      offer.offerType ?? 'sell',
       offer.expiresAt,
       now,
       now,
@@ -407,8 +414,17 @@ export function getOffer(offerOutpoint: string): OfferRow | null {
   return db.query("SELECT * FROM offers WHERE offerOutpoint = ?").get(offerOutpoint) as OfferRow | null;
 }
 
-export function getOpenOffersForAsset(assetId: string): OfferRow[] {
+export function getOpenOffersForAsset(assetId: string, offerType?: string): OfferRow[] {
   const db = getDb();
+  if (offerType) {
+    return db
+      .query(
+        `SELECT * FROM offers
+         WHERE assetId = ? AND status = 'open' AND offerType = ?
+         ORDER BY CAST(satAmount AS REAL) / CAST(tokenAmount AS REAL) ASC`
+      )
+      .all(assetId, offerType) as OfferRow[];
+  }
   return db
     .query(
       `SELECT * FROM offers
@@ -418,8 +434,17 @@ export function getOpenOffersForAsset(assetId: string): OfferRow[] {
     .all(assetId) as OfferRow[];
 }
 
-export function getAllOpenOffers(): OfferRow[] {
+export function getAllOpenOffers(offerType?: string): OfferRow[] {
   const db = getDb();
+  if (offerType) {
+    return db
+      .query(
+        `SELECT * FROM offers
+         WHERE status = 'open' AND offerType = ?
+         ORDER BY CAST(satAmount AS REAL) / CAST(tokenAmount AS REAL) ASC`
+      )
+      .all(offerType) as OfferRow[];
+  }
   return db
     .query(
       `SELECT * FROM offers
@@ -488,11 +513,42 @@ export function getMarketSummary(): MarketSummaryRow[] {
   }));
 }
 
-export function expireStaleOffers(): void {
-  const db = getDb();
-  const now = Math.floor(Date.now() / 1000);
-  db.run(
-    "UPDATE offers SET status = 'expired', updatedAt = ? WHERE expiresAt < ? AND status = 'open'",
-    [now, now]
-  );
+export interface TradeRow {
+  offerOutpoint: string;
+  assetId: string;
+  offerType: string;
+  tokenAmount: string;
+  satAmount: string;
+  makerArkAddress: string;
+  filledInTxid: string;
+  filledAt: number;   // updatedAt when status became 'filled'
 }
+
+export function getTradesForAsset(assetId: string, limit = 100): TradeRow[] {
+  const db = getDb();
+  return db
+    .query(
+      `SELECT offerOutpoint, assetId, offerType, tokenAmount, satAmount,
+              makerArkAddress, filledInTxid, updatedAt AS filledAt
+       FROM offers
+       WHERE assetId = ? AND status = 'filled'
+       ORDER BY updatedAt DESC
+       LIMIT ?`
+    )
+    .all(assetId, limit) as TradeRow[];
+}
+
+export function getRecentTrades(limit = 20): TradeRow[] {
+  const db = getDb();
+  return db
+    .query(
+      `SELECT offerOutpoint, assetId, offerType, tokenAmount, satAmount,
+              makerArkAddress, filledInTxid, updatedAt AS filledAt
+       FROM offers
+       WHERE status = 'filled'
+       ORDER BY updatedAt DESC
+       LIMIT ?`
+    )
+    .all(limit) as TradeRow[];
+}
+

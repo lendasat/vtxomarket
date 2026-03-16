@@ -1,15 +1,21 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { hex as scureHex } from "@scure/base";
 import { useAppStore } from "@/lib/store";
+
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 import { useTokens } from "@/hooks/useTokens";
 import {
   encodeLE64,
   createSwapOffer,
   fillSwapOffer,
   cancelSwapOffer,
+  createBuyOffer,
+  fillBuyOffer,
+  cancelBuyOffer,
   type SwapOffer,
+  type BuyOffer,
 } from "@/lib/ark-wallet";
 
 // ── Opcode reference data ──────────────────────────────────────────────────────
@@ -114,6 +120,17 @@ export default function LabPage() {
       };
     });
 
+  // Close buy asset dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (cbDropdownRef.current && !cbDropdownRef.current.contains(e.target as Node)) {
+        setCbDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   // ── Script Builder state ─────────────────────────────────────────────────
   const [sbSatAmount, setSbSatAmount] = useState("10000");
   const [sbPkScript, setSbPkScript]   = useState("");
@@ -122,19 +139,27 @@ export default function LabPage() {
   const [sbError, setSbError]         = useState("");
 
   // ── Live Testing state ───────────────────────────────────────────────────
-  const [tab, setTab] = useState<"create" | "fill" | "cancel">("create");
+  const [tab, setTab] = useState<"create-sell" | "create-buy" | "take-sell" | "take-buy" | "cancel">("create-sell");
   const [logs, setLogs]   = useState<LogLine[]>([]);
   const [busy, setBusy]   = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
-  // Create offer
+  // Create sell offer
   const [coAssetId, setCoAssetId]         = useState("");
   const [coTokenAmount, setCoTokenAmount] = useState("");
   const [coSatAmount, setCoSatAmount]     = useState("");
-  const [coExpiry, setCoExpiry]           = useState("3600");
   const [lastOffer, setLastOffer]         = useState<SwapOffer | null>(null);
 
-  // Fill / Cancel offer
+  // Create buy offer
+  const [cbAssetId, setCbAssetId]         = useState("");
+  const [cbTokenAmount, setCbTokenAmount] = useState("");
+  const [cbSatAmount, setCbSatAmount]     = useState("");
+  const [lastBuyOffer, setLastBuyOffer]   = useState<BuyOffer | null>(null);
+  const [cbSearch, setCbSearch]           = useState("");
+  const [cbDropdownOpen, setCbDropdownOpen] = useState(false);
+  const cbDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fill / Cancel offer (shared fields)
   const [fcOutpoint, setFcOutpoint]         = useState("");
   const [fcSwapScriptHex, setFcSwapScriptHex] = useState("");
   const [fcArkadeScriptHex, setFcArkadeScriptHex] = useState("");
@@ -142,6 +167,7 @@ export default function LabPage() {
   const [fcTokenAmount, setFcTokenAmount]   = useState("");
   const [fcSatAmount, setFcSatAmount]       = useState("");
   const [fcMakerAddress, setFcMakerAddress] = useState("");
+  const [fcOfferType, setFcOfferType]       = useState<"sell" | "buy">("sell");
 
   const addLog = useCallback((level: LogLine["level"], msg: string) => {
     const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -178,28 +204,34 @@ export default function LabPage() {
 
   // ── Live Testing handlers ────────────────────────────────────────────────
 
-  const handleCreateOffer = async () => {
+  const handleCreateSellOffer = async () => {
     if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
     const tokenAmount = parseInt(coTokenAmount, 10);
     const satAmount   = parseInt(coSatAmount, 10);
-    const expiresInSeconds = parseInt(coExpiry, 10);
     if (!coAssetId || isNaN(tokenAmount) || isNaN(satAmount)) {
       addLog("error", "Fill in assetId, tokenAmount, and satAmount");
       return;
     }
     setBusy(true);
-    addLog("info", `Creating offer: ${tokenAmount} tokens @ ${satAmount} sats`);
+    addLog("info", `Creating sell offer: ${tokenAmount} tokens @ ${satAmount} sats`);
     try {
       const offer = await createSwapOffer(arkWallet, {
         assetId: coAssetId,
         tokenAmount,
         satAmount,
-        expiresInSeconds,
       });
       setLastOffer(offer);
-      addLog("success", `Offer created: ${offer.offerOutpoint}`);
-      addLog("info", `swapScriptHex: ${offer.swapScriptHex.slice(0, 40)}...`);
-      addLog("info", `expiresAt: ${new Date(offer.expiresAt * 1000).toISOString()}`);
+      addLog("success", `Sell offer created: ${offer.offerOutpoint}`);
+      // Post to indexer (retry on VTXO not found)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
+        try {
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          if (resp.ok) { addLog("info", "Posted to indexer"); break; }
+          const errText = await resp.text().catch(() => "");
+          if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }
+        } catch { addLog("info", "Indexer post failed (network error)"); break; }
+      }
       // Auto-fill fill/cancel fields
       setFcOutpoint(offer.offerOutpoint);
       setFcSwapScriptHex(offer.swapScriptHex);
@@ -208,6 +240,7 @@ export default function LabPage() {
       setFcTokenAmount(String(offer.tokenAmount));
       setFcSatAmount(String(offer.satAmount));
       setFcMakerAddress(offer.makerArkAddress);
+      setFcOfferType("sell");
     } catch (e) {
       addLog("error", String(e));
     } finally {
@@ -215,7 +248,51 @@ export default function LabPage() {
     }
   };
 
-  const handleFill = async () => {
+  const handleCreateBuyOffer = async () => {
+    if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
+    const tokenAmount = parseInt(cbTokenAmount, 10);
+    const satAmount   = parseInt(cbSatAmount, 10);
+    if (!cbAssetId || isNaN(tokenAmount) || isNaN(satAmount)) {
+      addLog("error", "Fill in assetId, tokenAmount, and satAmount");
+      return;
+    }
+    setBusy(true);
+    addLog("info", `Creating buy offer: buying ${tokenAmount} tokens for ${satAmount} sats`);
+    try {
+      const offer = await createBuyOffer(arkWallet, {
+        assetId: cbAssetId,
+        tokenAmount,
+        satAmount,
+      });
+      setLastBuyOffer(offer);
+      addLog("success", `Buy offer created: ${offer.offerOutpoint}`);
+      // Post to indexer (retry on VTXO not found)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
+        try {
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          if (resp.ok) { addLog("info", "Posted to indexer"); break; }
+          const errText = await resp.text().catch(() => "");
+          if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }
+        } catch { addLog("info", "Indexer post failed (network error)"); break; }
+      }
+      // Auto-fill fill/cancel fields
+      setFcOutpoint(offer.offerOutpoint);
+      setFcSwapScriptHex(offer.swapScriptHex);
+      setFcArkadeScriptHex(offer.arkadeScriptHex);
+      setFcAssetId(offer.assetId);
+      setFcTokenAmount(String(offer.tokenAmount));
+      setFcSatAmount(String(offer.satAmount));
+      setFcMakerAddress(offer.makerArkAddress);
+      setFcOfferType("buy");
+    } catch (e) {
+      addLog("error", String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTakeSell = async () => {
     if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
     if (!fcOutpoint || !fcSwapScriptHex) {
       addLog("error", "Paste offerOutpoint and swapScriptHex");
@@ -235,9 +312,43 @@ export default function LabPage() {
       expiresAt: 0,
     };
     setBusy(true);
-    addLog("info", `Filling offer: ${fcOutpoint}`);
+    addLog("info", `Taking sell offer (buying tokens): ${fcOutpoint}`);
     try {
       const txid = await fillSwapOffer(arkWallet, offer, (ev) => {
+        addLog("event", JSON.stringify(ev, (_, v) => typeof v === "bigint" ? Number(v) : v).slice(0, 120));
+      });
+      addLog("success", `Filled! arkTxId: ${txid}`);
+    } catch (e) {
+      addLog("error", String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTakeBuy = async () => {
+    if (!arkWallet) { addLog("error", "Wallet not connected"); return; }
+    if (!fcOutpoint || !fcSwapScriptHex) {
+      addLog("error", "Paste offerOutpoint and swapScriptHex");
+      return;
+    }
+    const offer: BuyOffer = {
+      offerOutpoint: fcOutpoint,
+      offerType: "buy",
+      swapScriptHex: fcSwapScriptHex,
+      arkadeScriptHex: fcArkadeScriptHex,
+      assetId: fcAssetId,
+      tokenAmount: parseInt(fcTokenAmount, 10) || 0,
+      satAmount: parseInt(fcSatAmount, 10) || 0,
+      vtxoSatsValue: parseInt(fcSatAmount, 10) || 0,
+      makerArkAddress: fcMakerAddress,
+      makerPkScript: "",
+      makerXOnlyPubkey: "",
+      expiresAt: 0,
+    };
+    setBusy(true);
+    addLog("info", `Taking buy offer (selling tokens): ${fcOutpoint}`);
+    try {
+      const txid = await fillBuyOffer(arkWallet, offer, (ev) => {
         addLog("event", JSON.stringify(ev, (_, v) => typeof v === "bigint" ? Number(v) : v).slice(0, 120));
       });
       addLog("success", `Filled! arkTxId: ${txid}`);
@@ -254,25 +365,46 @@ export default function LabPage() {
       addLog("error", "Paste offerOutpoint and swapScriptHex");
       return;
     }
-    const offer: SwapOffer = {
-      offerOutpoint: fcOutpoint,
-      swapScriptHex: fcSwapScriptHex,
-      arkadeScriptHex: fcArkadeScriptHex,
-      assetId: fcAssetId,
-      tokenAmount: parseInt(fcTokenAmount, 10) || 0,
-      satAmount: parseInt(fcSatAmount, 10) || 0,
-      vtxoSatsValue: 0,
-      makerArkAddress: fcMakerAddress,
-      makerPkScript: "",
-      makerXOnlyPubkey: "",
-      expiresAt: 0,
-    };
     setBusy(true);
-    addLog("info", `Cancelling offer: ${fcOutpoint}`);
+    addLog("info", `Cancelling ${fcOfferType} offer: ${fcOutpoint}`);
     try {
-      const txid = await cancelSwapOffer(arkWallet, offer, (ev) => {
-        addLog("event", JSON.stringify(ev).slice(0, 120));
-      });
+      let txid: string;
+      if (fcOfferType === "buy") {
+        const offer: BuyOffer = {
+          offerOutpoint: fcOutpoint,
+          offerType: "buy",
+          swapScriptHex: fcSwapScriptHex,
+          arkadeScriptHex: fcArkadeScriptHex,
+          assetId: fcAssetId,
+          tokenAmount: parseInt(fcTokenAmount, 10) || 0,
+          satAmount: parseInt(fcSatAmount, 10) || 0,
+          vtxoSatsValue: parseInt(fcSatAmount, 10) || 0,
+          makerArkAddress: fcMakerAddress,
+          makerPkScript: "",
+          makerXOnlyPubkey: "",
+          expiresAt: 0,
+        };
+        txid = await cancelBuyOffer(arkWallet, offer, (ev) => {
+          addLog("event", JSON.stringify(ev).slice(0, 120));
+        });
+      } else {
+        const offer: SwapOffer = {
+          offerOutpoint: fcOutpoint,
+          swapScriptHex: fcSwapScriptHex,
+          arkadeScriptHex: fcArkadeScriptHex,
+          assetId: fcAssetId,
+          tokenAmount: parseInt(fcTokenAmount, 10) || 0,
+          satAmount: parseInt(fcSatAmount, 10) || 0,
+          vtxoSatsValue: 0,
+          makerArkAddress: fcMakerAddress,
+          makerPkScript: "",
+          makerXOnlyPubkey: "",
+          expiresAt: 0,
+        };
+        txid = await cancelSwapOffer(arkWallet, offer, (ev) => {
+          addLog("event", JSON.stringify(ev).slice(0, 120));
+        });
+      }
       addLog("success", `Cancelled! arkTxId: ${txid}`);
     } catch (e) {
       addLog("error", String(e));
@@ -458,26 +590,33 @@ export default function LabPage() {
         {arkWallet && (
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
             {/* Tabs */}
-            <div className="flex border-b border-white/[0.07]">
-              {(["create", "fill", "cancel"] as const).map((t) => (
+            <div className="flex border-b border-white/[0.07] overflow-x-auto">
+              {([
+                ["create-sell", "Create Sell"],
+                ["create-buy", "Create Buy"],
+                ["take-sell", "Take Sell"],
+                ["take-buy", "Take Buy"],
+                ["cancel", "Cancel"],
+              ] as const).map(([t, label]) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`px-5 py-3 text-xs font-medium capitalize transition-colors ${
+                  className={`shrink-0 px-4 py-3 text-xs font-medium transition-colors ${
                     tab === t
                       ? "text-foreground border-b border-foreground -mb-px"
                       : "text-muted-foreground hover:text-foreground/70"
                   }`}
                 >
-                  {t === "create" ? "Create Offer" : t === "fill" ? "Fill Offer" : "Cancel Offer"}
+                  {label}
                 </button>
               ))}
             </div>
 
             <div className="p-5 space-y-3">
-              {/* Create Offer */}
-              {tab === "create" && (
+              {/* Create Sell Offer */}
+              {tab === "create-sell" && (
                 <>
+                  <p className="text-xs text-muted-foreground">Lock tokens into a swap VTXO. Taker pays sats to buy them.</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <label className="text-xs text-muted-foreground mb-1 block">Asset</label>
@@ -523,23 +662,13 @@ export default function LabPage() {
                         placeholder="10000"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Expires in (seconds)</label>
-                      <input
-                        type="number"
-                        value={coExpiry}
-                        onChange={(e) => setCoExpiry(e.target.value)}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
-                        placeholder="3600"
-                      />
-                    </div>
                   </div>
                   <button
-                    onClick={handleCreateOffer}
+                    onClick={handleCreateSellOffer}
                     disabled={busy}
-                    className="px-5 py-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.10] border border-white/[0.09] text-sm font-medium transition-colors disabled:opacity-50"
+                    className="px-5 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-sm font-medium text-red-400 transition-colors disabled:opacity-50"
                   >
-                    {busy ? "Creating…" : "Create Offer"}
+                    {busy ? "Creating…" : "Create Sell Offer"}
                   </button>
                   {lastOffer && (
                     <div className="mt-2 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] space-y-1 text-xs font-mono">
@@ -551,9 +680,135 @@ export default function LabPage() {
                 </>
               )}
 
-              {/* Fill / Cancel shared fields */}
-              {(tab === "fill" || tab === "cancel") && (
+              {/* Create Buy Offer */}
+              {tab === "create-buy" && (
                 <>
+                  <p className="text-xs text-muted-foreground">Lock sats into a swap VTXO. Taker delivers tokens to fill it.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2 relative" ref={cbDropdownRef}>
+                      <label className="text-xs text-muted-foreground mb-1 block">Asset (token you want to buy)</label>
+                      <input
+                        value={cbSearch}
+                        onChange={(e) => {
+                          setCbSearch(e.target.value);
+                          setCbDropdownOpen(true);
+                          // Clear selection if user edits search after selecting
+                          if (cbAssetId) setCbAssetId("");
+                        }}
+                        onFocus={() => setCbDropdownOpen(true)}
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
+                        placeholder="Search by name, ticker, or asset ID…"
+                      />
+                      {cbAssetId && (
+                        <div className="mt-1 text-[10px] font-mono text-emerald-400/70 truncate">
+                          {cbAssetId}
+                        </div>
+                      )}
+                      {cbDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto rounded-lg bg-zinc-900 border border-white/[0.1] shadow-xl">
+                          {tokens
+                            .filter((t) => {
+                              if (!cbSearch.trim()) return true;
+                              const q = cbSearch.toLowerCase();
+                              return (
+                                t.name.toLowerCase().includes(q) ||
+                                t.ticker.toLowerCase().includes(q) ||
+                                t.assetId.toLowerCase().includes(q)
+                              );
+                            })
+                            .slice(0, 20)
+                            .map((t) => (
+                              <button
+                                key={t.assetId}
+                                onClick={() => {
+                                  setCbAssetId(t.assetId);
+                                  setCbSearch(`${t.ticker} — ${t.name}`);
+                                  setCbDropdownOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition-colors flex items-center gap-2"
+                              >
+                                <span className="font-mono font-medium text-foreground">{t.ticker}</span>
+                                <span className="text-muted-foreground">{t.name}</span>
+                                <span className="ml-auto text-[10px] font-mono text-muted-foreground/40 truncate max-w-[120px]">{t.assetId.slice(0, 12)}…</span>
+                              </button>
+                            ))}
+                          {tokens.filter((t) => {
+                            if (!cbSearch.trim()) return true;
+                            const q = cbSearch.toLowerCase();
+                            return t.name.toLowerCase().includes(q) || t.ticker.toLowerCase().includes(q) || t.assetId.toLowerCase().includes(q);
+                          }).length === 0 && (
+                            <div className="px-3 py-3 text-xs text-muted-foreground/50 text-center">No assets found</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Token amount to buy</label>
+                      <input
+                        type="number"
+                        value={cbTokenAmount}
+                        onChange={(e) => setCbTokenAmount(e.target.value)}
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
+                        placeholder="100"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Sats to pay</label>
+                      <input
+                        type="number"
+                        value={cbSatAmount}
+                        onChange={(e) => setCbSatAmount(e.target.value)}
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
+                        placeholder="10000"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCreateBuyOffer}
+                    disabled={busy}
+                    className="px-5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-400 transition-colors disabled:opacity-50"
+                  >
+                    {busy ? "Creating…" : "Create Buy Offer"}
+                  </button>
+                  {lastBuyOffer && (
+                    <div className="mt-2 p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] space-y-1 text-xs font-mono">
+                      <div><span className="text-muted-foreground">outpoint  </span><span className="text-green-400">{lastBuyOffer.offerOutpoint}</span></div>
+                      <div><span className="text-muted-foreground">type      </span><span className="text-emerald-400">buy</span></div>
+                      <div><span className="text-muted-foreground">expiresAt </span>{new Date(lastBuyOffer.expiresAt * 1000).toISOString()}</div>
+                      <div className="truncate"><span className="text-muted-foreground">script    </span>{lastBuyOffer.swapScriptHex.slice(0, 48)}…</div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Take Sell / Take Buy / Cancel — shared fields */}
+              {(tab === "take-sell" || tab === "take-buy" || tab === "cancel") && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    {tab === "take-sell" && "Fill a sell offer — you pay sats, receive tokens."}
+                    {tab === "take-buy" && "Fill a buy offer — you deliver tokens, receive sats."}
+                    {tab === "cancel" && "Cancel your own offer — reclaim locked funds."}
+                  </p>
+                  {tab === "cancel" && (
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Offer type</label>
+                      <div className="flex gap-2">
+                        {(["sell", "buy"] as const).map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setFcOfferType(t)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                              fcOfferType === t
+                                ? "bg-white/[0.1] border-white/[0.2] text-foreground"
+                                : "bg-white/[0.03] border-white/[0.06] text-muted-foreground hover:text-foreground/70"
+                            }`}
+                          >
+                            {t === "sell" ? "Sell offer (reclaim tokens)" : "Buy offer (reclaim sats)"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">offerOutpoint (txid:vout)</label>
                     <input
@@ -571,6 +826,16 @@ export default function LabPage() {
                       rows={2}
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20 resize-none"
                       placeholder="hex of VtxoScript.encode()"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">arkadeScriptHex</label>
+                    <textarea
+                      value={fcArkadeScriptHex}
+                      onChange={(e) => setFcArkadeScriptHex(e.target.value)}
+                      rows={2}
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20 resize-none"
+                      placeholder="hex of arkade script"
                     />
                   </div>
                   <div className="grid grid-cols-3 gap-3">
@@ -604,36 +869,29 @@ export default function LabPage() {
                       />
                     </div>
                   </div>
-                  {tab === "fill" && (
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Maker Ark address (sats go here)</label>
-                      <input
-                        value={fcMakerAddress}
-                        onChange={(e) => setFcMakerAddress(e.target.value)}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
-                        placeholder="ark1…"
-                      />
-                    </div>
-                  )}
-                  {tab === "cancel" && (
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">Your Ark address (tokens return here)</label>
-                      <input
-                        value={fcMakerAddress}
-                        onChange={(e) => setFcMakerAddress(e.target.value)}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
-                        placeholder="ark1…"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Maker Ark address</label>
+                    <input
+                      value={fcMakerAddress}
+                      onChange={(e) => setFcMakerAddress(e.target.value)}
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20"
+                      placeholder="ark1…"
+                    />
+                  </div>
                   <button
-                    onClick={tab === "fill" ? handleFill : handleCancel}
+                    onClick={tab === "take-sell" ? handleTakeSell : tab === "take-buy" ? handleTakeBuy : handleCancel}
                     disabled={busy}
-                    className="px-5 py-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.10] border border-white/[0.09] text-sm font-medium transition-colors disabled:opacity-50"
+                    className={`px-5 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-50 ${
+                      tab === "cancel"
+                        ? "bg-red-500/20 hover:bg-red-500/30 border-red-500/30 text-red-400"
+                        : tab === "take-sell"
+                        ? "bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/30 text-emerald-400"
+                        : "bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/30 text-amber-400"
+                    }`}
                   >
                     {busy
-                      ? tab === "fill" ? "Filling…" : "Cancelling…"
-                      : tab === "fill" ? "Fill Offer" : "Cancel Offer"}
+                      ? tab === "take-sell" ? "Filling…" : tab === "take-buy" ? "Filling…" : "Cancelling…"
+                      : tab === "take-sell" ? "Take Sell (Buy Tokens)" : tab === "take-buy" ? "Take Buy (Sell Tokens)" : "Cancel Offer"}
                   </button>
                 </>
               )}

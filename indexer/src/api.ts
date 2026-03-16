@@ -21,14 +21,17 @@ import {
   getHoldersForAsset,
   getStats,
   upsertOffer,
+  upsertAsset,
   upsertAssetMetadata,
   getOffer,
   getOpenOffersForAsset,
   getAllOpenOffers,
   markOfferCancelled,
   getMarketSummary,
+  getTradesForAsset,
+  getRecentTrades,
 } from "./db";
-import { fetchVtxosByOutpoints } from "./ark-client";
+import { fetchVtxosByOutpoints, fetchAssetMetadata } from "./ark-client";
 import { getRecentLogs } from "./log-buffer";
 
 export function buildApp(): Hono {
@@ -68,6 +71,33 @@ export function buildApp(): Hono {
   app.get("/assets/:id", (c) => {
     const asset = getAsset(c.req.param("id"));
     if (!asset) return c.json({ error: "Not found" }, 404);
+    return c.json({ asset });
+  });
+
+  // ── Discover unknown asset (fetch metadata from Ark server on demand) ──────
+  app.post("/assets/:id/discover", async (c) => {
+    const assetId = c.req.param("id");
+    const existing = getAsset(assetId);
+    if (existing && (existing.name || existing.ticker)) {
+      return c.json({ asset: existing });
+    }
+
+    const meta = await fetchAssetMetadata(assetId);
+    if (!meta) return c.json({ error: "Asset not found on Ark server" }, 404);
+
+    upsertAsset({
+      assetId,
+      name: meta.name ?? null,
+      ticker: meta.ticker ?? null,
+      decimals: meta.decimals ?? 0,
+      supply: meta.supply ?? "0",
+      firstSeenTxid: "discovered",
+    });
+    if (meta.icon) {
+      upsertAssetMetadata(assetId, { image: meta.icon });
+    }
+
+    const asset = getAsset(assetId);
     return c.json({ asset });
   });
 
@@ -154,15 +184,60 @@ export function buildApp(): Hono {
     return c.json({ summary });
   });
 
+  // ── Trades (filled offers) ─────────────────────────────────────────────
+  app.get("/assets/:id/trades", (c) => {
+    const assetId = c.req.param("id");
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 500);
+    const trades = getTradesForAsset(assetId, limit);
+    return c.json({
+      assetId,
+      count: trades.length,
+      trades: trades.map((t) => ({
+        offerOutpoint: t.offerOutpoint,
+        offerType: t.offerType,
+        tokenAmount: t.tokenAmount,
+        satAmount: t.satAmount,
+        price: Number(t.satAmount) / Number(t.tokenAmount),
+        makerArkAddress: t.makerArkAddress,
+        filledInTxid: t.filledInTxid,
+        timestamp: t.filledAt,
+      })),
+    });
+  });
+
+  app.get("/trades", (c) => {
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10), 100);
+    const trades = getRecentTrades(limit);
+    return c.json({
+      count: trades.length,
+      trades: trades.map((t) => ({
+        offerOutpoint: t.offerOutpoint,
+        assetId: t.assetId,
+        offerType: t.offerType,
+        tokenAmount: t.tokenAmount,
+        satAmount: t.satAmount,
+        price: Number(t.satAmount) / Number(t.tokenAmount),
+        makerArkAddress: t.makerArkAddress,
+        filledInTxid: t.filledInTxid,
+        timestamp: t.filledAt,
+      })),
+    });
+  });
+
   // ── Offers ─────────────────────────────────────────────────────────────────
 
   // Maker self-reports after creating the swap VTXO.
   // Verified against arkd: the VTXO must exist, be unspent, and hold the claimed asset.
+  // offerType: "sell" (default) = maker locks tokens, "buy" = maker locks sats
   app.post("/offers", async (c) => {
     const body = await c.req.json();
     const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt } = body;
+    const offerType = body.offerType ?? 'sell';
     if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
       return c.json({ error: "missing required fields" }, 400);
+    }
+    if (offerType !== 'sell' && offerType !== 'buy') {
+      return c.json({ error: "offerType must be 'sell' or 'buy'" }, 400);
     }
 
     // Reject re-registration of offers that are already filled/cancelled/expired
@@ -171,7 +246,7 @@ export function buildApp(): Hono {
       return c.json({ error: `offer already ${existing.status}` }, 409);
     }
 
-    // Verify the VTXO actually exists on the Ark server and holds the claimed asset
+    // Verify the VTXO actually exists on the Ark server
     const vtxos = await fetchVtxosByOutpoints([offerOutpoint]);
     if (vtxos.length === 0) {
       return c.json({ error: "VTXO not found on Ark server" }, 400);
@@ -180,14 +255,26 @@ export function buildApp(): Hono {
     if (vtxo.isSpent) {
       return c.json({ error: "VTXO is already spent" }, 400);
     }
-    const matchingAsset = vtxo.assets?.find((a) => a.assetId === assetId);
-    if (!matchingAsset) {
-      return c.json({ error: "VTXO does not hold the claimed asset" }, 400);
-    }
-    if (BigInt(matchingAsset.amount) < BigInt(tokenAmount)) {
-      return c.json({
-        error: `VTXO holds ${matchingAsset.amount} tokens, but offer claims ${tokenAmount}`,
-      }, 400);
+
+    if (offerType === 'sell') {
+      // Sell offer: verify VTXO holds the claimed asset
+      const matchingAsset = vtxo.assets?.find((a) => a.assetId === assetId);
+      if (!matchingAsset) {
+        return c.json({ error: "VTXO does not hold the claimed asset" }, 400);
+      }
+      if (BigInt(matchingAsset.amount) < BigInt(tokenAmount)) {
+        return c.json({
+          error: `VTXO holds ${matchingAsset.amount} tokens, but offer claims ${tokenAmount}`,
+        }, 400);
+      }
+    } else {
+      // Buy offer: verify VTXO holds sufficient sats
+      const vtxoSats = Number(vtxo.amount);
+      if (vtxoSats < Number(satAmount)) {
+        return c.json({
+          error: `VTXO holds ${vtxoSats} sats, but offer claims ${satAmount}`,
+        }, 400);
+      }
     }
 
     // Validate expiresAt is within a reasonable range (max 30 days from now)
@@ -200,14 +287,17 @@ export function buildApp(): Hono {
       return c.json({ error: "expiresAt is in the past" }, 400);
     }
 
-    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex: arkadeScriptHex ?? '', expiresAt });
+    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex: arkadeScriptHex ?? '', offerType, expiresAt });
     return c.json({ ok: true }, 201);
   });
 
-  // List open offers (optional ?assetId= filter)
+  // List open offers (optional ?assetId= and ?offerType= filters)
   app.get("/offers", (c) => {
     const assetId = c.req.query("assetId");
-    const offers = assetId ? getOpenOffersForAsset(assetId) : getAllOpenOffers();
+    const offerType = c.req.query("offerType");
+    const offers = assetId
+      ? getOpenOffersForAsset(assetId, offerType)
+      : getAllOpenOffers(offerType);
     return c.json({ count: offers.length, offers });
   });
 

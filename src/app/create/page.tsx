@@ -164,31 +164,38 @@ export default function CreatePage() {
       const addrs = await getReceivingAddresses(arkWallet);
       const creatorArkAddress = addrs.offchainAddr;
 
-      // Step 2: Submit metadata to indexer
-      setStep("Publishing metadata...");
-      // The indexer auto-indexes the asset from the Ark server SSE stream.
-      // Wait briefly for the indexer to see the new asset, then submit metadata.
-      await new Promise((r) => setTimeout(r, 2000));
-      const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description,
-          image: finalImage || undefined,
-          creator: user?.pubkey ?? "",
-          creatorArkAddress,
-          supply: supplyNum,
-          createdAt: Math.floor(Date.now() / 1000),
-          ...(decimalsNum > 0 && { decimals: decimalsNum }),
-          ...(website && { website }),
-          ...(twitter && { twitter }),
-          ...(telegram && { telegram }),
-          ...(controlAssetId && { controlAssetId }),
-        }),
+      // Step 2: Submit metadata to indexer.
+      // Wait for the indexer to pick up the asset from the SSE stream, then PUT metadata.
+      setStep("Token issued! Waiting for indexer...");
+      const metaBody = JSON.stringify({
+        description,
+        image: finalImage || undefined,
+        creator: user?.pubkey ?? "",
+        creatorArkAddress,
+        supply: supplyNum,
+        createdAt: Math.floor(Date.now() / 1000),
+        ...(decimalsNum > 0 && { decimals: decimalsNum }),
+        ...(website && { website }),
+        ...(twitter && { twitter }),
+        ...(telegram && { telegram }),
+        ...(controlAssetId && { controlAssetId }),
       });
-      if (!metaResp.ok) {
-        console.warn("Metadata submit failed:", await metaResp.text());
-        // Non-fatal — the token is already issued on Ark
+      let metaOk = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 3000 : 2000));
+        try {
+          const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: metaBody,
+          });
+          if (metaResp.ok) { metaOk = true; break; }
+          if (metaResp.status !== 404) break; // non-retryable error
+        } catch { /* network error, retry */ }
+        setStep("Token issued! Waiting for indexer...");
+      }
+      if (!metaOk) {
+        console.warn("Metadata submit failed — token is on-chain, metadata may update later");
       }
 
       // Step 3: Add to local state

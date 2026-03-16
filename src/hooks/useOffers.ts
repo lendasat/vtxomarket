@@ -10,8 +10,9 @@ export interface OpenOffer {
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  vtxoSatsValue: number;    // sats value of the swap VTXO (dust, e.g. 330)
+  vtxoSatsValue: number;    // sats value of the swap VTXO (dust for sell, satAmount for buy)
   price: number;            // satAmount / tokenAmount
+  offerType: 'sell' | 'buy'; // sell = maker locks tokens, buy = maker locks sats
   makerArkAddress: string;
   makerPkScript: string;
   makerXOnlyPubkey: string;
@@ -48,6 +49,7 @@ export function useOffers(assetId: string | null): {
         satAmount: Number(o.satAmount),
         vtxoSatsValue: Number(o.vtxoSatsValue) || 330,
         price: Number(o.satAmount) / Number(o.tokenAmount),
+        offerType: o.offerType ?? 'sell',
         makerArkAddress: o.makerArkAddress ?? "",
         makerPkScript: o.makerPkScript ?? "",
         makerXOnlyPubkey: o.makerXOnlyPubkey ?? "",

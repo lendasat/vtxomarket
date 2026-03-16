@@ -14,7 +14,9 @@
 
 export const OP_INSPECTOUTPUTVALUE        = 0xCF;
 export const OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xD1;
+export const OP_INSPECTOUTASSETLOOKUP    = 0xEF;
 export const OP_GREATERTHANOREQUAL64      = 0xDF;
+export const OP_SCRIPTNUMTOLE64           = 0xE0;
 export const OP_VERIFY                    = 0x69;
 export const OP_EQUAL                     = 0x87;
 export const OP_EQUALVERIFY               = 0x88;

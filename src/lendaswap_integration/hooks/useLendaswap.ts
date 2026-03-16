@@ -101,16 +101,25 @@ export function useLendaswap() {
 
   const refreshBalance = useCallback(async () => {
     if (!arkWallet) return;
-    try {
-      const [bal, addrs] = await Promise.all([
-        getBalance(arkWallet),
-        getReceivingAddresses(arkWallet),
-      ]);
-      setBalance(bal);
-      setAddresses(addrs);
-    } catch (err) {
-      console.warn("[lendaswap] Balance refresh failed:", err instanceof Error ? err.message : err);
-    }
+    const wallet = arkWallet;
+    const doRefresh = async () => {
+      if (!mountedRef.current) return;
+      try {
+        const [bal, addrs] = await Promise.all([
+          getBalance(wallet),
+          getReceivingAddresses(wallet),
+        ]);
+        if (!mountedRef.current) return;
+        setBalance(bal);
+        setAddresses(addrs);
+      } catch (err) {
+        console.warn("[lendaswap] Balance refresh failed:", err instanceof Error ? err.message : err);
+      }
+    };
+    // Refresh immediately, then retry after short delays to catch settlement
+    await doRefresh();
+    setTimeout(doRefresh, 3_000);
+    setTimeout(doRefresh, 8_000);
   }, [arkWallet, setBalance, setAddresses]);
 
   // ── Get quote ─────────────────────────────────────────────────────────

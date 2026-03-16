@@ -550,8 +550,11 @@ export {
   createSwapOffer,
   lightFillSwapOffer as fillSwapOffer,
   cancelSwapOffer,
+  createBuyOffer,
+  lightFillBuyOffer as fillBuyOffer,
+  cancelBuyOffer,
 } from "./swap_protocol";
-export type { SwapOfferParams, SwapOffer } from "./swap_protocol";
+export type { SwapOfferParams, SwapOffer, BuyOfferParams, BuyOffer } from "./swap_protocol";
 
 import { registerArkadeOpcodes } from "./swap_protocol";
 

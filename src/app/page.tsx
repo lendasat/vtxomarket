@@ -6,6 +6,7 @@ import { TokenCard } from "@/components/token-card";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useTokens } from "@/hooks/useTokens";
 import { useMarketSummary } from "@/hooks/useMarketSummary";
+import { useAppStore } from "@/lib/store";
 import { formatTokenAmount } from "@/lib/format";
 
 type SortMode = "trending" | "new";
@@ -18,8 +19,14 @@ const SORT_TABS: { key: SortMode; label: string }[] = [
 export default function Home() {
   const { tokens, loading } = useTokens();
   const { data: marketData } = useMarketSummary();
+  const user = useAppStore((s) => s.user);
   const [sort, setSort] = useState<SortMode>("trending");
   const [search, setSearch] = useState("");
+
+  const myTokens = useMemo(() => {
+    if (!user?.pubkey) return [];
+    return tokens.filter((t) => t.creator === user.pubkey);
+  }, [tokens, user?.pubkey]);
 
   const filtered = useMemo(() => {
     let list = [...tokens];
@@ -184,6 +191,50 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* ── Your Issued Tokens ── */}
+      {myTokens.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/40 font-medium">
+            Your Issued Tokens
+          </h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {myTokens.map((t) => {
+              const md = marketData.get(t.assetId);
+              return (
+                <Link
+                  key={t.id}
+                  href={`/token/${t.ticker}`}
+                  className="group flex items-center gap-3 rounded-xl bg-white/[0.04] border border-white/[0.07] p-3 transition-all hover:bg-white/[0.07] hover:border-white/[0.12]"
+                >
+                  <div className="h-9 w-9 shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/50">
+                    {t.image ? (
+                      <img src={t.image} alt={t.name} className="h-full w-full rounded-lg object-cover" />
+                    ) : (
+                      t.ticker.slice(0, 2)
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{t.name}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground/40">${t.ticker}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {md && md.openOfferCount > 0 ? (
+                      <span className="text-[10px] tabular-nums text-emerald-400/60 font-medium">
+                        {md.openOfferCount} offer{md.openOfferCount !== 1 ? "s" : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] tabular-nums text-muted-foreground/30">
+                        {formatTokenAmount(t.supply, t.decimals)} supply
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Recent Activity ── */}
       <ActivityFeed />

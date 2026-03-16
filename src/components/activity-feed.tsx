@@ -59,36 +59,38 @@ export function ActivityFeed() {
       </h2>
       <div className="rounded-xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden divide-y divide-white/[0.05]">
         {visible.map((trade, i) => {
-          const tokenMeta = tokens.find((t) => t.ticker === trade.ticker);
+          const tokenMeta = tokens.find((t) => t.assetId === trade.assetId);
           const decimals = tokenMeta?.decimals;
-          const isBuy = trade.type === "buy";
+          const ticker = tokenMeta?.ticker ?? trade.assetId.slice(0, 8);
+          // offerType "sell" = maker sold tokens (taker bought)
+          const isBuy = trade.offerType === "sell";
 
           return (
             <Link
-              key={trade.arkTxId || `${trade.ticker}-${trade.timestamp}-${i}`}
-              href={`/token/${trade.ticker}`}
+              key={trade.filledInTxid || `${trade.offerOutpoint}-${i}`}
+              href={`/token/${ticker}`}
               className="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.04] transition-colors"
             >
               <span
                 className={`shrink-0 text-[10px] font-bold uppercase ${
-                  isBuy ? "text-emerald-400/80" : "text-red-400/80"
+                  isBuy ? "text-emerald-400/80" : "text-amber-400/80"
                 }`}
               >
                 {isBuy ? "BUY" : "SELL"}
               </span>
 
               <span className="shrink-0 text-[11px] font-mono font-medium text-muted-foreground/70">
-                ${trade.ticker}
+                ${ticker}
               </span>
 
               <span className="text-[11px] tabular-nums text-muted-foreground/50">
-                {formatTokenAmount(trade.tokens, decimals)}
+                {formatTokenAmount(trade.tokenAmount, decimals)}
               </span>
 
               <span className="text-[10px] text-muted-foreground/30">@</span>
 
               <span className="text-[11px] tabular-nums text-muted-foreground/50">
-                {formatSats(trade.sats)} sat
+                {formatSats(trade.satAmount)} sat
               </span>
 
               <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/30">

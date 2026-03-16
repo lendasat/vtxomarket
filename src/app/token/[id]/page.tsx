@@ -4,11 +4,12 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore } from "@/lib/store";
 import { useComments } from "@/hooks/useComments";
 import { useTrades } from "@/hooks/useTrades";
 import { useTokens } from "@/hooks/useTokens";
-import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer } from "@/lib/ark-wallet";
+import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer, createBuyOffer, fillBuyOffer, cancelBuyOffer } from "@/lib/ark-wallet";
 import { TokenChart } from "@/components/token-chart";
 import { useOffers } from "@/hooks/useOffers";
 import { formatTokenAmount, parseTokenInput, formatSats, formatPrice } from "@/lib/format";
@@ -16,7 +17,7 @@ import type { Token } from "@/lib/store";
 
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 
-type InfoTab = "thread" | "trades" | "trade" | "manage";
+type InfoTab = "buy-offers" | "sell-offers" | "thread" | "trades" | "manage";
 
 function timeAgo(ts: number): string {
   const s = Math.floor(Date.now() / 1000) - ts;
@@ -49,7 +50,7 @@ export default function TokenPage() {
 
   // Comments & trades
   const { comments, loading: commentsLoading, postComment } = useComments(ticker);
-  const { trades, loading: tradesLoading } = useTrades(ticker);
+  const { trades, loading: tradesLoading } = useTrades(token?.assetId ?? null);
 
   // Swap offers
   const { offers, loading: offersLoading, refetch: refetchOffers } = useOffers(token?.assetId ?? null);
@@ -61,7 +62,9 @@ export default function TokenPage() {
     return held?.amount ?? 0;
   }, [token?.assetId, heldAssets]);
 
-  const [infoTab, setInfoTab] = useState<InfoTab>("thread");
+  const [infoTab, setInfoTab] = useState<InfoTab>("buy-offers");
+  const [showSellDialog, setShowSellDialog] = useState(false);
+  const [showBuyDialog, setShowBuyDialog] = useState(false);
   const [newComment, setNewComment] = useState("");
 
   // Manage tab state
@@ -70,32 +73,47 @@ export default function TokenPage() {
   const [reissueError, setReissueError] = useState("");
   const [reissueSuccess, setReissueSuccess] = useState("");
 
-  // Trade tab state
+  // Trade tab state — sell offer form
   const [offerTokenAmount, setOfferTokenAmount] = useState("");
   const [offerSatAmount, setOfferSatAmount] = useState("");
-  const [offerExpiry, setOfferExpiry] = useState<3600 | 21600 | 86400>(3600);
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState("");
   const [offerSuccess, setOfferSuccess] = useState("");
+  // Buy offer form
+  const [buyOfferTokenAmount, setBuyOfferTokenAmount] = useState("");
+  const [buyOfferSatAmount, setBuyOfferSatAmount] = useState("");
+  const [buyOfferLoading, setBuyOfferLoading] = useState(false);
+  const [buyOfferError, setBuyOfferError] = useState("");
+  const [buyOfferSuccess, setBuyOfferSuccess] = useState("");
+
   const [fillLoading, setFillLoading] = useState<string | null>(null); // offerOutpoint being filled
   const [fillError, setFillError] = useState("");
   const [cancelLoading, setCancelLoading] = useState<string | null>(null); // offerOutpoint being cancelled
   const [cancelError, setCancelError] = useState("");
-  const [confirmAction, setConfirmAction] = useState<{ type: "buy" | "cancel"; outpoint: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "buy" | "sell" | "cancel"; outpoint: string } | null>(null);
   const [commentError, setCommentError] = useState("");
   const [userArkAddress, setUserArkAddress] = useState("");
 
   // Fetch user's Ark address (for identifying own offers)
+  // Re-fetch on wallet/user change to avoid stale address from previous account
   useEffect(() => {
-    if (!arkWallet) return;
+    if (!arkWallet) {
+      setUserArkAddress("");
+      return;
+    }
     arkWallet.getAddress().then(setUserArkAddress).catch((err: unknown) => {
       console.warn("[token] Failed to fetch user Ark address:", err instanceof Error ? err.message : err);
+      setUserArkAddress("");
     });
-  }, [arkWallet]);
+  }, [arkWallet, walletReady, user]);
 
   // Only creator who holds the control asset can manage
   const isCreator = user?.pubkey === token?.creator;
   const canManage = isCreator && !!token?.controlAssetId;
+
+  // Split offers by type
+  const sellOffers = useMemo(() => offers.filter((o) => o.offerType !== 'buy'), [offers]);
+  const buyOffers = useMemo(() => offers.filter((o) => o.offerType === 'buy'), [offers]);
 
   // Post comment
   const handlePostComment = async () => {
@@ -157,19 +175,30 @@ export default function TokenPage() {
         assetId: token.assetId,
         tokenAmount: tokenAmt,
         satAmount: satAmt,
-        expiresInSeconds: offerExpiry,
       });
 
-      // Self-report to indexer
-      await fetch(`${INDEXER_URL}/offers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(offer),
-      });
+      // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
+      let posted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+        const resp = await fetch(`${INDEXER_URL}/offers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(offer),
+        });
+        if (resp.ok) { posted = true; break; }
+        const errText = await resp.text().catch(() => "");
+        if (!errText.includes("VTXO not found")) {
+          console.warn("[offer] Indexer POST failed:", errText);
+          break;
+        }
+      }
+      if (!posted) console.warn("[offer] Could not register offer with indexer");
 
       setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setOfferTokenAmount("");
       setOfferSatAmount("");
+      setShowSellDialog(false);
       refetchOffers();
     } catch (err) {
       setOfferError(err instanceof Error ? err.message : "Failed to create offer");
@@ -197,7 +226,7 @@ export default function TokenPage() {
     }
   };
 
-  // Cancel own swap offer handler (maker only)
+  // Cancel own swap offer handler (maker only — works for both sell and buy offers)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleCancelOffer = async (offer: any) => {
     if (!arkWallet || tradeInFlight) return;
@@ -205,12 +234,81 @@ export default function TokenPage() {
     setCancelLoading(offer.offerOutpoint);
     setCancelError("");
     try {
-      await cancelSwapOffer(arkWallet, offer);
+      if (offer.offerType === 'buy') {
+        await cancelBuyOffer(arkWallet, offer);
+      } else {
+        await cancelSwapOffer(arkWallet, offer);
+      }
       refetchOffers();
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : "Cancel failed");
     } finally {
       setCancelLoading(null);
+    }
+  };
+
+  // Create buy offer handler
+  const handleCreateBuyOffer = async () => {
+    if (!arkWallet || !token) return;
+    const tokenAmt = parseTokenInput(buyOfferTokenAmount, token.decimals);
+    const satAmt = parseInt(buyOfferSatAmount, 10);
+    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
+
+    setBuyOfferLoading(true);
+    setBuyOfferError("");
+    setBuyOfferSuccess("");
+
+    try {
+      const offer = await createBuyOffer(arkWallet, {
+        assetId: token.assetId,
+        tokenAmount: tokenAmt,
+        satAmount: satAmt,
+      });
+
+      // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
+      let posted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+        const resp = await fetch(`${INDEXER_URL}/offers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(offer),
+        });
+        if (resp.ok) { posted = true; break; }
+        const errText = await resp.text().catch(() => "");
+        if (!errText.includes("VTXO not found")) {
+          console.warn("[offer] Indexer POST failed:", errText);
+          break;
+        }
+      }
+      if (!posted) console.warn("[offer] Could not register offer with indexer");
+
+      setBuyOfferSuccess(`Buy offer created! Buying ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
+      setBuyOfferTokenAmount("");
+      setBuyOfferSatAmount("");
+      setShowBuyDialog(false);
+      refetchOffers();
+    } catch (err) {
+      setBuyOfferError(err instanceof Error ? err.message : "Failed to create buy offer");
+    } finally {
+      setBuyOfferLoading(false);
+    }
+  };
+
+  // Fill buy offer handler — seller fills a buy offer (provides tokens, receives sats)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleFillBuyOffer = async (offer: any) => {
+    if (!arkWallet || tradeInFlight) return;
+    setConfirmAction(null);
+    setFillLoading(offer.offerOutpoint);
+    setFillError("");
+    try {
+      await fillBuyOffer(arkWallet, offer);
+      refetchOffers();
+    } catch (err) {
+      setFillError(err instanceof Error ? err.message : "Fill failed");
+    } finally {
+      setFillLoading(null);
     }
   };
 
@@ -282,49 +380,67 @@ export default function TokenPage() {
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4">
             <TokenChart
               trades={trades}
-              basePrice={trades.length > 0 ? trades[trades.length - 1].price : 0}
+              basePrice={trades.length > 0 ? trades[0].price : 0}
             />
           </div>
 
+          {/* Buy / Sell offer buttons */}
+          {walletReady && token && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowBuyDialog(true)}
+                className="flex-1 group relative py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(52,211,153,0.08)]"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                    <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+                  </svg>
+                  Buy Offer
+                </span>
+              </button>
+              <button
+                onClick={() => setShowSellDialog(true)}
+                disabled={userHolding <= 0}
+                className="flex-1 group relative py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(248,113,113,0.08)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:shadow-none"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                    <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+                  </svg>
+                  Sell Offer
+                </span>
+              </button>
+            </div>
+          )}
+
           {/* Info tabs */}
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
-            <div className="flex border-b border-white/[0.07]">
-              {(["thread", "trades"] as const).map((tab) => (
+            <div className="flex border-b border-white/[0.07] overflow-x-auto">
+              {([
+                ["buy-offers", "Buy Offers", buyOffers.length],
+                ["sell-offers", "Sell Offers", sellOffers.length],
+                ["thread", "Thread", comments.length],
+                ["trades", "Trades", trades.length],
+              ] as const).map(([tab, label, count]) => (
                 <button
                   key={tab}
                   onClick={() => setInfoTab(tab)}
-                  className={`flex-1 py-3 text-xs font-medium capitalize transition-colors ${
+                  className={`flex-1 shrink-0 py-3 text-xs font-medium transition-colors ${
                     infoTab === tab
                       ? "text-foreground border-b-2 border-primary"
                       : "text-muted-foreground/60 hover:text-muted-foreground"
                   }`}
                 >
-                  {tab}
-                  {tab === "thread" && (
-                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{comments.length}</span>
-                  )}
-                  {tab === "trades" && (
-                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{trades.length}</span>
+                  {label}
+                  {count > 0 && (
+                    <span className="ml-1.5 text-[10px] text-muted-foreground/40">{count}</span>
                   )}
                 </button>
               ))}
-              <button
-                onClick={() => setInfoTab("trade")}
-                className={`flex-1 py-3 text-xs font-medium transition-colors ${
-                  infoTab === "trade"
-                    ? "text-foreground border-b-2 border-primary"
-                    : "text-muted-foreground/60 hover:text-muted-foreground"
-                }`}
-              >
-                Trade
-                {offers.length > 0 && (
-                  <span className="ml-1.5 text-[10px] text-muted-foreground/40">{offers.length}</span>
-                )}
-              </button>
               {canManage && (
                 <button
                   onClick={() => setInfoTab("manage")}
-                  className={`flex-1 py-3 text-xs font-medium transition-colors ${
+                  className={`flex-1 shrink-0 py-3 text-xs font-medium transition-colors ${
                     infoTab === "manage"
                       ? "text-foreground border-b-2 border-primary"
                       : "text-muted-foreground/60 hover:text-muted-foreground"
@@ -336,6 +452,152 @@ export default function TokenPage() {
             </div>
 
             <div className="p-4">
+              {/* Buy Offers */}
+              {infoTab === "buy-offers" && token && (
+                <div className="space-y-3">
+                  {offersLoading && buyOffers.length === 0 && (
+                    <div className="flex items-center justify-center gap-2 py-8">
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-400" />
+                      <span className="text-xs text-muted-foreground/40">Loading buy offers...</span>
+                    </div>
+                  )}
+                  {!offersLoading && buyOffers.length === 0 && (
+                    <div className="text-center py-8 space-y-2">
+                      <div className="h-10 w-10 mx-auto rounded-xl bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-emerald-400/40">
+                          <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-muted-foreground/40">No buy offers yet</p>
+                      {walletReady && (
+                        <button onClick={() => setShowBuyDialog(true)} className="text-[11px] text-emerald-400/70 hover:text-emerald-400 transition-colors">
+                          Create the first buy offer
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {buyOffers.length > 0 && (
+                    <div className="space-y-2">
+                      {buyOffers.map((offer) => {
+                        const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
+                        return (
+                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-emerald-500/[0.03] border-emerald-500/10 hover:border-emerald-500/20"}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-sm font-semibold tabular-nums">
+                                    {formatTokenAmount(offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/30">|</span>
+                                  <span className="text-[11px] text-emerald-400/60 tabular-nums font-medium">
+                                    {formatSats(offer.satAmount)} sat
+                                  </span>
+                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                </div>
+                              </div>
+                              {isOwn ? (
+                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                              ) : (
+                                <OfferFillButton offer={offer} type="sell" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFillBuyOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} disabled={userHolding < offer.tokenAmount} label="Sell" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {fillError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{fillError}</p>
+                    </div>
+                  )}
+                  {cancelError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{cancelError}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sell Offers */}
+              {infoTab === "sell-offers" && token && (
+                <div className="space-y-3">
+                  {offersLoading && sellOffers.length === 0 && (
+                    <div className="flex items-center justify-center gap-2 py-8">
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/30 border-t-red-400" />
+                      <span className="text-xs text-muted-foreground/40">Loading sell offers...</span>
+                    </div>
+                  )}
+                  {!offersLoading && sellOffers.length === 0 && (
+                    <div className="text-center py-8 space-y-2">
+                      <div className="h-10 w-10 mx-auto rounded-xl bg-red-500/10 border border-red-500/15 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-red-400/40">
+                          <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-muted-foreground/40">No sell offers yet</p>
+                      {walletReady && userHolding > 0 && (
+                        <button onClick={() => setShowSellDialog(true)} className="text-[11px] text-red-400/70 hover:text-red-400 transition-colors">
+                          Create the first sell offer
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {sellOffers.length > 0 && (
+                    <div className="space-y-2">
+                      {sellOffers.map((offer) => {
+                        const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
+                        return (
+                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-red-500/[0.03] border-red-500/10 hover:border-red-500/20"}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-sm font-semibold tabular-nums">
+                                    {formatTokenAmount(offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                </div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground/30">|</span>
+                                  <span className="text-[11px] text-red-400/60 tabular-nums font-medium">
+                                    {formatSats(offer.satAmount)} sat
+                                  </span>
+                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                </div>
+                              </div>
+                              {isOwn ? (
+                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                              ) : (
+                                <OfferFillButton offer={offer} type="buy" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFill} walletReady={walletReady} tradeInFlight={tradeInFlight} label="Buy" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {fillError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{fillError}</p>
+                    </div>
+                  )}
+                  {cancelError && (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
+                      <p className="text-xs text-red-400">{cancelError}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Thread */}
               {infoTab === "thread" && (
                 <div className="space-y-4">
@@ -406,28 +668,30 @@ export default function TokenPage() {
 
                   <div className="divide-y divide-white/[0.05]">
                     {trades.map((t) => {
-                      const isBuy = t.type === "buy";
+                      // offerType "sell" = someone sold tokens (taker bought) → show as buy
+                      // offerType "buy" = someone bought tokens (taker sold) → show as buy
+                      const isBuy = t.offerType === "sell";
                       return (
                         <div
-                          key={t.arkTxId}
+                          key={t.filledInTxid || t.offerOutpoint}
                           className="flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0"
                         >
                           <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            isBuy ? "bg-emerald-400" : "bg-red-400"
+                            isBuy ? "bg-emerald-400" : "bg-amber-400"
                           }`} />
                           <span className="shrink-0 text-[11px] font-mono text-muted-foreground/40">
-                            {shortPubkey(isBuy ? t.buyer : t.seller)}
+                            {shortPubkey(t.makerArkAddress)}
                           </span>
-                          <span className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-red-400/80"}`}>
-                            {isBuy ? "bought" : "sold"}
+                          <span className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-amber-400/80"}`}>
+                            {isBuy ? "sold" : "bought"}
                           </span>
                           <span className="text-[11px] font-semibold tabular-nums">
-                            {formatTokenAmount(t.tokens, token?.decimals)}
-                            <span className="text-muted-foreground/35 font-normal ml-0.5">${t.ticker}</span>
+                            {formatTokenAmount(t.tokenAmount, token?.decimals)}
+                            <span className="text-muted-foreground/35 font-normal ml-0.5">${token?.ticker}</span>
                           </span>
                           <div className="flex-1" />
                           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
-                            {t.sats.toLocaleString()} <span className="text-muted-foreground/30">sat</span>
+                            {formatSats(t.satAmount)} <span className="text-muted-foreground/30">sat</span>
                           </span>
                           <span className="shrink-0 text-[10px] text-muted-foreground/25 tabular-nums">
                             {timeAgo(t.timestamp)}
@@ -436,213 +700,6 @@ export default function TokenPage() {
                       );
                     })}
                   </div>
-                </div>
-              )}
-
-              {/* Trade */}
-              {infoTab === "trade" && token && (
-                <div className="space-y-4">
-                  {/* Order book */}
-                  <div>
-                    <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em] mb-3">
-                      Open Offers
-                    </p>
-                    {offersLoading && offers.length === 0 && (
-                      <p className="text-xs text-muted-foreground/40 text-center py-4">Loading offers...</p>
-                    )}
-                    {!offersLoading && offers.length === 0 && (
-                      <p className="text-xs text-muted-foreground/40 text-center py-4">No open offers yet.</p>
-                    )}
-                    {offers.length > 0 && (
-                      <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
-                        {/* Header */}
-                        <div className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 px-3 py-2 border-b border-white/[0.05]">
-                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Amount</span>
-                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Price</span>
-                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase">Total</span>
-                          <span className="text-[10px] text-muted-foreground/40 font-medium uppercase w-16 text-right">Action</span>
-                        </div>
-                        {offers.map((offer) => {
-                          const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
-                          return (
-                            <div key={offer.offerOutpoint} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 items-center px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-                              <span className="text-xs tabular-nums">
-                                {formatTokenAmount(offer.tokenAmount, token.decimals)}
-                                <span className="text-muted-foreground/35 text-[10px] ml-0.5">${token.ticker}</span>
-                              </span>
-                              <span className="text-xs tabular-nums text-muted-foreground/70">
-                                {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
-                              </span>
-                              <span className="text-xs tabular-nums text-muted-foreground/70">
-                                {formatSats(offer.satAmount)}
-                                <span className="text-[10px] text-muted-foreground/35 ml-0.5">sat</span>
-                              </span>
-                              {isOwn ? (
-                                cancelLoading === offer.offerOutpoint ? (
-                                  <span className="w-16 py-1 flex items-center justify-center">
-                                    <span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" />
-                                  </span>
-                                ) : confirmAction?.type === "cancel" && confirmAction.outpoint === offer.offerOutpoint ? (
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => handleCancelOffer(offer)}
-                                      className="px-2 py-1 rounded-lg bg-red-500/30 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-500/40 transition-colors"
-                                    >
-                                      Yes
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmAction(null)}
-                                      className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
-                                    >
-                                      No
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })}
-                                    disabled={!walletReady || tradeInFlight}
-                                    className="w-16 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                  >
-                                    Cancel
-                                  </button>
-                                )
-                              ) : (
-                                fillLoading === offer.offerOutpoint ? (
-                                  <span className="w-16 py-1 flex items-center justify-center">
-                                    <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-400/50 border-t-transparent" />
-                                  </span>
-                                ) : confirmAction?.type === "buy" && confirmAction.outpoint === offer.offerOutpoint ? (
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => handleFill(offer)}
-                                      className="px-2 py-1 rounded-lg bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/40 transition-colors"
-                                    >
-                                      Yes
-                                    </button>
-                                    <button
-                                      onClick={() => setConfirmAction(null)}
-                                      className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
-                                    >
-                                      No
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => setConfirmAction({ type: "buy", outpoint: offer.offerOutpoint })}
-                                    disabled={!walletReady || tradeInFlight}
-                                    className="w-16 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                  >
-                                    Buy
-                                  </button>
-                                )
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {fillError && (
-                      <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
-                        <p className="text-xs text-red-400">{fillError}</p>
-                      </div>
-                    )}
-                    {cancelError && (
-                      <div className="mt-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
-                        <p className="text-xs text-red-400">{cancelError}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Make offer — only if user holds this token */}
-                  {userHolding > 0 && (
-                    <>
-                      <div className="h-px bg-white/[0.06]" />
-                      <div className="space-y-3">
-                        <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em]">
-                          Create Offer
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] text-muted-foreground/40 mb-1 block">Token amount</label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={userHolding}
-                              value={offerTokenAmount}
-                              onChange={(e) => setOfferTokenAmount(e.target.value)}
-                              placeholder={`Max ${formatTokenAmount(userHolding, token.decimals)}`}
-                              className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to receive</label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={offerSatAmount}
-                              onChange={(e) => setOfferSatAmount(e.target.value)}
-                              placeholder="Sats"
-                              className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
-                            />
-                          </div>
-                        </div>
-
-                        {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
-                          <p className="text-[11px] text-muted-foreground/50 tabular-nums">
-                            Price: {formatPrice(Number(offerSatAmount), Number(offerTokenAmount), token.decimals)}
-                          </p>
-                        )}
-
-                        <div className="flex gap-1">
-                          {([["1h", 3600], ["6h", 21600], ["24h", 86400]] as const).map(([label, val]) => (
-                            <button
-                              key={val}
-                              onClick={() => setOfferExpiry(val)}
-                              className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
-                                offerExpiry === val
-                                  ? "bg-white/[0.1] border-white/[0.2] text-foreground"
-                                  : "bg-white/[0.03] border-white/[0.06] text-muted-foreground/50 hover:text-muted-foreground"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-
-                        {offerError && (
-                          <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
-                            <p className="text-xs text-red-400">{offerError}</p>
-                          </div>
-                        )}
-                        {offerSuccess && (
-                          <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
-                            <p className="text-xs text-emerald-400">{offerSuccess}</p>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={handleCreateOffer}
-                          disabled={
-                            !offerTokenAmount || !offerSatAmount ||
-                            parseInt(offerTokenAmount, 10) <= 0 || parseInt(offerSatAmount, 10) <= 0 ||
-                            offerLoading || !walletReady
-                          }
-                          className="w-full py-2.5 rounded-xl bg-white/[0.1] border border-white/[0.14] text-sm font-semibold transition-all hover:bg-white/[0.15] disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          {offerLoading ? (
-                            <span className="flex items-center justify-center gap-2">
-                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-foreground/50 border-t-transparent" />
-                              Creating offer...
-                            </span>
-                          ) : "Create Offer"}
-                        </button>
-
-                        <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
-                          Your tokens are locked in a script VTXO. Any taker can fill directly — no ASP coordination needed. You can cancel after expiry.
-                        </p>
-                      </div>
-                    </>
-                  )}
                 </div>
               )}
 
@@ -763,7 +820,159 @@ export default function TokenPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Buy Dialog ── */}
+      {token && (
+        <Dialog open={showBuyDialog} onOpenChange={setShowBuyDialog}>
+          <DialogContent className="bg-zinc-950 border-white/[0.1]">
+            <DialogHeader>
+              <DialogTitle>Create Buy Offer</DialogTitle>
+              <p className="text-xs text-muted-foreground">Lock sats to buy ${token.ticker}. Any seller can fill it.</p>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Token amount</label>
+                  <input type="number" min={1} value={buyOfferTokenAmount} onChange={(e) => setBuyOfferTokenAmount(e.target.value)} placeholder="Amount" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to pay</label>
+                  <input type="number" min={1} value={buyOfferSatAmount} onChange={(e) => setBuyOfferSatAmount(e.target.value)} placeholder="Sats" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                </div>
+              </div>
+              {buyOfferTokenAmount && buyOfferSatAmount && Number(buyOfferTokenAmount) > 0 && Number(buyOfferSatAmount) > 0 && (
+                <p className="text-[11px] text-muted-foreground/50 tabular-nums">
+                  Price: {formatPrice(Number(buyOfferSatAmount), Number(buyOfferTokenAmount), token.decimals)}
+                </p>
+              )}
+              {buyOfferError && <p className="text-xs text-red-400">{buyOfferError}</p>}
+              {buyOfferSuccess && <p className="text-xs text-emerald-400">{buyOfferSuccess}</p>}
+              <button
+                onClick={handleCreateBuyOffer}
+                disabled={!buyOfferTokenAmount || !buyOfferSatAmount || parseInt(buyOfferTokenAmount, 10) <= 0 || parseInt(buyOfferSatAmount, 10) <= 0 || buyOfferLoading || !walletReady}
+                className="w-full py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {buyOfferLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/50 border-t-transparent" />Creating...</span> : "Create Buy Offer"}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── Sell Dialog ── */}
+      {token && (
+        <Dialog open={showSellDialog} onOpenChange={setShowSellDialog}>
+          <DialogContent className="bg-zinc-950 border-white/[0.1]">
+            <DialogHeader>
+              <DialogTitle>Create Sell Offer</DialogTitle>
+              <p className="text-xs text-muted-foreground">Lock ${token.ticker} tokens. Any buyer can fill with sats.</p>
+            </DialogHeader>
+            <div className="space-y-3">
+              {userHolding > 0 ? (
+                <>
+                  {/* Balance display */}
+                  <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground/50">Available balance</span>
+                    <span className="text-xs font-semibold tabular-nums">
+                      {formatTokenAmount(userHolding, token.decimals)} <span className="text-muted-foreground/40 font-normal">${token.ticker}</span>
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-muted-foreground/40">Token amount</label>
+                        <button
+                          type="button"
+                          onClick={() => setOfferTokenAmount(formatTokenAmount(userHolding, token.decimals).replace(/,/g, ""))}
+                          className="text-[10px] font-medium text-red-400/70 hover:text-red-400 transition-colors"
+                        >
+                          Max
+                        </button>
+                      </div>
+                      <input type="number" min={1} max={userHolding} value={offerTokenAmount} onChange={(e) => setOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to receive</label>
+                      <input type="number" min={1} value={offerSatAmount} onChange={(e) => setOfferSatAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                    </div>
+                  </div>
+                  {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
+                    <p className="text-[11px] text-muted-foreground/50 tabular-nums">
+                      Price: {formatPrice(Number(offerSatAmount), Number(offerTokenAmount), token.decimals)}
+                    </p>
+                  )}
+                  {offerError && <p className="text-xs text-red-400">{offerError}</p>}
+                  {offerSuccess && <p className="text-xs text-emerald-400">{offerSuccess}</p>}
+                  <button
+                    onClick={handleCreateOffer}
+                    disabled={!offerTokenAmount || !offerSatAmount || parseInt(offerTokenAmount, 10) <= 0 || parseInt(offerSatAmount, 10) <= 0 || offerLoading || !walletReady}
+                    className="w-full py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {offerLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/50 border-t-transparent" />Creating...</span> : "Create Sell Offer"}
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground/40 text-center py-3">You don&apos;t hold any ${token.ticker} to sell.</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// ── Offer action button helpers ──────────────────────────────────────────────
+
+function OfferCancelButton({ offer, cancelLoading, confirmAction, setConfirmAction, handleCancelOffer, walletReady, tradeInFlight }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offer: any; cancelLoading: string | null; confirmAction: { type: string; outpoint: string } | null;
+  setConfirmAction: (v: { type: "buy" | "sell" | "cancel"; outpoint: string } | null) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handleCancelOffer: (o: any) => void; walletReady: boolean; tradeInFlight: boolean;
+}) {
+  if (cancelLoading === offer.offerOutpoint) {
+    return <span className="w-20 py-1 flex items-center justify-center"><span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" /></span>;
+  }
+  if (confirmAction?.type === "cancel" && confirmAction.outpoint === offer.offerOutpoint) {
+    return (
+      <div className="flex gap-1">
+        <button onClick={() => handleCancelOffer(offer)} className="px-2 py-1 rounded-lg bg-red-500/30 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-500/40 transition-colors">Yes</button>
+        <button onClick={() => setConfirmAction(null)} className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors">No</button>
+      </div>
+    );
+  }
+  return (
+    <button onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })} disabled={!walletReady || tradeInFlight} className="w-20 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+      Cancel
+    </button>
+  );
+}
+
+function OfferFillButton({ offer, type, fillLoading, confirmAction, setConfirmAction, handleFill, walletReady, tradeInFlight, disabled, label }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offer: any; type: "buy" | "sell"; fillLoading: string | null;
+  confirmAction: { type: string; outpoint: string } | null;
+  setConfirmAction: (v: { type: "buy" | "sell" | "cancel"; outpoint: string } | null) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handleFill: (o: any) => void; walletReady: boolean; tradeInFlight: boolean; disabled?: boolean; label: string;
+}) {
+  const isBuy = type === "buy";
+  if (fillLoading === offer.offerOutpoint) {
+    return <span className="w-20 py-1 flex items-center justify-center"><span className={`h-2.5 w-2.5 animate-spin rounded-full border border-t-transparent ${isBuy ? "border-emerald-400/50" : "border-amber-400/50"}`} /></span>;
+  }
+  if (confirmAction?.type === type && confirmAction.outpoint === offer.offerOutpoint) {
+    return (
+      <div className="flex gap-1">
+        <button onClick={() => handleFill(offer)} className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${isBuy ? "bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/40" : "bg-amber-500/30 border border-amber-500/40 text-amber-400 hover:bg-amber-500/40"}`}>Yes</button>
+        <button onClick={() => setConfirmAction(null)} className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors">No</button>
+      </div>
+    );
+  }
+  return (
+    <button onClick={() => setConfirmAction({ type, outpoint: offer.offerOutpoint })} disabled={!walletReady || tradeInFlight || disabled} className={`w-20 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isBuy ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30" : "bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30"}`}>
+      {label}
+    </button>
   );
 }
 

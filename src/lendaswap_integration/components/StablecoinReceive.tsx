@@ -74,6 +74,8 @@ export function StablecoinReceive() {
   const [fundError, setFundError] = useState<string | null>(null);
   const [funded, setFunded] = useState(false);
 
+  const autoFundTriggered = useRef(false);
+
   const rpcClient = useMemo(() => {
     if (!swap?.evmDepositAddress) return null;
     const viemChain = getViemChain(chain);
@@ -135,6 +137,14 @@ export function StablecoinReceive() {
     }
   }, [swap?.id, isFunding, fundGasless]);
 
+  // Auto-fund gaslessly once sufficient deposit is detected
+  useEffect(() => {
+    if (hasSufficientDeposit && !funded && !isFunding && !autoFundTriggered.current && swap?.id) {
+      autoFundTriggered.current = true;
+      handleFundGasless();
+    }
+  }, [hasSufficientDeposit, funded, isFunding, swap?.id, handleFundGasless]);
+
   // Debounced sats estimate as user types
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -184,6 +194,7 @@ export function StablecoinReceive() {
     setFundError(null);
     setEvmTxHash(null);
     setEvmSendError(null);
+    autoFundTriggered.current = false;
   };
 
   // Changing coin or chain resets the active swap so user must re-enter amount
@@ -338,55 +349,27 @@ export function StablecoinReceive() {
               </span>
             </button>
 
-            {/* Deposit status */}
-            <div className="flex items-center justify-between py-2 px-1">
-              <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">Deposit</span>
-              {hasSufficientDeposit ? (
-                <span className="text-[11px] text-emerald-400/80 flex items-center gap-1.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                    <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
-                  </svg>
-                  {depositDisplay} received
+            {/* Deposit & funding status */}
+            {(isFunding || funded) ? (
+              <div className="flex items-center justify-center gap-1.5 py-2">
+                <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
+                <span className="text-xs text-muted-foreground/40">Processing swap...</span>
+              </div>
+            ) : pollFailing ? (
+              <div className="flex items-center justify-center gap-1.5 py-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-amber-400/70">
+                  <path fillRule="evenodd" d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                </svg>
+                <span className="text-xs text-amber-400/70">RPC issue — checking...</span>
+              </div>
+            ) : depositBalance !== null && depositBalance > 0n ? (
+              <div className="flex items-center justify-center gap-1.5 py-2">
+                <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
+                <span className="text-xs text-muted-foreground/40">
+                  {fromSmallestUnit(depositBalance.toString(), coin)} / {fromSmallestUnit(swap.evmDepositAmount || "0", coin)} {coin}
                 </span>
-              ) : pollFailing ? (
-                <span className="text-[11px] text-amber-400/70 flex items-center gap-1.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                    <path fillRule="evenodd" d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
-                  </svg>
-                  RPC issue — checking...
-                </span>
-              ) : (
-                <span className="text-[11px] text-muted-foreground/30 flex items-center gap-1.5">
-                  <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
-                  {depositBalance !== null && depositBalance > 0n
-                    ? `${fromSmallestUnit(depositBalance.toString(), coin)} / ${fromSmallestUnit(swap.evmDepositAmount || "0", coin)} ${coin}`
-                    : `Waiting for ${depositDisplay}...`}
-                </span>
-              )}
-            </div>
-
-            {/* Fund Swap button — enabled once tokens arrive at deposit address */}
-            {!funded && (
-              <button
-                onClick={handleFundGasless}
-                disabled={isFunding || !hasSufficientDeposit}
-                className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isFunding ? (
-                  <>
-                    <div className="h-3.5 w-3.5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                    Funding...
-                  </>
-                ) : !hasSufficientDeposit ? (
-                  <>
-                    <div className="h-3.5 w-3.5 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
-                    Waiting for {coin}...
-                  </>
-                ) : (
-                  "Fund Swap"
-                )}
-              </button>
-            )}
+              </div>
+            ) : null}
 
             {/* Fund error */}
             {fundError && (
