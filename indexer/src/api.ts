@@ -21,6 +21,7 @@ import {
   getHoldersForAsset,
   getStats,
   upsertOffer,
+  upsertAsset,
   upsertAssetMetadata,
   getOffer,
   getOpenOffersForAsset,
@@ -30,7 +31,7 @@ import {
   getTradesForAsset,
   getRecentTrades,
 } from "./db";
-import { fetchVtxosByOutpoints } from "./ark-client";
+import { fetchVtxosByOutpoints, fetchAssetMetadata } from "./ark-client";
 import { getRecentLogs } from "./log-buffer";
 
 export function buildApp(): Hono {
@@ -70,6 +71,33 @@ export function buildApp(): Hono {
   app.get("/assets/:id", (c) => {
     const asset = getAsset(c.req.param("id"));
     if (!asset) return c.json({ error: "Not found" }, 404);
+    return c.json({ asset });
+  });
+
+  // ── Discover unknown asset (fetch metadata from Ark server on demand) ──────
+  app.post("/assets/:id/discover", async (c) => {
+    const assetId = c.req.param("id");
+    const existing = getAsset(assetId);
+    if (existing && (existing.name || existing.ticker)) {
+      return c.json({ asset: existing });
+    }
+
+    const meta = await fetchAssetMetadata(assetId);
+    if (!meta) return c.json({ error: "Asset not found on Ark server" }, 404);
+
+    upsertAsset({
+      assetId,
+      name: meta.name ?? null,
+      ticker: meta.ticker ?? null,
+      decimals: meta.decimals ?? 0,
+      supply: meta.supply ?? "0",
+      firstSeenTxid: "discovered",
+    });
+    if (meta.icon) {
+      upsertAssetMetadata(assetId, { image: meta.icon });
+    }
+
+    const asset = getAsset(assetId);
     return c.json({ asset });
   });
 
