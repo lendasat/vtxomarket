@@ -101,12 +101,15 @@ export function useLendaswap() {
 
   const refreshBalance = useCallback(async () => {
     if (!arkWallet) return;
+    const wallet = arkWallet;
     const doRefresh = async () => {
+      if (!mountedRef.current) return;
       try {
         const [bal, addrs] = await Promise.all([
-          getBalance(arkWallet),
-          getReceivingAddresses(arkWallet),
+          getBalance(wallet),
+          getReceivingAddresses(wallet),
         ]);
+        if (!mountedRef.current) return;
         setBalance(bal);
         setAddresses(addrs);
       } catch (err) {
