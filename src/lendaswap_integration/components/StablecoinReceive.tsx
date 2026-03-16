@@ -74,6 +74,8 @@ export function StablecoinReceive() {
   const [fundError, setFundError] = useState<string | null>(null);
   const [funded, setFunded] = useState(false);
 
+  const autoFundTriggered = useRef(false);
+
   const rpcClient = useMemo(() => {
     if (!swap?.evmDepositAddress) return null;
     const viemChain = getViemChain(chain);
@@ -135,6 +137,14 @@ export function StablecoinReceive() {
     }
   }, [swap?.id, isFunding, fundGasless]);
 
+  // Auto-fund gaslessly once sufficient deposit is detected
+  useEffect(() => {
+    if (hasSufficientDeposit && !funded && !isFunding && !autoFundTriggered.current && swap?.id) {
+      autoFundTriggered.current = true;
+      handleFundGasless();
+    }
+  }, [hasSufficientDeposit, funded, isFunding, swap?.id, handleFundGasless]);
+
   // Debounced sats estimate as user types
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -184,6 +194,7 @@ export function StablecoinReceive() {
     setFundError(null);
     setEvmTxHash(null);
     setEvmSendError(null);
+    autoFundTriggered.current = false;
   };
 
   // Changing coin or chain resets the active swap so user must re-enter amount
@@ -338,13 +349,11 @@ export function StablecoinReceive() {
               </span>
             </button>
 
-            {/* Deposit status */}
-            {hasSufficientDeposit ? (
+            {/* Deposit & funding status */}
+            {(isFunding || funded) ? (
               <div className="flex items-center justify-center gap-1.5 py-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-emerald-400">
-                  <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
-                </svg>
-                <span className="text-xs text-emerald-400/80">{depositDisplay} received</span>
+                <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
+                <span className="text-xs text-muted-foreground/40">Processing swap...</span>
               </div>
             ) : pollFailing ? (
               <div className="flex items-center justify-center gap-1.5 py-2">
@@ -361,24 +370,6 @@ export function StablecoinReceive() {
                 </span>
               </div>
             ) : null}
-
-            {/* Fund Swap button — only shows once tokens arrive */}
-            {!funded && hasSufficientDeposit && (
-              <button
-                onClick={handleFundGasless}
-                disabled={isFunding}
-                className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isFunding ? (
-                  <>
-                    <div className="h-3.5 w-3.5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
-                    Funding...
-                  </>
-                ) : (
-                  "Fund Swap"
-                )}
-              </button>
-            )}
 
             {/* Fund error */}
             {fundError && (
