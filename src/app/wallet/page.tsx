@@ -764,10 +764,22 @@ function TransactionHistoryView({
     const ark: UnifiedTxItem[] = txHistory.map((tx) => ({ kind: "ark" as const, data: tx }));
     const stable: UnifiedTxItem[] = stablecoinTxs.map((tx) => ({ kind: "stablecoin" as const, data: tx }));
     const now = Date.now();
+
+    const toMs = (item: UnifiedTxItem): number => {
+      const raw = item.data.createdAt;
+      if (!raw || raw === 0) return now;
+      if (item.kind === "ark") {
+        // Ark txs: always unix seconds
+        return raw * 1000;
+      }
+      // Stablecoin txs: should be ms, but guard against seconds
+      // If value looks like seconds (< year 2001 in ms = ~10^12), convert
+      return raw < 1e12 ? raw * 1000 : raw;
+    };
+
     return [...ark, ...stable].sort((a, b) => {
-      const aTime = a.kind === "ark" ? a.data.createdAt * 1000 : a.data.createdAt;
-      const bTime = b.kind === "ark" ? b.data.createdAt * 1000 : b.data.createdAt;
-      // Treat NaN/0 as "now" so new swaps without a timestamp sort to the top
+      const aTime = toMs(a);
+      const bTime = toMs(b);
       return (bTime || now) - (aTime || now);
     });
   }, [txHistory, stablecoinTxs]);
