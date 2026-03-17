@@ -285,7 +285,7 @@ export async function lightFillSwapOffer(
 
   // Collect all assets from all inputs, grouped by asset ID
   const allInputsWithAssets = [swapInput, ...fundingInputs];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const inputsByAssetId = new Map<string, { inputIndex: number; amount: bigint }[]>();
   const totalByAssetId = new Map<string, bigint>();
 
@@ -627,7 +627,7 @@ export async function lightFillBuyOffer(
 
   // All token inputs carry the asset — map them
   const allInputsWithAssets = [swapInput, ...tokenInputs];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const inputsByAssetId = new Map<string, { inputIndex: number; amount: bigint }[]>();
   const totalByAssetId = new Map<string, bigint>();
 

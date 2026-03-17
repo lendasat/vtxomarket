@@ -26,7 +26,7 @@ export function useMarketSummary(): {
       if (!res.ok) return;
       const json = await res.json();
       const map = new Map<string, TokenMarketData>();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       for (const item of json.summary ?? []) {
         map.set(item.assetId, {
           openOfferCount: Number(item.openOfferCount) || 0,
