@@ -7,13 +7,13 @@ const POLL_INTERVAL = 30_000;
 
 export interface Trade {
   offerOutpoint: string;
-  offerType: string;          // "sell" | "buy"
+  offerType: string; // "sell" | "buy"
   tokenAmount: number;
   satAmount: number;
-  price: number;              // satAmount / tokenAmount
+  price: number; // satAmount / tokenAmount
   makerArkAddress: string;
   filledInTxid: string;
-  timestamp: number;          // unix seconds
+  timestamp: number; // unix seconds
 }
 
 export function useTrades(assetId: string | null): {

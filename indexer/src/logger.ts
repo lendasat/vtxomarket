@@ -29,17 +29,25 @@ function emit(level: LogLevel, msg: string, meta?: object): void {
   const ts = new Date().toISOString();
   const line = fmt(level, msg, meta);
   switch (level) {
-    case "debug": console.debug(line); break;
-    case "info":  console.info(line);  break;
-    case "warn":  console.warn(line);  break;
-    case "error": console.error(line); break;
+    case "debug":
+      console.debug(line);
+      break;
+    case "info":
+      console.info(line);
+      break;
+    case "warn":
+      console.warn(line);
+      break;
+    case "error":
+      console.error(line);
+      break;
   }
   pushLog({ ts, level, msg, meta });
 }
 
 export const log = {
   debug: (msg: string, meta?: object) => emit("debug", msg, meta),
-  info:  (msg: string, meta?: object) => emit("info",  msg, meta),
-  warn:  (msg: string, meta?: object) => emit("warn",  msg, meta),
+  info: (msg: string, meta?: object) => emit("info", msg, meta),
+  warn: (msg: string, meta?: object) => emit("warn", msg, meta),
   error: (msg: string, meta?: object) => emit("error", msg, meta),
 };

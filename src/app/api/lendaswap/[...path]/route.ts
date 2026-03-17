@@ -18,7 +18,7 @@ async function proxyRequest(request: Request, context: { params: Promise<{ path:
   const { path } = await context.params;
 
   // Block path traversal attempts
-  if (path.some(segment => segment === ".." || segment === "." || segment === "")) {
+  if (path.some((segment) => segment === ".." || segment === "." || segment === "")) {
     return new Response("Invalid path", { status: 400 });
   }
 

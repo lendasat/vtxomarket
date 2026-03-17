@@ -105,15 +105,15 @@ export function useLendaswap() {
     const doRefresh = async () => {
       if (!mountedRef.current) return;
       try {
-        const [bal, addrs] = await Promise.all([
-          getBalance(wallet),
-          getReceivingAddresses(wallet),
-        ]);
+        const [bal, addrs] = await Promise.all([getBalance(wallet), getReceivingAddresses(wallet)]);
         if (!mountedRef.current) return;
         setBalance(bal);
         setAddresses(addrs);
       } catch (err) {
-        console.warn("[lendaswap] Balance refresh failed:", err instanceof Error ? err.message : err);
+        console.warn(
+          "[lendaswap] Balance refresh failed:",
+          err instanceof Error ? err.message : err
+        );
       }
     };
     // Refresh immediately, then retry after short delays to catch settlement
@@ -167,7 +167,7 @@ export function useLendaswap() {
         return null;
       }
     },
-    [updateState],
+    [updateState]
   );
 
   // ── Poll swap status ──────────────────────────────────────────────────
@@ -199,7 +199,9 @@ export function useLendaswap() {
           const swapResp = await client.getSwap(swapId, { updateStorage: true });
           const status = swapResp.status as string;
 
-          console.log(`[lendaswap] Poll ${swapId.slice(0, 8)}: status=${status}, direction=${direction}`);
+          console.log(
+            `[lendaswap] Poll ${swapId.slice(0, 8)}: status=${status}, direction=${direction}`
+          );
 
           // Update the active swap's backend status
           setState((prev) => {
@@ -207,7 +209,9 @@ export function useLendaswap() {
             // Defer store sync out of setState to avoid updating another component mid-render
             // Only update status fields — don't spread ActiveSwap which lacks StablecoinTxItem fields
             queueMicrotask(() => {
-              const existing = useAppStore.getState().stablecoinTxs.find((t) => t.swapId === swapId);
+              const existing = useAppStore
+                .getState()
+                .stablecoinTxs.find((t) => t.swapId === swapId);
               if (existing) {
                 upsertStablecoinTx({
                   ...existing,
@@ -246,14 +250,17 @@ export function useLendaswap() {
               stopPolling();
               updateState({
                 step: "error",
-                error: "Failed to claim after multiple attempts. Please try again or contact support.",
+                error:
+                  "Failed to claim after multiple attempts. Please try again or contact support.",
               });
               return;
             }
             isClaimingRef.current = true;
             updateState({ step: "claiming" });
             try {
-              console.log(`[lendaswap] Attempting claim for ${swapId.slice(0, 8)} (attempt ${claimRetries + 1})`);
+              console.log(
+                `[lendaswap] Attempting claim for ${swapId.slice(0, 8)} (attempt ${claimRetries + 1})`
+              );
               const result = await client.claim(swapId);
               console.log(`[lendaswap] Claim result:`, result);
               if (result.success) {
@@ -266,7 +273,10 @@ export function useLendaswap() {
                 });
               } else {
                 claimRetries++;
-                console.warn(`[lendaswap] Claim returned success=false (attempt ${claimRetries}):`, result);
+                console.warn(
+                  `[lendaswap] Claim returned success=false (attempt ${claimRetries}):`,
+                  result
+                );
                 updateState({ step: "processing" });
               }
             } catch (claimErr) {
@@ -283,7 +293,7 @@ export function useLendaswap() {
         }
       }, POLL_INTERVAL_MS);
     },
-    [stopPolling, updateState, refreshBalance, upsertStablecoinTx],
+    [stopPolling, updateState, refreshBalance, upsertStablecoinTx]
   );
 
   // ── Create SEND swap (Arkade BTC → EVM stablecoin) ────────────────────
@@ -316,7 +326,10 @@ export function useLendaswap() {
         });
 
         const resp = result.response;
-        console.log("[lendaswap] Swap created:", JSON.stringify(resp, (_, v) => typeof v === "bigint" ? v.toString() : v, 2));
+        console.log(
+          "[lendaswap] Swap created:",
+          JSON.stringify(resp, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2)
+        );
 
         // IMPORTANT: send source_amount (the full amount), NOT evm_expected_sats (post-fee).
         // The backend watcher checks received_sats >= expected source_amount.
@@ -335,7 +348,9 @@ export function useLendaswap() {
           createdAt: Date.now(),
         };
 
-        console.log(`[lendaswap] Sending ${swap.satsRequired} sats to VHTLC: ${resp.btc_vhtlc_address}`);
+        console.log(
+          `[lendaswap] Sending ${swap.satsRequired} sats to VHTLC: ${resp.btc_vhtlc_address}`
+        );
         updateState({ swap });
 
         // Push to store so it appears in transaction history immediately
@@ -372,7 +387,7 @@ export function useLendaswap() {
         return false;
       }
     },
-    [arkWallet, updateState, startPolling, upsertStablecoinTx],
+    [arkWallet, updateState, startPolling, upsertStablecoinTx]
   );
 
   // ── Create RECEIVE swap (EVM stablecoin → Arkade BTC) ─────────────────
@@ -452,7 +467,7 @@ export function useLendaswap() {
         return false;
       }
     },
-    [addresses, updateState, startPolling, upsertStablecoinTx],
+    [addresses, updateState, startPolling, upsertStablecoinTx]
   );
 
   // ── Seamless receive: quote + create in one shot ────────────────────
@@ -545,7 +560,7 @@ export function useLendaswap() {
         return false;
       }
     },
-    [addresses, updateState, startPolling, upsertStablecoinTx],
+    [addresses, updateState, startPolling, upsertStablecoinTx]
   );
 
   // ── Fund gasless (RECEIVE flow) ──────────────────────────────────────
@@ -570,7 +585,7 @@ export function useLendaswap() {
         return { success: false, error: msg };
       }
     },
-    [updateState],
+    [updateState]
   );
 
   // ── Refund ────────────────────────────────────────────────────────────
@@ -581,9 +596,14 @@ export function useLendaswap() {
         const client = await getLendaswapClient();
         const offchainAddr = addresses?.offchainAddr;
 
-        const result = await client.refundSwap(swapId, offchainAddr ? {
-          destinationAddress: offchainAddr,
-        } : undefined);
+        const result = await client.refundSwap(
+          swapId,
+          offchainAddr
+            ? {
+                destinationAddress: offchainAddr,
+              }
+            : undefined
+        );
 
         if (result.success) {
           refreshBalance();
@@ -594,7 +614,7 @@ export function useLendaswap() {
         return { success: false, message: msg };
       }
     },
-    [addresses, refreshBalance],
+    [addresses, refreshBalance]
   );
 
   // ── Get swap history ──────────────────────────────────────────────────
@@ -605,7 +625,10 @@ export function useLendaswap() {
       const swaps = await client.listAllSwaps();
       return swaps;
     } catch (err) {
-      console.warn("[lendaswap] Failed to load swap history:", err instanceof Error ? err.message : err);
+      console.warn(
+        "[lendaswap] Failed to load swap history:",
+        err instanceof Error ? err.message : err
+      );
       return [];
     }
   }, []);
@@ -634,11 +657,14 @@ export function useLendaswap() {
 
         return parseInt(quoteResp.target_amount, 10) || null;
       } catch (err) {
-        console.warn("[lendaswap] Quote estimate failed:", err instanceof Error ? err.message : err);
+        console.warn(
+          "[lendaswap] Quote estimate failed:",
+          err instanceof Error ? err.message : err
+        );
         return null;
       }
     },
-    [],
+    []
   );
 
   // ── Reset (back to idle) ──────────────────────────────────────────────
@@ -650,9 +676,12 @@ export function useLendaswap() {
 
   // ── Manual step override (for back navigation) ────────────────────────
 
-  const setStep = useCallback((step: SwapStep) => {
-    updateState({ step });
-  }, [updateState]);
+  const setStep = useCallback(
+    (step: SwapStep) => {
+      updateState({ step });
+    },
+    [updateState]
+  );
 
   return {
     /** Whether the Lendaswap client has been initialized */

@@ -26,16 +26,16 @@ export interface SwapOfferParams {
 }
 
 export interface SwapOffer {
-  offerOutpoint: string;    // "txid:vout" — the swap VTXO IS the offer identity
+  offerOutpoint: string; // "txid:vout" — the swap VTXO IS the offer identity
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  vtxoSatsValue: number;    // sats value of the swap VTXO (dust amount, e.g. 330)
+  vtxoSatsValue: number; // sats value of the swap VTXO (dust amount, e.g. 330)
   makerArkAddress: string;
-  makerPkScript: string;    // hex 34 bytes
+  makerPkScript: string; // hex 34 bytes
   makerXOnlyPubkey: string; // hex 32 bytes
-  swapScriptHex: string;    // hex of TapTree.encode() — taker reconstructs from this
-  arkadeScriptHex: string;  // hex of standalone introspection conditions (PSBT custom field)
+  swapScriptHex: string; // hex of TapTree.encode() — taker reconstructs from this
+  arkadeScriptHex: string; // hex of standalone introspection conditions (PSBT custom field)
   expiresAt: number;
 }
 
@@ -54,7 +54,7 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   if (params.satAmount < dustAmount) {
     throw new Error(
       `satAmount (${params.satAmount}) is below the minimum VTXO dust amount (${dustAmount} sats). ` +
-      `Set a price of at least ${dustAmount} sats.`
+        `Set a price of at least ${dustAmount} sats.`
     );
   }
 
@@ -147,7 +147,7 @@ export async function cancelSwapOffer(
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     hexToBytes(offer.arkadeScriptHex),
-    introspectorPubkey,
+    introspectorPubkey
   );
   const cancelForfeitLeaf = vtxoScript.leaves[2]; // MultisigClosure(maker, ASP)
 
@@ -191,17 +191,17 @@ export async function cancelSwapOffer(
   const payloadLen = ARKADE_MAGIC.length + typeByte.length + lenBytes.length + packetBytes.length;
   const payload = new Uint8Array(payloadLen);
   let off = 0;
-  payload.set(ARKADE_MAGIC, off); off += ARKADE_MAGIC.length;
-  payload.set(typeByte, off); off += typeByte.length;
-  payload.set(lenBytes, off); off += lenBytes.length;
+  payload.set(ARKADE_MAGIC, off);
+  off += ARKADE_MAGIC.length;
+  payload.set(typeByte, off);
+  off += typeByte.length;
+  payload.set(lenBytes, off);
+  off += lenBytes.length;
   payload.set(packetBytes, off);
 
   const opReturnScript = buildOpReturnScript(payload);
 
-  const outputs = [
-    makerOutput,
-    { script: opReturnScript, amount: BigInt(0) },
-  ];
+  const outputs = [makerOutput, { script: opReturnScript, amount: BigInt(0) }];
 
   // ── 4. Build offchain tx ──────────────────────────────────────────────────
 
@@ -228,7 +228,7 @@ export async function cancelSwapOffer(
   log({ type: "submitting_to_asp" });
   const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
     base64.encode(signedArkTx.toPSBT()),
-    checkpointPsbts,
+    checkpointPsbts
   );
   log({ type: "asp_accepted", arkTxid });
 
@@ -261,17 +261,17 @@ export interface BuyOfferParams {
 }
 
 export interface BuyOffer {
-  offerOutpoint: string;    // "txid:vout"
-  offerType: 'buy';
+  offerOutpoint: string; // "txid:vout"
+  offerType: "buy";
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  vtxoSatsValue: number;    // sats locked in the swap VTXO (= satAmount)
+  vtxoSatsValue: number; // sats locked in the swap VTXO (= satAmount)
   makerArkAddress: string;
-  makerPkScript: string;    // hex 34 bytes
+  makerPkScript: string; // hex 34 bytes
   makerXOnlyPubkey: string; // hex 32 bytes
-  swapScriptHex: string;    // hex of TapTree.encode()
-  arkadeScriptHex: string;  // hex of standalone introspection conditions
+  swapScriptHex: string; // hex of TapTree.encode()
+  arkadeScriptHex: string; // hex of standalone introspection conditions
   expiresAt: number;
 }
 
@@ -289,7 +289,7 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
   if (params.satAmount < dustAmount) {
     throw new Error(
       `satAmount (${params.satAmount}) is below the minimum VTXO dust amount (${dustAmount} sats). ` +
-      `Set a price of at least ${dustAmount} sats.`
+        `Set a price of at least ${dustAmount} sats.`
     );
   }
 
@@ -349,7 +349,7 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
 
   return {
     offerOutpoint,
-    offerType: 'buy',
+    offerType: "buy",
     assetId: params.assetId,
     tokenAmount: params.tokenAmount,
     satAmount: params.satAmount,
@@ -387,7 +387,7 @@ export async function cancelBuyOffer(
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     hexToBytes(offer.arkadeScriptHex),
-    introspectorPubkey,
+    introspectorPubkey
   );
   const cancelForfeitLeaf = vtxoScript.leaves[2]; // MultisigClosure(buyer, ASP)
 
@@ -436,7 +436,7 @@ export async function cancelBuyOffer(
   log({ type: "submitting_to_asp" });
   const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
     base64.encode(signedArkTx.toPSBT()),
-    checkpointPsbts,
+    checkpointPsbts
   );
   log({ type: "asp_accepted", arkTxid });
 

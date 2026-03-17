@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Prettier formatting (frontend)
+        run: npx prettier --check "src/**/*.{ts,tsx,js,jsx,json,css}" "*.{json,js,mjs,ts}"
+
+      - name: Check ESLint (frontend)
+        run: npm run lint
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install indexer dependencies
+        working-directory: indexer
+        run: bun install --frozen-lockfile
+
+      - name: Check Prettier formatting (indexer)
+        run: npx prettier --check "indexer/src/**/*.ts"
+
+  lint-commits:
+    name: Lint commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get all commits on current main
+        run: git fetch origin main
+
+      - name: Log all commits we will analyse
+        run: git log --pretty=format:%s origin/main..HEAD
+
+      - name: Disallow fixup! commits
+        run: git log --pretty=format:%s origin/main..HEAD | grep -zv fixup!
+
+      - name: Disallow squash! commits
+        run: git log --pretty=format:%s origin/main..HEAD | grep -zv squash!
+
+  build:
+    name: Build checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_ARK_SERVER_URL: https://mutinynet.arkade.sh
+          NEXT_PUBLIC_ESPLORA_URL: https://mutinynet.com/api
+          NEXT_PUBLIC_BOLTZ_URL: https://api.boltz.mutinynet.arkade.sh
+          NEXT_PUBLIC_INDEXER_URL: https://indexer.vtxo.market
+          NEXT_PUBLIC_INTROSPECTOR_URL: https://introspector.vtxo.market
+          NEXT_PUBLIC_LENDASWAP_API_URL: https://api.lendaswap.com/
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install indexer dependencies
+        working-directory: indexer
+        run: bun install --frozen-lockfile
+
+      - name: Build indexer
+        working-directory: indexer
+        run: bun run build

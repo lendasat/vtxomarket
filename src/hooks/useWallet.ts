@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
 import { getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
-import {
-  mnemonicToArkPrivateKeyHex,
-  mnemonicToNostrPrivateKeyHex,
-} from "@/lib/wallet-crypto";
+import { mnemonicToArkPrivateKeyHex, mnemonicToNostrPrivateKeyHex } from "@/lib/wallet-crypto";
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -70,7 +67,10 @@ export function useWallet() {
             const profile = await fetchMyProfile();
             if (profile) {
               useAppStore.getState().setProfile(profile);
-              console.log("[wallet] Profile loaded:", profile.name || profile.displayName || "(no name)");
+              console.log(
+                "[wallet] Profile loaded:",
+                profile.name || profile.displayName || "(no name)"
+              );
             }
           } catch (e) {
             console.warn("[wallet] Profile fetch failed:", e);
@@ -113,20 +113,25 @@ export function useWallet() {
     const w = useAppStore.getState().arkWallet;
     if (!w) return;
     try {
-      const { getBalance, getReceivingAddresses, settleVtxos, finalizePending, getAssets, renewVtxos, computeRenewalThreshold } = await import("@/lib/ark-wallet");
-      const [bal, addrs] = await Promise.all([
-        getBalance(w),
-        getReceivingAddresses(w),
-      ]);
+      const {
+        getBalance,
+        getReceivingAddresses,
+        settleVtxos,
+        finalizePending,
+        getAssets,
+        renewVtxos,
+        computeRenewalThreshold,
+      } = await import("@/lib/ark-wallet");
+      const [bal, addrs] = await Promise.all([getBalance(w), getReceivingAddresses(w)]);
       useAppStore.getState().setBalance(bal);
       useAppStore.getState().setAddresses(addrs);
 
       // Fetch held assets
       try {
         const assets = await getAssets(w);
-        useAppStore.getState().setHeldAssets(
-          assets.map((a) => ({ assetId: a.assetId, amount: a.amount }))
-        );
+        useAppStore
+          .getState()
+          .setHeldAssets(assets.map((a) => ({ assetId: a.assetId, amount: a.amount })));
       } catch (e) {
         console.warn("[wallet] Asset fetch failed:", e instanceof Error ? e.message : e);
       }
@@ -149,9 +154,7 @@ export function useWallet() {
       // We NEVER mix boarding with existing VTXOs to avoid minExpiryGap rejections.
       const hasBoarding = bal.onchainConfirmed >= 1000;
       const shouldSettle =
-        hasBoarding &&
-        !settlingRef.current &&
-        Date.now() > settleCooldownUntil.current;
+        hasBoarding && !settlingRef.current && Date.now() > settleCooldownUntil.current;
 
       if (shouldSettle) {
         settlingRef.current = true;
@@ -180,21 +183,34 @@ export function useWallet() {
         }
       }
       // VTXO auto-renewal: renew VTXOs approaching expiry (separate from regular settle)
-      if (!renewingRef.current && !settlingRef.current && Date.now() > settleCooldownUntil.current) {
+      if (
+        !renewingRef.current &&
+        !settlingRef.current &&
+        Date.now() > settleCooldownUntil.current
+      ) {
         // Recompute threshold every 30 minutes (not on every refresh)
         const THRESHOLD_TTL = 30 * 60 * 1000;
-        if (!renewalThresholdRef.current || Date.now() - renewalThresholdComputedAt.current > THRESHOLD_TTL) {
+        if (
+          !renewalThresholdRef.current ||
+          Date.now() - renewalThresholdComputedAt.current > THRESHOLD_TTL
+        ) {
           try {
             renewalThresholdRef.current = await computeRenewalThreshold(w);
             renewalThresholdComputedAt.current = Date.now();
           } catch (err) {
-            console.warn("[wallet] Renewal threshold computation failed, using default:", err instanceof Error ? err.message : err);
+            console.warn(
+              "[wallet] Renewal threshold computation failed, using default:",
+              err instanceof Error ? err.message : err
+            );
           }
         }
 
         try {
           const { getVtxosNeedingRenewal } = await import("@/lib/ark-wallet");
-          const expiring = await getVtxosNeedingRenewal(w, renewalThresholdRef.current ?? undefined);
+          const expiring = await getVtxosNeedingRenewal(
+            w,
+            renewalThresholdRef.current ?? undefined
+          );
           if (expiring.length > 0) {
             renewingRef.current = true;
             console.log("[wallet] %d VTXOs need renewal, starting...", expiring.length);

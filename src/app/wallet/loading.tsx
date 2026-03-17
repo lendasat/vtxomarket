@@ -21,7 +21,10 @@ export default function WalletLoading() {
       {/* Content skeleton */}
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 w-full rounded-2xl bg-white/[0.04] border border-white/[0.06] animate-pulse" />
+          <div
+            key={i}
+            className="h-16 w-full rounded-2xl bg-white/[0.04] border border-white/[0.06] animate-pulse"
+          />
         ))}
       </div>
     </div>

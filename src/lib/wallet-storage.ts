@@ -338,7 +338,9 @@ export const deleteAllWalletData = () => getStorage().clear();
 export const hasPassword = () => getStorage().hasPassword();
 export const setupPassword = (p: string) => getStorage().setupPassword(p);
 export const verifyPassword = (p: string) => getStorage().verifyPassword(p);
-export const saveMnemonicEncrypted = (m: string, p: string) => getStorage().setMnemonicEncrypted(m, p);
+export const saveMnemonicEncrypted = (m: string, p: string) =>
+  getStorage().setMnemonicEncrypted(m, p);
 export const getMnemonicDecrypted = (p?: string) => getStorage().getMnemonicDecrypted(p);
 export const isMnemonicEncrypted = () => getStorage().isMnemonicEncrypted();
-export const getNostrKeyOverrideDecrypted = (p?: string) => getStorage().getNostrKeyOverrideDecrypted(p);
+export const getNostrKeyOverrideDecrypted = (p?: string) =>
+  getStorage().getNostrKeyOverrideDecrypted(p);

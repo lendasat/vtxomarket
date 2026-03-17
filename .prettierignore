@@ -1,0 +1,14 @@
+.next/
+out/
+build/
+node_modules/
+dist/
+introspector/
+arkade-ts-sdk/
+indexer/node_modules/
+indexer/dist/
+indexer/data/
+*.min.js
+pnpm-lock.yaml
+package-lock.json
+bun.lockb

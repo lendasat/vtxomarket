@@ -194,10 +194,7 @@ declare module "@lendasat/lendaswap-sdk-pure" {
       targetAmount?: number;
     }): Promise<QuoteResponse>;
 
-    getSwap(
-      id: string,
-      options?: { updateStorage?: boolean },
-    ): Promise<GetSwapResponse>;
+    getSwap(id: string, options?: { updateStorage?: boolean }): Promise<GetSwapResponse>;
 
     createArkadeToEvmSwapGeneric(options: {
       targetAddress: string;
@@ -226,12 +223,12 @@ declare module "@lendasat/lendaswap-sdk-pure" {
     claimViaGasless(
       id: string,
       destination: string,
-      options?: { slippage?: number },
+      options?: { slippage?: number }
     ): Promise<ClaimGaslessResult>;
 
     claimArkade(
       id: string,
-      options: { destinationAddress: string; arkadeServerUrl?: string },
+      options: { destinationAddress: string; arkadeServerUrl?: string }
     ): Promise<{ success: boolean; message: string; txId?: string }>;
 
     /** Fund an EVM-sourced swap via gasless relay (Permit2 signed internally) */
@@ -239,7 +236,7 @@ declare module "@lendasat/lendaswap-sdk-pure" {
 
     refundSwap(
       id: string,
-      options?: { destinationAddress?: string; mode?: string },
+      options?: { destinationAddress?: string; mode?: string }
     ): Promise<RefundResult>;
 
     listAllSwaps(): Promise<StoredSwap[]>;

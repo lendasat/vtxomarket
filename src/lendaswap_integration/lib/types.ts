@@ -29,10 +29,10 @@ export type SwapStep =
   | "idle"
   | "quoting"
   | "confirming"
-  | "funding"            // send: user's Ark wallet is sending to VHTLC
-  | "awaiting_deposit"   // receive: waiting for user's EVM deposit
-  | "processing"         // HTLC locked, waiting for counterparty
-  | "claiming"           // auto-claim in progress
+  | "funding" // send: user's Ark wallet is sending to VHTLC
+  | "awaiting_deposit" // receive: waiting for user's EVM deposit
+  | "processing" // HTLC locked, waiting for counterparty
+  | "claiming" // auto-claim in progress
   | "success"
   | "error";
 

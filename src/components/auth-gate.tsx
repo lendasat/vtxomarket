@@ -1,16 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  getMnemonic,
-  saveMnemonic,
-  saveNostrKeyOverride,
-} from "@/lib/wallet-storage";
-import {
-  generateMnemonic,
-  validateMnemonic,
-  decodeNsec,
-} from "@/lib/wallet-crypto";
+import { getMnemonic, saveMnemonic, saveNostrKeyOverride } from "@/lib/wallet-storage";
+import { generateMnemonic, validateMnemonic, decodeNsec } from "@/lib/wallet-crypto";
 
 type Screen = "loading" | "auth" | "backup" | "ready";
 type AuthMode = "signup" | "signin";
@@ -38,7 +30,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <BackupScreen
         mnemonic={newMnemonic}
-        onComplete={() => { setNewMnemonic(""); setScreen("ready"); }}
+        onComplete={() => {
+          setNewMnemonic("");
+          setScreen("ready");
+        }}
       />
     );
   }
@@ -47,7 +42,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <AuthScreen
         onComplete={() => setScreen("ready")}
-        onCreated={(mnemonic) => { setNewMnemonic(mnemonic); setScreen("backup"); }}
+        onCreated={(mnemonic) => {
+          setNewMnemonic(mnemonic);
+          setScreen("backup");
+        }}
       />
     );
   }
@@ -82,19 +80,35 @@ function BackupScreen({ mnemonic, onComplete }: { mnemonic: string; onComplete: 
         <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden p-6 space-y-5">
           <div className="space-y-2 text-center">
             <div className="mx-auto h-14 w-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7 text-amber-400">
-                <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" strokeLinecap="round" strokeLinejoin="round" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                className="h-7 w-7 text-amber-400"
+              >
+                <path
+                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </div>
             <p className="text-xs text-muted-foreground/60 leading-relaxed max-w-xs mx-auto">
-              Write these 12 words down and store them safely. This is the <span className="text-foreground/80 font-medium">only way</span> to recover your wallet.
+              Write these 12 words down and store them safely. This is the{" "}
+              <span className="text-foreground/80 font-medium">only way</span> to recover your
+              wallet.
             </p>
           </div>
 
           {/* Seed phrase grid */}
           <div className="grid grid-cols-3 gap-2">
             {words.map((word, i) => (
-              <div key={i} className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-2">
+              <div
+                key={i}
+                className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-2"
+              >
                 <span className="text-[10px] text-muted-foreground/30 w-4 text-right">{i + 1}</span>
                 <span className="text-xs font-mono text-foreground/80">{word}</span>
               </div>
@@ -116,7 +130,8 @@ function BackupScreen({ mnemonic, onComplete }: { mnemonic: string; onComplete: 
               className="mt-0.5 h-4 w-4 rounded border-white/[0.15] bg-white/[0.05] accent-white"
             />
             <span className="text-xs text-muted-foreground/50 group-hover:text-muted-foreground/70 leading-relaxed">
-              I have saved my seed phrase somewhere safe. I understand that if I lose it, I lose access to my funds.
+              I have saved my seed phrase somewhere safe. I understand that if I lose it, I lose
+              access to my funds.
             </span>
           </label>
 
@@ -133,7 +148,13 @@ function BackupScreen({ mnemonic, onComplete }: { mnemonic: string; onComplete: 
   );
 }
 
-function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreated: (mnemonic: string) => void }) {
+function AuthScreen({
+  onComplete,
+  onCreated,
+}: {
+  onComplete: () => void;
+  onCreated: (mnemonic: string) => void;
+}) {
   const [mode, setMode] = useState<AuthMode>("signup");
   const [importMode, setImportMode] = useState<ImportMode>("mnemonic");
   const [mnemonicInput, setMnemonicInput] = useState("");
@@ -208,15 +229,16 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
           <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-b from-white via-white/90 to-white/40 bg-clip-text text-transparent">
             vtxo.market
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground/40">
-            Token launchpad on Arkade + Nostr
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground/40">Token launchpad on Arkade + Nostr</p>
         </div>
 
         {/* Mode toggle */}
         <div className="flex rounded-xl bg-white/[0.04] border border-white/[0.07] p-1 mb-6">
           <button
-            onClick={() => { setMode("signup"); setError(""); }}
+            onClick={() => {
+              setMode("signup");
+              setError("");
+            }}
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
               mode === "signup"
                 ? "bg-white/[0.1] text-foreground shadow-sm"
@@ -226,7 +248,10 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
             Create Wallet
           </button>
           <button
-            onClick={() => { setMode("signin"); setError(""); }}
+            onClick={() => {
+              setMode("signin");
+              setError("");
+            }}
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
               mode === "signin"
                 ? "bg-white/[0.1] text-foreground shadow-sm"
@@ -244,13 +269,21 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
             <div className="p-6 space-y-5">
               <div className="space-y-2 text-center">
                 <div className="mx-auto h-14 w-14 rounded-2xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7 text-foreground/70">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    className="h-7 w-7 text-foreground/70"
+                  >
                     <path d="M12 4.5v15m7.5-7.5h-15" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
                 <h2 className="text-lg font-semibold">New Wallet</h2>
                 <p className="text-xs text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-                  A 12-word seed phrase will be generated. You{"'"}ll be asked to back it up before continuing.
+                  A 12-word seed phrase will be generated. You{"'"}ll be asked to back it up before
+                  continuing.
                 </p>
               </div>
 
@@ -275,7 +308,10 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
               {/* Import mode toggle */}
               <div className="flex rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5">
                 <button
-                  onClick={() => { setImportMode("mnemonic"); setError(""); }}
+                  onClick={() => {
+                    setImportMode("mnemonic");
+                    setError("");
+                  }}
                   className={`flex-1 py-2 rounded-md text-xs font-medium transition-all ${
                     importMode === "mnemonic"
                       ? "bg-white/[0.08] text-foreground"
@@ -285,7 +321,10 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
                   Seed Phrase
                 </button>
                 <button
-                  onClick={() => { setImportMode("nsec"); setError(""); }}
+                  onClick={() => {
+                    setImportMode("nsec");
+                    setError("");
+                  }}
                   className={`flex-1 py-2 rounded-md text-xs font-medium transition-all ${
                     importMode === "nsec"
                       ? "bg-white/[0.08] text-foreground"
@@ -313,7 +352,8 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
                     />
                   </div>
                   <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
-                    Enter your 12-word BIP39 seed phrase to restore your Ark wallet and Nostr identity.
+                    Enter your 12-word BIP39 seed phrase to restore your Ark wallet and Nostr
+                    identity.
                   </p>
                 </div>
               ) : (
@@ -333,14 +373,17 @@ function AuthScreen({ onComplete, onCreated }: { onComplete: () => void; onCreat
                     />
                   </div>
                   <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
-                    Import your Nostr identity via nsec. A new Ark wallet will be generated alongside it.
+                    Import your Nostr identity via nsec. A new Ark wallet will be generated
+                    alongside it.
                   </p>
                 </div>
               )}
 
               <button
                 onClick={importMode === "mnemonic" ? handleImportMnemonic : handleImportNsec}
-                disabled={loading || (importMode === "mnemonic" ? !mnemonicInput.trim() : !nsecInput.trim())}
+                disabled={
+                  loading || (importMode === "mnemonic" ? !mnemonicInput.trim() : !nsecInput.trim())
+                }
                 className="w-full h-12 rounded-xl bg-gradient-to-r from-white/[0.12] via-white/[0.08] to-white/[0.12] border border-white/[0.14] text-base font-semibold transition-all hover:from-white/[0.18] hover:via-white/[0.12] hover:to-white/[0.18] hover:border-white/[0.2] hover:shadow-[0_0_24px_rgba(255,255,255,0.06)] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {loading ? (

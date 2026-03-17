@@ -40,11 +40,7 @@ export type {
   ActiveSwap,
   StablecoinTxItem,
 } from "./lib/types";
-export {
-  TERMINAL_STATUSES,
-  SUCCESS_STATUSES,
-  mapBackendStatus,
-} from "./lib/types";
+export { TERMINAL_STATUSES, SUCCESS_STATUSES, mapBackendStatus } from "./lib/types";
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 export { useLendaswap } from "./hooks/useLendaswap";

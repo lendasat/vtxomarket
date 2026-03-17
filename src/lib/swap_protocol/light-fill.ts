@@ -83,25 +83,36 @@ function buildIntrospectorPacketBytes(entries: { vin: number; script: Uint8Array
  *
  * Format: OP_RETURN | <push> | "ARK" | type(0x00) | LEB128(len) | asset_data | type(0x01) | LEB128(len) | introspector_data
  */
-function buildCombinedOpReturn(assetPacketBytes: Uint8Array, introspectorPacketBytes: Uint8Array): Uint8Array {
+function buildCombinedOpReturn(
+  assetPacketBytes: Uint8Array,
+  introspectorPacketBytes: Uint8Array
+): Uint8Array {
   const assetLenBytes = leb128(assetPacketBytes.length);
   const introspectorLenBytes = leb128(introspectorPacketBytes.length);
 
   const payloadLen =
     ARKADE_MAGIC.length +
-    1 + assetLenBytes.length + assetPacketBytes.length +       // type(1) + len + data
-    1 + introspectorLenBytes.length + introspectorPacketBytes.length; // type(1) + len + data
+    1 +
+    assetLenBytes.length +
+    assetPacketBytes.length + // type(1) + len + data
+    1 +
+    introspectorLenBytes.length +
+    introspectorPacketBytes.length; // type(1) + len + data
 
   const payload = new Uint8Array(payloadLen);
   let off = 0;
-  payload.set(ARKADE_MAGIC, off); off += ARKADE_MAGIC.length;
+  payload.set(ARKADE_MAGIC, off);
+  off += ARKADE_MAGIC.length;
   // Asset packet (type 0x00)
   payload[off++] = ASSET_PACKET_TYPE;
-  payload.set(assetLenBytes, off); off += assetLenBytes.length;
-  payload.set(assetPacketBytes, off); off += assetPacketBytes.length;
+  payload.set(assetLenBytes, off);
+  off += assetLenBytes.length;
+  payload.set(assetPacketBytes, off);
+  off += assetPacketBytes.length;
   // Introspector packet (type 0x01)
   payload[off++] = INTROSPECTOR_PACKET_TYPE;
-  payload.set(introspectorLenBytes, off); off += introspectorLenBytes.length;
+  payload.set(introspectorLenBytes, off);
+  off += introspectorLenBytes.length;
   payload.set(introspectorPacketBytes, off);
 
   // Build OP_RETURN script
@@ -150,11 +161,15 @@ export async function lightFillSwapOffer(
   // Reduces race condition window where two takers fill the same offer.
   const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
   try {
-    const checkResp = await fetch(`${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`);
+    const checkResp = await fetch(
+      `${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`
+    );
     if (checkResp.ok) {
       const { offer: liveOffer } = await checkResp.json();
       if (liveOffer && liveOffer.status !== "open") {
-        throw new Error(`Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`);
+        throw new Error(
+          `Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`
+        );
       }
     }
   } catch (e) {
@@ -176,21 +191,18 @@ export async function lightFillSwapOffer(
   // and makerPkScript, then compare to what the maker provided. This prevents
   // a malicious maker from submitting a weaker arkade script that the
   // introspector would validate under different conditions.
-  const expectedArkadeScript = buildArkadeScript(
-    hexToBytes(offer.makerPkScript),
-    offer.satAmount,
-  );
+  const expectedArkadeScript = buildArkadeScript(hexToBytes(offer.makerPkScript), offer.satAmount);
   if (bytesToHex(expectedArkadeScript) !== bytesToHex(arkadeScriptBytes)) {
     throw new Error(
       "Sell offer arkade script does not match declared satAmount/makerPkScript. " +
-      "The maker may have submitted a manipulated script. Aborting fill."
+        "The maker may have submitted a manipulated script. Aborting fill."
     );
   }
 
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     arkadeScriptBytes,
-    introspectorPubkey,
+    introspectorPubkey
   );
 
   const swapLeaf = vtxoScript.leaves[0]; // MultisigClosure(introspectorTweaked, ASP)
@@ -255,10 +267,7 @@ export async function lightFillSwapOffer(
   const takerAddr = ArkAddress.decode(takerAddress);
   const changeSats = fundedSats - offer.satAmount;
   const takerOutputSats = Math.max(changeSats, dustAmount);
-  const outputs = [
-    makerOutput,
-    { script: takerAddr.pkScript, amount: BigInt(takerOutputSats) },
-  ];
+  const outputs = [makerOutput, { script: takerAddr.pkScript, amount: BigInt(takerOutputSats) }];
 
   // ── 3b. Build asset extension (OP_RETURN with ARK asset packet) ────────
   //
@@ -276,7 +285,7 @@ export async function lightFillSwapOffer(
 
   // Collect all assets from all inputs, grouped by asset ID
   const allInputsWithAssets = [swapInput, ...fundingInputs];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const inputsByAssetId = new Map<string, { inputIndex: number; amount: bigint }[]>();
   const totalByAssetId = new Map<string, bigint>();
 
@@ -295,8 +304,8 @@ export async function lightFillSwapOffer(
   const groups = [];
   for (const [assetIdStr, inputs] of inputsByAssetId) {
     const assetIdObj = asset.AssetId.fromString(assetIdStr);
-    const assetInputs = inputs.map(
-      (inp: { inputIndex: number; amount: bigint }) => asset.AssetInput.create(inp.inputIndex, inp.amount)
+    const assetInputs = inputs.map((inp: { inputIndex: number; amount: bigint }) =>
+      asset.AssetInput.create(inp.inputIndex, inp.amount)
     );
     const totalAmount = totalByAssetId.get(assetIdStr)!;
     const assetOutputs = [asset.AssetOutput.create(1, totalAmount)]; // all to taker
@@ -342,14 +351,12 @@ export async function lightFillSwapOffer(
   if (!out0?.script || bytesToHex(out0.script) !== makerPkScriptHex) {
     throw new Error(
       `Output[0] scriptPubKey mismatch — expected maker's address. ` +
-      `Got ${out0?.script ? bytesToHex(out0.script) : "none"}, ` +
-      `expected ${makerPkScriptHex}`
+        `Got ${out0?.script ? bytesToHex(out0.script) : "none"}, ` +
+        `expected ${makerPkScriptHex}`
     );
   }
   if (out0.amount !== BigInt(offer.satAmount)) {
-    throw new Error(
-      `Output[0] amount ${out0.amount} !== expected ${offer.satAmount} sats`
-    );
+    throw new Error(`Output[0] amount ${out0.amount} !== expected ${offer.satAmount} sats`);
   }
 
   // ── 7. Sign taker's inputs ─────────────────────────────────────────────
@@ -413,10 +420,7 @@ export async function lightFillSwapOffer(
   // Use BIP-174 combine to merge both sets of signatures.
 
   const { Psbt } = await import("./psbt-combiner");
-  const mergedArkTxB64 = Psbt.combine(
-    signedArkTxB64,
-    base64.encode(signedArkTx.toPSBT()),
-  );
+  const mergedArkTxB64 = Psbt.combine(signedArkTxB64, base64.encode(signedArkTx.toPSBT()));
 
   // Merge checkpoint signatures too (introspector signed checkpoint[0])
   const mergedCheckpoints = checkpointPsbts.map((original: string, i: number) => {
@@ -432,7 +436,7 @@ export async function lightFillSwapOffer(
   log({ type: "submitting_to_asp" });
   const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
     mergedArkTxB64,
-    mergedCheckpoints,
+    mergedCheckpoints
   );
 
   log({ type: "asp_accepted", arkTxid });
@@ -493,11 +497,15 @@ export async function lightFillBuyOffer(
   // ── 0. Pre-fill freshness check — verify offer is still open ────────────
   const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
   try {
-    const checkResp = await fetch(`${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`);
+    const checkResp = await fetch(
+      `${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`
+    );
     if (checkResp.ok) {
       const { offer: liveOffer } = await checkResp.json();
       if (liveOffer && liveOffer.status !== "open") {
-        throw new Error(`Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`);
+        throw new Error(
+          `Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`
+        );
       }
     }
   } catch (e) {
@@ -517,23 +525,24 @@ export async function lightFillBuyOffer(
   // Reconstruct the expected arkade script from the declared makerPkScript,
   // assetId, and tokenAmount. Abort if the maker submitted a manipulated script.
   const assetIdObj = sdk.asset.AssetId.fromString(offer.assetId);
-  const assetTxidBytes: Uint8Array = typeof assetIdObj.txid === "string" ? hexToBytes(assetIdObj.txid) : assetIdObj.txid;
+  const assetTxidBytes: Uint8Array =
+    typeof assetIdObj.txid === "string" ? hexToBytes(assetIdObj.txid) : assetIdObj.txid;
   const expectedBuyArkadeScript = buildBuyArkadeScript(
     hexToBytes(offer.makerPkScript),
     assetTxidBytes,
-    offer.tokenAmount,
+    offer.tokenAmount
   );
   if (bytesToHex(expectedBuyArkadeScript) !== bytesToHex(arkadeScriptBytes)) {
     throw new Error(
       "Buy offer arkade script does not match declared tokenAmount/makerPkScript/assetId. " +
-      "The maker may have submitted a manipulated script. Aborting fill."
+        "The maker may have submitted a manipulated script. Aborting fill."
     );
   }
 
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     arkadeScriptBytes,
-    introspectorPubkey,
+    introspectorPubkey
   );
 
   const swapLeaf = vtxoScript.leaves[0]; // MultisigClosure(introspectorTweaked, ASP)
@@ -610,10 +619,7 @@ export async function lightFillBuyOffer(
     sellerSats += v.value;
   }
   const sellerOutputSats = Math.max(sellerSats, dustAmount);
-  const outputs = [
-    buyerOutput,
-    { script: sellerAddr.pkScript, amount: BigInt(sellerOutputSats) },
-  ];
+  const outputs = [buyerOutput, { script: sellerAddr.pkScript, amount: BigInt(sellerOutputSats) }];
 
   // ── 3b. Build asset extension (OP_RETURN with ARK asset packet) ────────
 
@@ -621,7 +627,7 @@ export async function lightFillBuyOffer(
 
   // All token inputs carry the asset — map them
   const allInputsWithAssets = [swapInput, ...tokenInputs];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const inputsByAssetId = new Map<string, { inputIndex: number; amount: bigint }[]>();
   const totalByAssetId = new Map<string, bigint>();
 
@@ -646,8 +652,8 @@ export async function lightFillBuyOffer(
   const targetInputs = inputsByAssetId.get(offer.assetId);
   if (targetInputs) {
     const assetIdObj = asset.AssetId.fromString(offer.assetId);
-    const assetInputs = targetInputs.map(
-      (inp: { inputIndex: number; amount: bigint }) => asset.AssetInput.create(inp.inputIndex, inp.amount)
+    const assetInputs = targetInputs.map((inp: { inputIndex: number; amount: bigint }) =>
+      asset.AssetInput.create(inp.inputIndex, inp.amount)
     );
     const totalAmount = totalByAssetId.get(offer.assetId)!;
     const requiredAmount = BigInt(offer.tokenAmount);
@@ -663,8 +669,8 @@ export async function lightFillBuyOffer(
   for (const [assetIdStr, inputs] of inputsByAssetId) {
     if (assetIdStr === offer.assetId) continue; // already added as group 0
     const assetIdObj = asset.AssetId.fromString(assetIdStr);
-    const assetInputs = inputs.map(
-      (inp: { inputIndex: number; amount: bigint }) => asset.AssetInput.create(inp.inputIndex, inp.amount)
+    const assetInputs = inputs.map((inp: { inputIndex: number; amount: bigint }) =>
+      asset.AssetInput.create(inp.inputIndex, inp.amount)
     );
     const totalAmount = totalByAssetId.get(assetIdStr)!;
     // Other assets go to seller (output 1)
@@ -709,8 +715,8 @@ export async function lightFillBuyOffer(
   if (!out0?.script || bytesToHex(out0.script) !== buyerPkScriptHex) {
     throw new Error(
       `Output[0] scriptPubKey mismatch — expected buyer's address. ` +
-      `Got ${out0?.script ? bytesToHex(out0.script) : "none"}, ` +
-      `expected ${buyerPkScriptHex}`
+        `Got ${out0?.script ? bytesToHex(out0.script) : "none"}, ` +
+        `expected ${buyerPkScriptHex}`
     );
   }
 
@@ -759,10 +765,7 @@ export async function lightFillBuyOffer(
   // ── 9. Merge introspector + seller signatures ──────────────────────────
 
   const { Psbt } = await import("./psbt-combiner");
-  const mergedArkTxB64 = Psbt.combine(
-    signedArkTxB64,
-    base64.encode(signedArkTx.toPSBT()),
-  );
+  const mergedArkTxB64 = Psbt.combine(signedArkTxB64, base64.encode(signedArkTx.toPSBT()));
 
   const mergedCheckpoints = checkpointPsbts.map((original: string, i: number) => {
     const fromIntrospector = signedCheckpointTxsFromIntrospector?.[i];
@@ -777,7 +780,7 @@ export async function lightFillBuyOffer(
   log({ type: "submitting_to_asp" });
   const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
     mergedArkTxB64,
-    mergedCheckpoints,
+    mergedCheckpoints
   );
 
   log({ type: "asp_accepted", arkTxid });

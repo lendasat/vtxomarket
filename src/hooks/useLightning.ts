@@ -46,7 +46,10 @@ export function useLightning() {
         }
         // Restore any pending swaps from Boltz API (non-blocking)
         restoreSwaps(ln).catch((err: unknown) => {
-          console.warn("[lightning] Failed to restore pending swaps:", err instanceof Error ? err.message : err);
+          console.warn(
+            "[lightning] Failed to restore pending swaps:",
+            err instanceof Error ? err.message : err
+          );
         });
       })
       .catch((err) => {
@@ -70,30 +73,22 @@ export function useLightning() {
     };
   }, [arkWallet]);
 
-  const calcSendFee = useCallback(
-    (sats: number) => (fees ? calcSendFeeFn(fees, sats) : 0),
-    [fees]
-  );
+  const calcSendFee = useCallback((sats: number) => (fees ? calcSendFeeFn(fees, sats) : 0), [fees]);
 
   const calcReceiveFee = useCallback(
     (sats: number) => (fees ? calcReceiveFeeFn(fees, sats) : 0),
     [fees]
   );
 
-  const sendLightning = useCallback(
-    async (invoice: string): Promise<{ txid: string }> => {
-      const ln = lightningRef.current;
-      if (!ln) throw new Error("Lightning not ready");
-      const result = await ln.sendLightningPayment({ invoice });
-      return { txid: result.txid };
-    },
-    []
-  );
+  const sendLightning = useCallback(async (invoice: string): Promise<{ txid: string }> => {
+    const ln = lightningRef.current;
+    if (!ln) throw new Error("Lightning not ready");
+    const result = await ln.sendLightningPayment({ invoice });
+    return { txid: result.txid };
+  }, []);
 
   const receiveLightning = useCallback(
-    async (
-      sats: number
-    ): Promise<{ invoice: string; swap: PendingReverseSwap }> => {
+    async (sats: number): Promise<{ invoice: string; swap: PendingReverseSwap }> => {
       const ln = lightningRef.current;
       if (!ln) throw new Error("Lightning not ready");
       const result = await ln.createLightningInvoice({ amount: sats });
@@ -102,32 +97,23 @@ export function useLightning() {
     []
   );
 
-  const waitForReceive = useCallback(
-    async (swap: PendingReverseSwap): Promise<void> => {
-      const ln = lightningRef.current;
-      if (!ln) throw new Error("Lightning not ready");
-      await ln.waitAndClaim(swap);
-    },
-    []
-  );
+  const waitForReceive = useCallback(async (swap: PendingReverseSwap): Promise<void> => {
+    const ln = lightningRef.current;
+    if (!ln) throw new Error("Lightning not ready");
+    await ln.waitAndClaim(swap);
+  }, []);
 
-  const getSwapHistory = useCallback(
-    async (): Promise<SwapHistoryItem[]> => {
-      const ln = lightningRef.current;
-      if (!ln) return [];
-      return getSwapHistoryFn(ln);
-    },
-    []
-  );
+  const getSwapHistory = useCallback(async (): Promise<SwapHistoryItem[]> => {
+    const ln = lightningRef.current;
+    if (!ln) return [];
+    return getSwapHistoryFn(ln);
+  }, []);
 
-  const refundSwap = useCallback(
-    async (swapId: string): Promise<void> => {
-      const ln = lightningRef.current;
-      if (!ln) throw new Error("Lightning not ready");
-      await refundSwapFn(ln, swapId);
-    },
-    []
-  );
+  const refundSwap = useCallback(async (swapId: string): Promise<void> => {
+    const ln = lightningRef.current;
+    if (!ln) throw new Error("Lightning not ready");
+    await refundSwapFn(ln, swapId);
+  }, []);
 
   return {
     ready,

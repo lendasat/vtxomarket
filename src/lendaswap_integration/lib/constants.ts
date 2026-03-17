@@ -124,8 +124,11 @@ export function fromSmallestUnit(amount: string | bigint, coin: StablecoinKey): 
  */
 export function chainIdToKey(chainId: number): EvmChainKey {
   switch (chainId) {
-    case 42161: return "arbitrum";
-    case 1: return "ethereum";
-    default: return "polygon";
+    case 42161:
+      return "arbitrum";
+    case 1:
+      return "ethereum";
+    default:
+      return "polygon";
   }
 }

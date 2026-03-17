@@ -6,18 +6,18 @@ const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:300
 const POLL_INTERVAL = 30_000;
 
 export interface OpenOffer {
-  offerOutpoint: string;    // "txid:vout" — primary identifier
+  offerOutpoint: string; // "txid:vout" — primary identifier
   assetId: string;
   tokenAmount: number;
   satAmount: number;
-  vtxoSatsValue: number;    // sats value of the swap VTXO (dust for sell, satAmount for buy)
-  price: number;            // satAmount / tokenAmount
-  offerType: 'sell' | 'buy'; // sell = maker locks tokens, buy = maker locks sats
+  vtxoSatsValue: number; // sats value of the swap VTXO (dust for sell, satAmount for buy)
+  price: number; // satAmount / tokenAmount
+  offerType: "sell" | "buy"; // sell = maker locks tokens, buy = maker locks sats
   makerArkAddress: string;
   makerPkScript: string;
   makerXOnlyPubkey: string;
   swapScriptHex: string;
-  arkadeScriptHex: string;  // hex-encoded arkade script (introspection conditions)
+  arkadeScriptHex: string; // hex-encoded arkade script (introspection conditions)
   expiresAt: number;
   status: string;
 }
@@ -49,7 +49,7 @@ export function useOffers(assetId: string | null): {
         satAmount: Number(o.satAmount),
         vtxoSatsValue: Number(o.vtxoSatsValue) || 330,
         price: Number(o.satAmount) / Number(o.tokenAmount),
-        offerType: o.offerType ?? 'sell',
+        offerType: o.offerType ?? "sell",
         makerArkAddress: o.makerArkAddress ?? "",
         makerPkScript: o.makerPkScript ?? "",
         makerXOnlyPubkey: o.makerXOnlyPubkey ?? "",

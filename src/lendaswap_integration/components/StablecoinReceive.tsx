@@ -32,16 +32,21 @@ import {
 /** Map chain key to viem chain object for balance polling */
 function getViemChain(chainKey: EvmChainKey) {
   switch (chainKey) {
-    case "arbitrum": return arbitrum;
-    case "polygon": return polygon;
-    case "ethereum": return mainnet;
-    default: return arbitrum;
+    case "arbitrum":
+      return arbitrum;
+    case "polygon":
+      return polygon;
+    case "ethereum":
+      return mainnet;
+    default:
+      return arbitrum;
   }
 }
 
 export function StablecoinReceive() {
   const balance = useAppStore((s) => s.balance);
-  const { ready, state, getQuoteAndCreateReceive, getReceiveEstimate, fundGasless, reset } = useLendaswap();
+  const { ready, state, getQuoteAndCreateReceive, getReceiveEstimate, fundGasless, reset } =
+    useLendaswap();
 
   const [coin, setCoin] = useState<StablecoinKey>("USDC");
   const [chain, setChain] = useState<EvmChainKey>("arbitrum");
@@ -112,11 +117,15 @@ export function StablecoinReceive() {
 
     poll();
     const interval = setInterval(poll, 3_000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [rpcClient, swap?.evmDepositAddress, coin, chain, funded]);
 
   const requiredAmount = swap?.evmDepositAmount ? BigInt(swap.evmDepositAmount) : 0n;
-  const hasSufficientDeposit = depositBalance !== null && depositBalance >= requiredAmount && requiredAmount > 0n;
+  const hasSufficientDeposit =
+    depositBalance !== null && depositBalance >= requiredAmount && requiredAmount > 0n;
 
   // Fund the swap gaslessly once tokens arrive at deposit address
   const handleFundGasless = useCallback(async () => {
@@ -235,7 +244,9 @@ export function StablecoinReceive() {
 
       if (walletBalance < amountWei) {
         const walletHuman = fromSmallestUnit(walletBalance.toString(), coin);
-        setEvmSendError(`Insufficient ${coin} balance. You have ${walletHuman} ${coin} but need ${humanAmount} ${coin}.`);
+        setEvmSendError(
+          `Insufficient ${coin} balance. You have ${walletHuman} ${coin} but need ${humanAmount} ${coin}.`
+        );
         return;
       }
 
@@ -269,8 +280,17 @@ export function StablecoinReceive() {
       <div className="space-y-4">
         <div className="flex flex-col items-center justify-center py-6 gap-3">
           <div className="h-12 w-12 rounded-full bg-emerald-500/[0.15] flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6 text-emerald-400">
-              <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="h-6 w-6 text-emerald-400"
+            >
+              <path
+                fillRule="evenodd"
+                d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z"
+                clipRule="evenodd"
+              />
             </svg>
           </div>
           <p className="text-sm font-semibold">{swap?.targetDisplay} received</p>
@@ -295,7 +315,12 @@ export function StablecoinReceive() {
   if (step === "error" && !hasAddress) {
     return (
       <div className="space-y-4">
-        <CoinChainSelectors coin={coin} setCoin={handleCoinChange} chain={chain} setChain={handleChainChange}  />
+        <CoinChainSelectors
+          coin={coin}
+          setCoin={handleCoinChange}
+          chain={chain}
+          setChain={handleChainChange}
+        />
         <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-3">
           <p className="text-xs text-red-400/80">{error}</p>
         </div>
@@ -321,7 +346,12 @@ export function StablecoinReceive() {
 
     return (
       <div className="space-y-4">
-        <CoinChainSelectors coin={coin} setCoin={handleCoinChange} chain={chain} setChain={handleChainChange}  />
+        <CoinChainSelectors
+          coin={coin}
+          setCoin={handleCoinChange}
+          chain={chain}
+          setChain={handleChainChange}
+        />
 
         {!isProcessing ? (
           <>
@@ -332,7 +362,13 @@ export function StablecoinReceive() {
             {/* QR code */}
             <div className="flex justify-center py-2">
               <div className="rounded-xl bg-white p-3">
-                <QRCodeSVG value={depositAddr} size={160} bgColor="#ffffff" fgColor="#111827" level="M" />
+                <QRCodeSVG
+                  value={depositAddr}
+                  size={160}
+                  bgColor="#ffffff"
+                  fgColor="#111827"
+                  level="M"
+                />
               </div>
             </div>
 
@@ -350,15 +386,24 @@ export function StablecoinReceive() {
             </button>
 
             {/* Deposit & funding status */}
-            {(isFunding || funded) ? (
+            {isFunding || funded ? (
               <div className="flex items-center justify-center gap-1.5 py-2">
                 <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
                 <span className="text-xs text-muted-foreground/40">Processing swap...</span>
               </div>
             ) : pollFailing ? (
               <div className="flex items-center justify-center gap-1.5 py-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-amber-400/70">
-                  <path fillRule="evenodd" d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="h-3.5 w-3.5 text-amber-400/70"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6.701 2.25c.577-1 2.02-1 2.598 0l5.196 9a1.5 1.5 0 0 1-1.299 2.25H2.804a1.5 1.5 0 0 1-1.3-2.25l5.197-9ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+                    clipRule="evenodd"
+                  />
                 </svg>
                 <span className="text-xs text-amber-400/70">RPC issue — checking...</span>
               </div>
@@ -366,7 +411,8 @@ export function StablecoinReceive() {
               <div className="flex items-center justify-center gap-1.5 py-2">
                 <div className="h-3 w-3 border-[1.5px] border-white/10 border-t-white/40 rounded-full animate-spin" />
                 <span className="text-xs text-muted-foreground/40">
-                  {fromSmallestUnit(depositBalance.toString(), coin)} / {fromSmallestUnit(swap.evmDepositAmount || "0", coin)} {coin}
+                  {fromSmallestUnit(depositBalance.toString(), coin)} /{" "}
+                  {fromSmallestUnit(swap.evmDepositAmount || "0", coin)} {coin}
                 </span>
               </div>
             ) : null}
@@ -381,7 +427,9 @@ export function StablecoinReceive() {
             {/* Send from connected wallet (alternative to manual deposit) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">Or send from wallet</span>
+                <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">
+                  Or send from wallet
+                </span>
                 <EvmConnectButton />
               </div>
               {evmConnected && walletClient && !evmTxHash && (
@@ -439,7 +487,12 @@ export function StablecoinReceive() {
 
   return (
     <div className="space-y-4">
-      <CoinChainSelectors coin={coin} setCoin={handleCoinChange} chain={chain} setChain={handleChainChange}  />
+      <CoinChainSelectors
+        coin={coin}
+        setCoin={handleCoinChange}
+        chain={chain}
+        setChain={handleChainChange}
+      />
 
       {/* Amount input (stablecoin / dollar amount) */}
       <div className="rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 space-y-2">
@@ -499,7 +552,13 @@ function PoweredByBadge({
 }: {
   showDetails: boolean;
   setShowDetails: (v: boolean) => void;
-  quote: { exchangeRate: string; protocolFeeSats: number; networkFeeSats: number; minAmountSats: number; maxAmountSats: number } | null;
+  quote: {
+    exchangeRate: string;
+    protocolFeeSats: number;
+    networkFeeSats: number;
+    minAmountSats: number;
+    maxAmountSats: number;
+  } | null;
   coin: StablecoinKey;
 }) {
   return (
@@ -516,7 +575,11 @@ function PoweredByBadge({
             fill="currentColor"
             className={`h-3 w-3 text-muted-foreground/20 transition-transform ${showDetails ? "rotate-180" : ""}`}
           >
-            <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+            <path
+              fillRule="evenodd"
+              d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
+              clipRule="evenodd"
+            />
           </svg>
         )}
       </button>
@@ -526,7 +589,11 @@ function PoweredByBadge({
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-muted-foreground/30">Rate</span>
             <span className="text-[11px] text-muted-foreground/40 tabular-nums">
-              1 BTC = {parseFloat(quote.exchangeRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} {coin}
+              1 BTC ={" "}
+              {parseFloat(quote.exchangeRate).toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}{" "}
+              {coin}
             </span>
           </div>
           <div className="flex items-center justify-between">

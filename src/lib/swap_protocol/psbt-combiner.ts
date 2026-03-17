@@ -42,10 +42,7 @@ interface PsbtData {
 
 // ── CompactSize encoding ────────────────────────────────────────────────
 
-function readCompactSize(
-  data: Uint8Array,
-  offset: number
-): [size: number, newOffset: number] {
+function readCompactSize(data: Uint8Array, offset: number): [size: number, newOffset: number] {
   const first = data[offset];
   if (first < 0xfd) return [first, offset + 1];
   if (first === 0xfd) {
@@ -57,7 +54,7 @@ function readCompactSize(
       data[offset + 1] |
       (data[offset + 2] << 8) |
       (data[offset + 3] << 16) |
-      data[offset + 4] * 0x1000000;
+      (data[offset + 4] * 0x1000000);
     return [val, offset + 5];
   }
   throw new Error("psbt-combiner: 8-byte CompactSize not supported");
@@ -65,16 +62,9 @@ function readCompactSize(
 
 function writeCompactSize(n: number): Uint8Array {
   if (n < 0xfd) return new Uint8Array([n]);
-  if (n <= 0xffff)
-    return new Uint8Array([0xfd, n & 0xff, (n >> 8) & 0xff]);
+  if (n <= 0xffff) return new Uint8Array([0xfd, n & 0xff, (n >> 8) & 0xff]);
   if (n <= 0xffffffff) {
-    return new Uint8Array([
-      0xfe,
-      n & 0xff,
-      (n >> 8) & 0xff,
-      (n >> 16) & 0xff,
-      (n >>> 24) & 0xff,
-    ]);
+    return new Uint8Array([0xfe, n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff]);
   }
   throw new Error("psbt-combiner: value too large for CompactSize");
 }
@@ -82,10 +72,7 @@ function writeCompactSize(n: number): Uint8Array {
 // ── PSBT parsing ────────────────────────────────────────────────────────
 
 /** Parse one key-value map section, stopping at the 0x00 separator. */
-function parseSection(
-  data: Uint8Array,
-  offset: number
-): [KVPair[], number] {
+function parseSection(data: Uint8Array, offset: number): [KVPair[], number] {
   const pairs: KVPair[] = [];
   while (offset < data.length) {
     const [keyLen, o1] = readCompactSize(data, offset);
@@ -146,13 +133,9 @@ function parsePsbt(data: Uint8Array): PsbtData {
   offset = o1;
 
   // Find unsigned tx (key = [0x00]) to determine input/output counts
-  const unsignedTxKV = global.find(
-    (kv) => kv[0].length === 1 && kv[0][0] === 0x00
-  );
+  const unsignedTxKV = global.find((kv) => kv[0].length === 1 && kv[0][0] === 0x00);
   if (!unsignedTxKV) {
-    throw new Error(
-      "psbt-combiner: missing unsigned tx (only PSBT v0 is supported)"
-    );
+    throw new Error("psbt-combiner: missing unsigned tx (only PSBT v0 is supported)");
   }
   const { inputCount, outputCount } = countTxIO(unsignedTxKV[1]);
 
@@ -266,9 +249,7 @@ export const Psbt = {
 
     const combined: PsbtData = {
       global: primary.global,
-      inputs: primary.inputs.map((inp, i) =>
-        mergeKVPairs(inp, secondary.inputs[i])
-      ),
+      inputs: primary.inputs.map((inp, i) => mergeKVPairs(inp, secondary.inputs[i])),
       outputs: primary.outputs,
     };
 
@@ -302,9 +283,7 @@ export const Psbt = {
 
     for (let i = 0; i < psbt.inputs.length; i++) {
       if (!indexSet.has(i)) continue;
-      psbt.inputs[i] = psbt.inputs[i].filter(
-        ([key]) => key[0] !== PSBT_IN_TAP_SCRIPT_SIG
-      );
+      psbt.inputs[i] = psbt.inputs[i].filter(([key]) => key[0] !== PSBT_IN_TAP_SCRIPT_SIG);
     }
 
     return base64.encode(serializePsbt(psbt));

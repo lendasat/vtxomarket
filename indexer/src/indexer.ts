@@ -38,9 +38,7 @@ export async function handleTxNotification(notification: TxNotification): Promis
 
   // ── Step 1: mark spent VTXOs ────────────────────────────────────────────────
   if (spentVtxos.length > 0) {
-    const spentOutpoints = spentVtxos.map(
-      (v) => `${v.outpoint.txid}:${v.outpoint.vout}`
-    );
+    const spentOutpoints = spentVtxos.map((v) => `${v.outpoint.txid}:${v.outpoint.vout}`);
     markVtxosSpent(spentOutpoints, txid);
     log.debug("indexer: marked VTXOs spent", { txid, count: spentOutpoints.length });
 
@@ -49,14 +47,17 @@ export async function handleTxNotification(notification: TxNotification): Promis
     for (const spent of spentVtxos) {
       const outpoint = `${spent.outpoint.txid}:${spent.outpoint.vout}`;
       const offer = getOffer(outpoint);
-      if (offer && offer.status === 'open') {
-        if (notification.eventType === 'commitmentTx') {
+      if (offer && offer.status === "open") {
+        if (notification.eventType === "commitmentTx") {
           markOfferFilled(offer.offerOutpoint, txid);
-          log.info('indexer: offer filled', { offerOutpoint: offer.offerOutpoint, txid });
+          log.info("indexer: offer filled", { offerOutpoint: offer.offerOutpoint, txid });
         } else {
           // arkTx spending an offer VTXO = maker cancelled via on-chain settle
           markOfferCancelled(offer.offerOutpoint);
-          log.info('indexer: offer cancelled (VTXO spent in arkTx)', { offerOutpoint: offer.offerOutpoint, txid });
+          log.info("indexer: offer cancelled (VTXO spent in arkTx)", {
+            offerOutpoint: offer.offerOutpoint,
+            txid,
+          });
         }
       }
     }
@@ -64,9 +65,7 @@ export async function handleTxNotification(notification: TxNotification): Promis
 
   // ── Step 2: fetch full VTXO data for spendable outpoints ───────────────────
   if (spendableVtxos.length > 0) {
-    const allOutpoints = spendableVtxos.map(
-      (v) => `${v.outpoint.txid}:${v.outpoint.vout}`
-    );
+    const allOutpoints = spendableVtxos.map((v) => `${v.outpoint.txid}:${v.outpoint.vout}`);
 
     // Process in batches to avoid URL length limits
     const batches = chunk(allOutpoints, config.outpointBatchSize);
@@ -158,7 +157,10 @@ export async function backfillAssetImages(): Promise<void> {
     const meta = await fetchAssetMetadata(asset.assetId);
     if (meta?.icon) {
       upsertAssetMetadata(asset.assetId, { image: meta.icon });
-      log.info("backfill: set image", { assetId: asset.assetId.slice(0, 16) + "…", icon: meta.icon });
+      log.info("backfill: set image", {
+        assetId: asset.assetId.slice(0, 16) + "…",
+        icon: meta.icon,
+      });
     }
     assetMetadataFetched.add(asset.assetId);
   }

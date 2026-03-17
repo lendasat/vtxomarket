@@ -28,7 +28,7 @@ function rateLimiter() {
     const now = Date.now();
     const timestamps = rateLimitMap.get(ip) || [];
     // Evict old entries
-    const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+    const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
     if (recent.length >= RATE_LIMIT_MAX) {
       return c.json({ error: "rate limit exceeded" }, 429);
     }
@@ -37,7 +37,7 @@ function rateLimiter() {
     // Periodic cleanup of stale IPs (every 1000 requests)
     if (rateLimitMap.size > 10000) {
       for (const [key, ts] of rateLimitMap) {
-        if (ts.every(t => now - t >= RATE_LIMIT_WINDOW_MS)) rateLimitMap.delete(key);
+        if (ts.every((t) => now - t >= RATE_LIMIT_WINDOW_MS)) rateLimitMap.delete(key);
       }
     }
     await next();
@@ -66,8 +66,8 @@ import { getRecentLogs } from "./log-buffer";
 
 /** Verify a BIP-340 Schnorr signature. Returns true if valid. */
 function verifySchnorrSig(signatureHex: string, message: Uint8Array, pubkeyHex: string): boolean {
-  const sigBytes = Uint8Array.from(Buffer.from(signatureHex, 'hex'));
-  const pubkeyBytes = Uint8Array.from(Buffer.from(pubkeyHex, 'hex'));
+  const sigBytes = Uint8Array.from(Buffer.from(signatureHex, "hex"));
+  const pubkeyBytes = Uint8Array.from(Buffer.from(pubkeyHex, "hex"));
   return schnorr.verify(sigBytes, message, pubkeyBytes);
 }
 
@@ -75,12 +75,17 @@ export function buildApp(): Hono {
   const app = new Hono();
 
   // ── Middleware ─────────────────────────────────────────────────────────────
-  const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000").split(",").map(s => s.trim());
-  app.use("*", cors({
-    origin: (origin) => allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type"],
-  }));
+  const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
+    .split(",")
+    .map((s) => s.trim());
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]),
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowHeaders: ["Content-Type"],
+    })
+  );
   app.use("*", rateLimiter());
   if (config.logLevel === "debug") {
     app.use("*", logger());
@@ -154,7 +159,19 @@ export function buildApp(): Hono {
     if (!asset) return c.json({ error: "Asset not found — it may not have been indexed yet" }, 404);
 
     const body = await c.req.json();
-    const { description, image, creator, creatorArkAddress, controlAssetId, website, twitter, telegram, supply, createdAt, signature } = body;
+    const {
+      description,
+      image,
+      creator,
+      creatorArkAddress,
+      controlAssetId,
+      website,
+      twitter,
+      telegram,
+      supply,
+      createdAt,
+      signature,
+    } = body;
 
     // If a creator is already set, only that same creator can update metadata
     if (asset.creator && creator && asset.creator !== creator) {
@@ -170,7 +187,10 @@ export function buildApp(): Hono {
       return c.json({ error: "missing creator pubkey" }, 400);
     }
     if (!signature) {
-      return c.json({ error: "missing signature — sign sha256('metadata:{assetId}') with creator key" }, 400);
+      return c.json(
+        { error: "missing signature — sign sha256('metadata:{assetId}') with creator key" },
+        400
+      );
     }
     try {
       const message = sha256(new TextEncoder().encode(`metadata:${assetId}`));
@@ -293,15 +313,41 @@ export function buildApp(): Hono {
   // offerType: "sell" (default) = maker locks tokens, "buy" = maker locks sats
   app.post("/offers", async (c) => {
     const body = await c.req.json();
-    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt, signature } = body;
-    const offerType = body.offerType ?? 'sell';
-    if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
+    const {
+      offerOutpoint,
+      assetId,
+      tokenAmount,
+      satAmount,
+      vtxoSatsValue,
+      makerArkAddress,
+      makerPkScript,
+      makerXOnlyPubkey,
+      swapScriptHex,
+      arkadeScriptHex,
+      expiresAt,
+      signature,
+    } = body;
+    const offerType = body.offerType ?? "sell";
+    if (
+      !offerOutpoint ||
+      !assetId ||
+      !tokenAmount ||
+      !satAmount ||
+      !makerArkAddress ||
+      !makerPkScript ||
+      !makerXOnlyPubkey ||
+      !swapScriptHex ||
+      !expiresAt
+    ) {
       return c.json({ error: "missing required fields" }, 400);
     }
 
     // Verify Schnorr signature proving the caller owns the maker key
     if (!signature) {
-      return c.json({ error: "missing signature — sign sha256('offer:{offerOutpoint}') with maker key" }, 400);
+      return c.json(
+        { error: "missing signature — sign sha256('offer:{offerOutpoint}') with maker key" },
+        400
+      );
     }
     try {
       const message = sha256(new TextEncoder().encode(`offer:${offerOutpoint}`));
@@ -311,13 +357,13 @@ export function buildApp(): Hono {
     } catch {
       return c.json({ error: "unauthorized: malformed signature" }, 403);
     }
-    if (offerType !== 'sell' && offerType !== 'buy') {
+    if (offerType !== "sell" && offerType !== "buy") {
       return c.json({ error: "offerType must be 'sell' or 'buy'" }, 400);
     }
 
     // Reject re-registration of offers that are already filled/cancelled/expired
     const existing = getOffer(offerOutpoint);
-    if (existing && existing.status !== 'open') {
+    if (existing && existing.status !== "open") {
       return c.json({ error: `offer already ${existing.status}` }, 409);
     }
 
@@ -331,24 +377,30 @@ export function buildApp(): Hono {
       return c.json({ error: "VTXO is already spent" }, 400);
     }
 
-    if (offerType === 'sell') {
+    if (offerType === "sell") {
       // Sell offer: verify VTXO holds the claimed asset
       const matchingAsset = vtxo.assets?.find((a) => a.assetId === assetId);
       if (!matchingAsset) {
         return c.json({ error: "VTXO does not hold the claimed asset" }, 400);
       }
       if (BigInt(matchingAsset.amount) < BigInt(tokenAmount)) {
-        return c.json({
-          error: `VTXO holds ${matchingAsset.amount} tokens, but offer claims ${tokenAmount}`,
-        }, 400);
+        return c.json(
+          {
+            error: `VTXO holds ${matchingAsset.amount} tokens, but offer claims ${tokenAmount}`,
+          },
+          400
+        );
       }
     } else {
       // Buy offer: verify VTXO holds sufficient sats
       const vtxoSats = Number(vtxo.amount);
       if (vtxoSats < Number(satAmount)) {
-        return c.json({
-          error: `VTXO holds ${vtxoSats} sats, but offer claims ${satAmount}`,
-        }, 400);
+        return c.json(
+          {
+            error: `VTXO holds ${vtxoSats} sats, but offer claims ${satAmount}`,
+          },
+          400
+        );
       }
     }
 
@@ -362,7 +414,20 @@ export function buildApp(): Hono {
       return c.json({ error: "expiresAt is in the past" }, 400);
     }
 
-    upsertOffer({ offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue: vtxoSatsValue ?? '330', makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex: arkadeScriptHex ?? '', offerType, expiresAt });
+    upsertOffer({
+      offerOutpoint,
+      assetId,
+      tokenAmount,
+      satAmount,
+      vtxoSatsValue: vtxoSatsValue ?? "330",
+      makerArkAddress,
+      makerPkScript,
+      makerXOnlyPubkey,
+      swapScriptHex,
+      arkadeScriptHex: arkadeScriptHex ?? "",
+      offerType,
+      expiresAt,
+    });
     return c.json({ ok: true }, 201);
   });
 
@@ -391,7 +456,7 @@ export function buildApp(): Hono {
     if (!offer) {
       return c.json({ error: "offer not found" }, 404);
     }
-    if (offer.status !== 'open') {
+    if (offer.status !== "open") {
       return c.json({ error: `offer already ${offer.status}` }, 409);
     }
 
@@ -407,14 +472,17 @@ export function buildApp(): Hono {
       signature = c.req.query("signature");
     }
     if (!signature) {
-      return c.json({ error: "missing signature — sign sha256('cancel:{outpoint}') with maker key" }, 400);
+      return c.json(
+        { error: "missing signature — sign sha256('cancel:{outpoint}') with maker key" },
+        400
+      );
     }
 
     // Verify the Schnorr signature against the stored maker pubkey
     try {
       const message = sha256(new TextEncoder().encode(`cancel:${outpoint}`));
-      const sigBytes = Uint8Array.from(Buffer.from(signature, 'hex'));
-      const pubkeyBytes = Uint8Array.from(Buffer.from(offer.makerXOnlyPubkey, 'hex'));
+      const sigBytes = Uint8Array.from(Buffer.from(signature, "hex"));
+      const pubkeyBytes = Uint8Array.from(Buffer.from(offer.makerXOnlyPubkey, "hex"));
       const valid = schnorr.verify(sigBytes, message, pubkeyBytes);
       if (!valid) {
         return c.json({ error: "unauthorized: invalid signature" }, 403);
@@ -445,29 +513,35 @@ export function buildApp(): Hono {
       const raw = (stdout + "\n" + stderr).trim();
       if (!raw) return c.json({ logs: [] });
 
-      const entries = raw.split("\n").filter(Boolean).map((line) => {
-        // Docker --timestamps prepends: "2026-03-04T09:44:09.123456789Z "
-        // Logrus format: time="..." level=info msg="..." key=val
-        const timeMatch = line.match(/time="([^"]+)"/);
-        const levelMatch = line.match(/level=(\w+)/);
-        const msgMatch = line.match(/msg="([^"]+)"/);
-        const ts = timeMatch?.[1] ?? line.slice(0, 30);
-        const level = levelMatch?.[1] ?? "info";
-        const msg = msgMatch?.[1] ?? line;
-        // Collect remaining key=val pairs as meta
-        const meta: Record<string, string> = {};
-        const kvRegex = /(\w+)=(?:"([^"]*)"|(\S+))/g;
-        let m;
-        while ((m = kvRegex.exec(line)) !== null) {
-          const key = m[1];
-          if (key === "time" || key === "level" || key === "msg") continue;
-          meta[key] = m[2] ?? m[3];
-        }
-        return { ts, level, msg, meta: Object.keys(meta).length > 0 ? meta : undefined };
-      });
+      const entries = raw
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          // Docker --timestamps prepends: "2026-03-04T09:44:09.123456789Z "
+          // Logrus format: time="..." level=info msg="..." key=val
+          const timeMatch = line.match(/time="([^"]+)"/);
+          const levelMatch = line.match(/level=(\w+)/);
+          const msgMatch = line.match(/msg="([^"]+)"/);
+          const ts = timeMatch?.[1] ?? line.slice(0, 30);
+          const level = levelMatch?.[1] ?? "info";
+          const msg = msgMatch?.[1] ?? line;
+          // Collect remaining key=val pairs as meta
+          const meta: Record<string, string> = {};
+          const kvRegex = /(\w+)=(?:"([^"]*)"|(\S+))/g;
+          let m;
+          while ((m = kvRegex.exec(line)) !== null) {
+            const key = m[1];
+            if (key === "time" || key === "level" || key === "msg") continue;
+            meta[key] = m[2] ?? m[3];
+          }
+          return { ts, level, msg, meta: Object.keys(meta).length > 0 ? meta : undefined };
+        });
       return c.json({ logs: entries });
     } catch {
-      return c.json({ logs: [], error: "Could not read introspector logs (docker not available?)" });
+      return c.json({
+        logs: [],
+        error: "Could not read introspector logs (docker not available?)",
+      });
     }
   });
 

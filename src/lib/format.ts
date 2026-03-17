@@ -104,17 +104,10 @@ export function formatSats(n: number): string {
  * e.g., 1000 sats for 1000000 raw tokens with decimals=6 => "1,000 sat/token"
  *       1000 sats for 100 raw tokens with decimals=0 => "10 sat/token"
  */
-export function formatPrice(
-  satAmount: number,
-  tokenAmount: number,
-  decimals?: number,
-): string {
+export function formatPrice(satAmount: number, tokenAmount: number, decimals?: number): string {
   if (tokenAmount === 0) return "0 sat/token";
 
-  const displayTokens =
-    decimals && decimals > 0
-      ? tokenAmount / 10 ** decimals
-      : tokenAmount;
+  const displayTokens = decimals && decimals > 0 ? tokenAmount / 10 ** decimals : tokenAmount;
 
   const price = satAmount / displayTokens;
 
@@ -125,7 +118,5 @@ export function formatPrice(
   const [intPart, fracPart] = trimmed.split(".");
   const intFormatted = formatInt(Number(intPart));
 
-  return fracPart
-    ? `${intFormatted}.${fracPart} sat/token`
-    : `${intFormatted} sat/token`;
+  return fracPart ? `${intFormatted}.${fracPart} sat/token` : `${intFormatted} sat/token`;
 }

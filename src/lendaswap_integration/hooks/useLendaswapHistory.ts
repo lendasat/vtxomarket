@@ -42,8 +42,8 @@ export function useLendaswapHistory() {
             const targetToken = resp.target_token;
             const sourceToken = resp.source_token;
             const tokenSymbol = isSend
-              ? (targetToken?.symbol || "USDC")
-              : (sourceToken?.symbol || "USDC");
+              ? targetToken?.symbol || "USDC"
+              : sourceToken?.symbol || "USDC";
             const coin: StablecoinKey = tokenSymbol === "USDT" ? "USDT" : "USDC";
 
             const stablecoinAmt = isSend ? resp.target_amount : resp.source_amount;
@@ -57,7 +57,8 @@ export function useLendaswapHistory() {
               chain,
               stablecoinDisplay: `${fromSmallestUnit(stablecoinAmt || "0", coin)} ${coin}`,
               satsAmount: parseInt(satsAmt || "0", 10),
-              destinationAddress: s.targetAddress || resp.target_evm_address || resp.target_arkade_address || "",
+              destinationAddress:
+                s.targetAddress || resp.target_evm_address || resp.target_arkade_address || "",
               status: mapBackendStatus(status),
               backendStatus: status,
               claimTxHash: resp.evm_claim_txid || resp.btc_claim_txid,

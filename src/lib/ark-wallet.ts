@@ -81,8 +81,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
     promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
     );
   });
 }
@@ -107,7 +113,7 @@ export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
           esploraUrl: ESPLORA_URL,
         }),
         WALLET_CONNECT_TIMEOUT,
-        "Wallet.create",
+        "Wallet.create"
       );
       console.log("[ark] Wallet created successfully");
       return wallet;
@@ -169,8 +175,12 @@ export function isBtcAddress(addr: string): boolean {
  * Collaborative exit: send sats to an on-chain Bitcoin address via Ramps.offboard().
  * Uses the SDK's official method which properly handles fee deduction via CEL expressions.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function collaborativeExit(wallet: any, address: string, amountSats: number): Promise<string> {
+
+async function collaborativeExit(
+  wallet: any,
+  address: string,
+  amountSats: number
+): Promise<string> {
   const { Ramps } = await getSDK();
   const ramps = new Ramps(wallet);
   const info = await wallet.arkProvider.getInfo();
@@ -188,7 +198,7 @@ async function collaborativeExit(wallet: any, address: string, amountSats: numbe
     info.fees,
     BigInt(amountSats + fee), // offboard deducts outputFee internally → recipient gets ~amountSats
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (event: any) => console.log("[collaborative-exit]", event),
+    (event: any) => console.log("[collaborative-exit]", event)
   );
   return txid;
 }
@@ -207,8 +217,10 @@ async function computeMinExpiryWait(wallet: any, errorMsg: string): Promise<numb
   try {
     const vtxos = await wallet.getVtxos();
     if (vtxos.length === 0) return 24;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const earliestExpiry = Math.min(...vtxos.map((v: any) => v.virtualStatus?.batchExpiry ?? Infinity));
+
+    const earliestExpiry = Math.min(
+      ...vtxos.map((v: any) => v.virtualStatus?.batchExpiry ?? Infinity)
+    );
     if (!earliestExpiry || earliestExpiry === Infinity) return 24;
 
     const expiresInHours = (earliestExpiry * 1000 - Date.now()) / (3600 * 1000);
@@ -219,8 +231,11 @@ async function computeMinExpiryWait(wallet: any, errorMsg: string): Promise<numb
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function sendPayment(wallet: any, address: string, amountSats: number): Promise<string> {
+export async function sendPayment(
+  wallet: any,
+  address: string,
+  amountSats: number
+): Promise<string> {
   if (isBtcAddress(address)) {
     try {
       return await collaborativeExit(wallet, address, amountSats);
@@ -233,8 +248,8 @@ export async function sendPayment(wallet: any, address: string, amountSats: numb
         const waitHours = await computeMinExpiryWait(wallet, msg);
         throw new Error(
           `On-chain sends are temporarily unavailable — your funds were recently settled ` +
-          `and the server requires ~${waitHours}h of aging before they can be spent on-chain. ` +
-          `You can send via Lightning or Ark (off-chain) in the meantime.`
+            `and the server requires ~${waitHours}h of aging before they can be spent on-chain. ` +
+            `You can send via Lightning or Ark (off-chain) in the meantime.`
         );
       }
       throw err;
@@ -310,7 +325,11 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
           if (i === mainIdx) return { ...o, amount: o.amount - dustAmt };
           return o;
         });
-        console.log("[ark] issueToken: patched packet output to %d, main=%d", Number(dustAmt), Number(outputs[mainIdx].amount));
+        console.log(
+          "[ark] issueToken: patched packet output to %d, main=%d",
+          Number(dustAmt),
+          Number(outputs[mainIdx].amount)
+        );
       }
     }
     return origBuildAndSubmit(inputs, outputs);
@@ -329,7 +348,12 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
           }
         : undefined;
 
-    console.log("[ark] issueToken: amount=%d, controlAssetId=%s, metadata=%o", amount, controlAssetId, metadata);
+    console.log(
+      "[ark] issueToken: amount=%d, controlAssetId=%s, metadata=%o",
+      amount,
+      controlAssetId,
+      metadata
+    );
 
     const result = await wallet.assetManager.issue({
       amount,
@@ -435,16 +459,19 @@ export async function getRawBalance(wallet: any): Promise<WalletBalance> {
 export async function getVtxoDetails(wallet: any): Promise<VtxoInfo[]> {
   const results: VtxoInfo[] = [];
   const boardingUtxos = await wallet.getBoardingUtxos();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   for (const utxo of boardingUtxos) {
     results.push({ type: "boarding", value: utxo.value, confirmed: utxo.status.confirmed });
   }
   const vtxos = await wallet.getVtxos({ withRecoverable: true });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   for (const vtxo of vtxos) {
     results.push({
-      type: "vtxo", value: vtxo.value, confirmed: true,
-      state: vtxo.virtualStatus.state, batchExpiry: vtxo.virtualStatus.batchExpiry,
+      type: "vtxo",
+      value: vtxo.value,
+      confirmed: true,
+      state: vtxo.virtualStatus.state,
+      batchExpiry: vtxo.virtualStatus.batchExpiry,
     });
   }
   return results;
@@ -461,7 +488,9 @@ export async function settleVtxos(wallet: any): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const total = boardingUtxos.reduce((sum: number, u: any) => sum + u.value, 0);
   if (total < MIN_SETTLE_SATS) {
-    throw new Error(`Boarding balance too low to settle: ${total} sats (need >= ${MIN_SETTLE_SATS})`);
+    throw new Error(
+      `Boarding balance too low to settle: ${total} sats (need >= ${MIN_SETTLE_SATS})`
+    );
   }
 
   console.log("[settleVtxos] %d boarding UTXOs = %d sats", boardingUtxos.length, total);
@@ -478,17 +507,19 @@ export async function settleVtxos(wallet: any): Promise<string> {
       boardingUtxos,
       undefined, // onboard full amount
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (event: any) => console.log("[onboard]", event),
+      (event: any) => console.log("[onboard]", event)
     ),
     SETTLE_TIMEOUT,
-    "settleVtxos (onboard)",
+    "settleVtxos (onboard)"
   );
   return txid;
 }
 
 /** Finalize any pending (preconfirmed) transactions. Non-destructive no-op if none exist. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function finalizePending(wallet: any): Promise<{ finalized: string[]; pending: string[] }> {
+
+export async function finalizePending(
+  wallet: any
+): Promise<{ finalized: string[]; pending: string[] }> {
   if (typeof wallet.finalizePendingTxs !== "function") return { finalized: [], pending: [] };
   return wallet.finalizePendingTxs();
 }
@@ -522,7 +553,12 @@ export async function settleAll(wallet: any): Promise<string> {
   }
 
   const arkAddress = await wallet.getAddress();
-  console.log("[settleAll] %d boarding + %d preconfirmed = %d sats", boardingUtxos.length, preconfirmed.length, total);
+  console.log(
+    "[settleAll] %d boarding + %d preconfirmed = %d sats",
+    boardingUtxos.length,
+    preconfirmed.length,
+    total
+  );
 
   const settlePromise = wallet.settle(
     {
@@ -530,7 +566,7 @@ export async function settleAll(wallet: any): Promise<string> {
       outputs: [{ address: arkAddress, amount: BigInt(total) }],
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (event: any) => console.log("[settleAll]", event),
+    (event: any) => console.log("[settleAll]", event)
   );
 
   const txid = await withTimeout<string>(settlePromise, SETTLE_TIMEOUT, "settleAll");
@@ -573,7 +609,7 @@ export interface AssetDetails {
 }
 
 /** Send asset tokens to a recipient Ark address */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export async function sendAsset(
   wallet: any,
   recipientAddress: string,
@@ -602,9 +638,12 @@ export async function getAssets(wallet: any): Promise<AssetInfo[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const withAssets = vtxos.filter((v: any) => v.assets && v.assets.length > 0);
     console.log(`[ark] VTXOs: ${vtxos.length} total, ${withAssets.length} with assets`);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     for (const v of vtxos.slice(0, 5)) {
-      console.log(`[ark]   VTXO ${v.txid}:${v.vout} value=${v.value} spent=${v.isSpent} assets=`, v.assets);
+      console.log(
+        `[ark]   VTXO ${v.txid}:${v.vout} value=${v.value} spent=${v.isSpent} assets=`,
+        v.assets
+      );
     }
   } catch (e) {
     console.warn("[ark] VTXO inspection failed:", e);
@@ -687,11 +726,12 @@ export async function computeRenewalThreshold(wallet: any): Promise<number> {
   try {
     const vtxos = await wallet.getVtxos({ withRecoverable: true });
     // Find a settled VTXO with batchExpiry and commitment txids to estimate batch lifetime
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sample = vtxos.find((v: any) =>
-      v.virtualStatus?.batchExpiry &&
-      v.virtualStatus?.commitmentTxIds?.length > 0 &&
-      v.virtualStatus?.state === "settled"
+
+    const sample = vtxos.find(
+      (v: any) =>
+        v.virtualStatus?.batchExpiry &&
+        v.virtualStatus?.commitmentTxIds?.length > 0 &&
+        v.virtualStatus?.state === "settled"
     );
     if (!sample) return DEFAULT_RENEWAL_THRESHOLD_MS;
 
@@ -779,7 +819,9 @@ export async function renewVtxos(wallet: any, thresholdMs?: number): Promise<str
   const arkAddress = await wallet.getAddress();
   console.log(
     "[ark] Renewing %d VTXOs + %d boarding UTXOs (%d sats total)",
-    expiringVtxos.length, boardingUtxos.length, totalAmount
+    expiringVtxos.length,
+    boardingUtxos.length,
+    totalAmount
   );
 
   const txid = await wallet.settle(
@@ -788,7 +830,7 @@ export async function renewVtxos(wallet: any, thresholdMs?: number): Promise<str
       outputs: [{ address: arkAddress, amount: BigInt(totalAmount) }],
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (event: any) => console.log("[renewal]", event),
+    (event: any) => console.log("[renewal]", event)
   );
 
   console.log("[ark] Renewal complete, txid:", txid);
@@ -824,18 +866,20 @@ export async function isAspReachable(): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getUnilateralExitEligibleVtxos(wallet: any): Promise<VtxoInfo[]> {
   const vtxos = await wallet.getVtxos({ withRecoverable: true, withUnrolled: true });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return vtxos
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((v: any) => v.virtualStatus?.state === "settled" && !v.isUnrolled)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((v: any) => ({
-      type: "vtxo" as const,
-      value: v.value,
-      confirmed: true,
-      state: v.virtualStatus.state,
-      batchExpiry: v.virtualStatus.batchExpiry,
-    }));
+
+  return (
+    vtxos
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((v: any) => v.virtualStatus?.state === "settled" && !v.isUnrolled)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((v: any) => ({
+        type: "vtxo" as const,
+        value: v.value,
+        confirmed: true,
+        state: v.virtualStatus.state,
+        batchExpiry: v.virtualStatus.batchExpiry,
+      }))
+  );
 }
 
 /**
@@ -852,22 +896,24 @@ export async function getUnilateralExitEligibleVtxos(wallet: any): Promise<VtxoI
  * @param vtxoVout - The vout of the VTXO (default 0)
  * @param onStep - Callback for progress updates
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export async function unilateralExit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wallet: any,
   privateKeyHex: string,
   vtxoTxid: string,
   vtxoVout: number = 0,
-  onStep?: (step: UnilateralExitStep) => void,
+  onStep?: (step: UnilateralExitStep) => void
 ): Promise<string> {
   const sdk = await getSDK();
   const { Unroll, OnchainWallet, SingleKey } = sdk;
 
   // Determine network name from ARK_SERVER_URL
-  const networkName = ARK_SERVER_URL.includes("mutinynet") ? "mutinynet"
-    : ARK_SERVER_URL.includes("signet") ? "signet"
-    : "bitcoin";
+  const networkName = ARK_SERVER_URL.includes("mutinynet")
+    ? "mutinynet"
+    : ARK_SERVER_URL.includes("signet")
+      ? "signet"
+      : "bitcoin";
 
   // Create OnchainWallet for P2A anchor fee bumping
   const identity = SingleKey.fromHex(privateKeyHex);
@@ -877,9 +923,9 @@ export async function unilateralExit(
   const outpoint = { txid: vtxoTxid, vout: vtxoVout };
   const session = await Unroll.Session.create(
     outpoint,
-    onchainWallet,            // AnchorBumper
-    onchainWallet.provider,   // OnchainProvider (esplora)
-    wallet.indexerProvider,   // IndexerProvider
+    onchainWallet, // AnchorBumper
+    onchainWallet.provider, // OnchainProvider (esplora)
+    wallet.indexerProvider // IndexerProvider
   );
 
   let lastVtxoTxid = vtxoTxid;
@@ -914,17 +960,21 @@ export async function unilateralExit(
  * @param vtxoTxids - Array of unrolled VTXO txids
  * @param destinationAddress - On-chain Bitcoin address to receive funds
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export async function completeUnilateralExit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wallet: any,
   vtxoTxids: string[],
-  destinationAddress: string,
+  destinationAddress: string
 ): Promise<string> {
   const sdk = await getSDK();
   const { Unroll } = sdk;
 
-  console.log("[ark] Completing unilateral exit for %d VTXOs to %s", vtxoTxids.length, destinationAddress);
+  console.log(
+    "[ark] Completing unilateral exit for %d VTXOs to %s",
+    vtxoTxids.length,
+    destinationAddress
+  );
   const txid = await Unroll.completeUnroll(wallet, vtxoTxids, destinationAddress);
   console.log("[ark] Unilateral exit complete, final txid:", txid);
   return txid;
@@ -936,16 +986,18 @@ export async function completeUnilateralExit(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getUnrolledVtxos(wallet: any): Promise<VtxoInfo[]> {
   const vtxos = await wallet.getVtxos({ withUnrolled: true });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return vtxos
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((v: any) => v.isUnrolled === true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((v: any) => ({
-      type: "vtxo" as const,
-      value: v.value,
-      confirmed: true,
-      state: "unrolled",
-      batchExpiry: v.virtualStatus?.batchExpiry,
-    }));
+
+  return (
+    vtxos
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((v: any) => v.isUnrolled === true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((v: any) => ({
+        type: "vtxo" as const,
+        value: v.value,
+        confirmed: true,
+        state: "unrolled",
+        batchExpiry: v.virtualStatus?.batchExpiry,
+      }))
+  );
 }

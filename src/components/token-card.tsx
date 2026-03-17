@@ -35,9 +35,7 @@ export function TokenCard({ token, marketData }: TokenCardProps) {
             </div>
 
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm truncate leading-tight">
-                {token.name}
-              </h3>
+              <h3 className="font-semibold text-sm truncate leading-tight">{token.name}</h3>
               <p className="text-[11px] font-mono text-muted-foreground/40 mt-0.5">
                 ${token.ticker}
               </p>

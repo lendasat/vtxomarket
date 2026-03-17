@@ -103,8 +103,7 @@ export function WalletDebug() {
     }
   };
 
-  const hasSettleable =
-    rawBalance && (rawBalance.boarding?.confirmed ?? 0) > 0;
+  const hasSettleable = rawBalance && (rawBalance.boarding?.confirmed ?? 0) > 0;
   const hasRecoverable = rawBalance && rawBalance.recoverable > 0;
 
   return (
@@ -115,15 +114,8 @@ export function WalletDebug() {
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Raw SDK Balance
           </p>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={loadDebugInfo}
-            disabled={loading}
-          >
-            <RefreshIcon
-              className={`size-3.5 ${loading ? "animate-spin" : ""}`}
-            />
+          <Button variant="ghost" size="icon-xs" onClick={loadDebugInfo} disabled={loading}>
+            <RefreshIcon className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
         {rawBalance ? (
@@ -131,13 +123,7 @@ export function WalletDebug() {
             <span className="text-muted-foreground">total</span>
             <span>{rawBalance.total.toLocaleString()}</span>
             <span className="text-muted-foreground">available</span>
-            <span
-              className={
-                rawBalance.available === 0
-                  ? "text-destructive"
-                  : "text-green-400"
-              }
-            >
+            <span className={rawBalance.available === 0 ? "text-destructive" : "text-green-400"}>
               {rawBalance.available.toLocaleString()}
             </span>
             <span className="text-muted-foreground">settled</span>
@@ -145,27 +131,15 @@ export function WalletDebug() {
             <span className="text-muted-foreground">preconfirmed</span>
             <span>{rawBalance.preconfirmed.toLocaleString()}</span>
             <span className="text-muted-foreground">recoverable</span>
-            <span
-              className={
-                rawBalance.recoverable > 0
-                  ? "text-yellow-400"
-                  : ""
-              }
-            >
+            <span className={rawBalance.recoverable > 0 ? "text-yellow-400" : ""}>
               {rawBalance.recoverable.toLocaleString()}
             </span>
             <span className="text-muted-foreground">boarding.total</span>
-            <span>
-              {(rawBalance.boarding?.total ?? 0).toLocaleString()}
-            </span>
+            <span>{(rawBalance.boarding?.total ?? 0).toLocaleString()}</span>
             <span className="text-muted-foreground">boarding.confirmed</span>
-            <span>
-              {(rawBalance.boarding?.confirmed ?? 0).toLocaleString()}
-            </span>
+            <span>{(rawBalance.boarding?.confirmed ?? 0).toLocaleString()}</span>
             <span className="text-muted-foreground">boarding.unconfirmed</span>
-            <span>
-              {(rawBalance.boarding?.unconfirmed ?? 0).toLocaleString()}
-            </span>
+            <span>{(rawBalance.boarding?.unconfirmed ?? 0).toLocaleString()}</span>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">Loading...</p>
@@ -191,21 +165,18 @@ export function WalletDebug() {
           disabled={recovering || !hasRecoverable}
           onClick={handleRecover}
         >
-          {recovering ? "Recovering..." : `Recover Sats${hasRecoverable ? ` (${rawBalance!.recoverable.toLocaleString()})` : ""}`}
+          {recovering
+            ? "Recovering..."
+            : `Recover Sats${hasRecoverable ? ` (${rawBalance!.recoverable.toLocaleString()})` : ""}`}
         </Button>
-        {actionResult && (
-          <p className="text-xs text-green-400 font-mono">{actionResult}</p>
-        )}
-        {actionError && (
-          <p className="text-xs text-destructive">{actionError}</p>
-        )}
+        {actionResult && <p className="text-xs text-green-400 font-mono">{actionResult}</p>}
+        {actionError && <p className="text-xs text-destructive">{actionError}</p>}
       </div>
 
       {/* UTXOs & VTXOs */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          UTXOs & VTXOs{" "}
-          <span className="text-muted-foreground">({vtxos.length})</span>
+          UTXOs & VTXOs <span className="text-muted-foreground">({vtxos.length})</span>
         </p>
         {vtxos.length === 0 ? (
           <p className="text-xs text-muted-foreground">No coins found</p>
@@ -246,8 +217,7 @@ export function WalletDebug() {
                   )}
                   {vtxo.batchExpiry && (
                     <span className="text-[10px] text-muted-foreground">
-                      exp{" "}
-                      {new Date(vtxo.batchExpiry).toLocaleDateString()}
+                      exp {new Date(vtxo.batchExpiry).toLocaleDateString()}
                     </span>
                   )}
                 </div>
