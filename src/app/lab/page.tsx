@@ -222,11 +222,16 @@ export default function LabPage() {
       });
       setLastOffer(offer);
       addLog("success", `Sell offer created: ${offer.offerOutpoint}`);
-      // Post to indexer (retry on VTXO not found)
+      // Sign and post to indexer (retry on VTXO not found)
+      const { sha256: sha256Sell } = await import("@noble/hashes/sha256");
+      const { hex: hexSell } = await import("@scure/base");
+      const sellMsg = sha256Sell(new TextEncoder().encode(`offer:${offer.offerOutpoint}`));
+      const sellSigBytes = await arkWallet.identity.signMessage(sellMsg, "schnorr");
+      const sellPayload = { ...offer, signature: hexSell.encode(sellSigBytes) };
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
         try {
-          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sellPayload) });
           if (resp.ok) { addLog("info", "Posted to indexer"); break; }
           const errText = await resp.text().catch(() => "");
           if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }
@@ -266,11 +271,16 @@ export default function LabPage() {
       });
       setLastBuyOffer(offer);
       addLog("success", `Buy offer created: ${offer.offerOutpoint}`);
-      // Post to indexer (retry on VTXO not found)
+      // Sign and post to indexer (retry on VTXO not found)
+      const { sha256: sha256Buy } = await import("@noble/hashes/sha256");
+      const { hex: hexBuy } = await import("@scure/base");
+      const buyMsg = sha256Buy(new TextEncoder().encode(`offer:${offer.offerOutpoint}`));
+      const buySigBytes = await arkWallet.identity.signMessage(buyMsg, "schnorr");
+      const buyPayload = { ...offer, signature: hexBuy.encode(buySigBytes) };
       for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) { addLog("info", "Retrying indexer post..."); await new Promise((r) => setTimeout(r, 2000)); }
         try {
-          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(offer) });
+          const resp = await fetch(`${INDEXER_URL}/offers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buyPayload) });
           if (resp.ok) { addLog("info", "Posted to indexer"); break; }
           const errText = await resp.text().catch(() => "");
           if (!errText.includes("VTXO not found")) { addLog("info", `Indexer post failed: ${errText}`); break; }

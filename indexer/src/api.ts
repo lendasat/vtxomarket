@@ -11,10 +11,38 @@
  */
 
 import { Hono } from "hono";
+import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+
+// ── Simple sliding-window rate limiter ────────────────────────────────────────
+const rateLimitMap = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || "60", 10); // requests per window
+
+function rateLimiter() {
+  return async (c: Context, next: Next) => {
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const now = Date.now();
+    const timestamps = rateLimitMap.get(ip) || [];
+    // Evict old entries
+    const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= RATE_LIMIT_MAX) {
+      return c.json({ error: "rate limit exceeded" }, 429);
+    }
+    recent.push(now);
+    rateLimitMap.set(ip, recent);
+    // Periodic cleanup of stale IPs (every 1000 requests)
+    if (rateLimitMap.size > 10000) {
+      for (const [key, ts] of rateLimitMap) {
+        if (ts.every(t => now - t >= RATE_LIMIT_WINDOW_MS)) rateLimitMap.delete(key);
+      }
+    }
+    await next();
+  };
+}
 import { config } from "./config";
 import {
   getAllAssets,
@@ -36,11 +64,24 @@ import {
 import { fetchVtxosByOutpoints, fetchAssetMetadata } from "./ark-client";
 import { getRecentLogs } from "./log-buffer";
 
+/** Verify a BIP-340 Schnorr signature. Returns true if valid. */
+function verifySchnorrSig(signatureHex: string, message: Uint8Array, pubkeyHex: string): boolean {
+  const sigBytes = Uint8Array.from(Buffer.from(signatureHex, 'hex'));
+  const pubkeyBytes = Uint8Array.from(Buffer.from(pubkeyHex, 'hex'));
+  return schnorr.verify(sigBytes, message, pubkeyBytes);
+}
+
 export function buildApp(): Hono {
   const app = new Hono();
 
   // ── Middleware ─────────────────────────────────────────────────────────────
-  app.use("*", cors());
+  const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000").split(",").map(s => s.trim());
+  app.use("*", cors({
+    origin: (origin) => allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type"],
+  }));
+  app.use("*", rateLimiter());
   if (config.logLevel === "debug") {
     app.use("*", logger());
   }
@@ -104,6 +145,7 @@ export function buildApp(): Hono {
   });
 
   // ── Update asset metadata (creator submits after issuance) ─────────────────
+  // Requires a Schnorr signature proving the caller owns the creator private key.
   // First write sets the creator identity; subsequent writes must match it.
   // Supply and createdAt are immutable after first set to prevent tampering.
   app.put("/assets/:id/metadata", async (c) => {
@@ -112,7 +154,7 @@ export function buildApp(): Hono {
     if (!asset) return c.json({ error: "Asset not found — it may not have been indexed yet" }, 404);
 
     const body = await c.req.json();
-    const { description, image, creator, creatorArkAddress, controlAssetId, website, twitter, telegram, supply, createdAt } = body;
+    const { description, image, creator, creatorArkAddress, controlAssetId, website, twitter, telegram, supply, createdAt, signature } = body;
 
     // If a creator is already set, only that same creator can update metadata
     if (asset.creator && creator && asset.creator !== creator) {
@@ -120,6 +162,23 @@ export function buildApp(): Hono {
     }
     if (asset.creator && !creator) {
       return c.json({ error: "Unauthorized: must provide creator pubkey" }, 403);
+    }
+
+    // Require Schnorr signature proving the caller owns the creator key
+    const creatorPubkey = creator || asset.creator;
+    if (!creatorPubkey) {
+      return c.json({ error: "missing creator pubkey" }, 400);
+    }
+    if (!signature) {
+      return c.json({ error: "missing signature — sign sha256('metadata:{assetId}') with creator key" }, 400);
+    }
+    try {
+      const message = sha256(new TextEncoder().encode(`metadata:${assetId}`));
+      if (!verifySchnorrSig(signature, message, creatorPubkey)) {
+        return c.json({ error: "unauthorized: invalid signature" }, 403);
+      }
+    } catch {
+      return c.json({ error: "unauthorized: malformed signature" }, 403);
     }
 
     upsertAssetMetadata(assetId, {
@@ -229,14 +288,28 @@ export function buildApp(): Hono {
   // ── Offers ─────────────────────────────────────────────────────────────────
 
   // Maker self-reports after creating the swap VTXO.
+  // Requires Schnorr signature proving the caller owns the maker private key.
   // Verified against arkd: the VTXO must exist, be unspent, and hold the claimed asset.
   // offerType: "sell" (default) = maker locks tokens, "buy" = maker locks sats
   app.post("/offers", async (c) => {
     const body = await c.req.json();
-    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt } = body;
+    const { offerOutpoint, assetId, tokenAmount, satAmount, vtxoSatsValue, makerArkAddress, makerPkScript, makerXOnlyPubkey, swapScriptHex, arkadeScriptHex, expiresAt, signature } = body;
     const offerType = body.offerType ?? 'sell';
     if (!offerOutpoint || !assetId || !tokenAmount || !satAmount || !makerArkAddress || !makerPkScript || !makerXOnlyPubkey || !swapScriptHex || !expiresAt) {
       return c.json({ error: "missing required fields" }, 400);
+    }
+
+    // Verify Schnorr signature proving the caller owns the maker key
+    if (!signature) {
+      return c.json({ error: "missing signature — sign sha256('offer:{offerOutpoint}') with maker key" }, 400);
+    }
+    try {
+      const message = sha256(new TextEncoder().encode(`offer:${offerOutpoint}`));
+      if (!verifySchnorrSig(signature, message, makerXOnlyPubkey)) {
+        return c.json({ error: "unauthorized: invalid signature" }, 403);
+      }
+    } catch {
+      return c.json({ error: "unauthorized: malformed signature" }, 403);
     }
     if (offerType !== 'sell' && offerType !== 'buy') {
       return c.json({ error: "offerType must be 'sell' or 'buy'" }, 400);

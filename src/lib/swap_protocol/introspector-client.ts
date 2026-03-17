@@ -7,19 +7,18 @@
  * @see https://github.com/ArkLabsHQ/introspector
  */
 
-const INTROSPECTOR_URL =
+export const INTROSPECTOR_URL =
   process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
 
-// Warn if non-localhost HTTP is used (PSBTs contain partial signatures)
+// Block non-localhost HTTP to prevent MITM on PSBTs containing partial signatures
+const _isLocalhost = INTROSPECTOR_URL.includes("localhost") || INTROSPECTOR_URL.includes("127.0.0.1");
 if (
-  typeof window !== "undefined" &&
   INTROSPECTOR_URL.startsWith("http://") &&
-  !INTROSPECTOR_URL.includes("localhost") &&
-  !INTROSPECTOR_URL.includes("127.0.0.1")
+  !_isLocalhost
 ) {
-  console.warn(
-    "[introspector-client] WARNING: Using unencrypted HTTP for a remote introspector URL. " +
-    "PSBTs contain partial signatures. Use HTTPS in production: " + INTROSPECTOR_URL
+  throw new Error(
+    "[introspector-client] BLOCKED: Refusing to use unencrypted HTTP for a remote introspector URL. " +
+    "PSBTs contain partial signatures — use HTTPS in production. URL: " + INTROSPECTOR_URL
   );
 }
 

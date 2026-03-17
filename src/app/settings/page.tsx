@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [nostrPrivKeyHex, setNostrPrivKeyHex] = useState("");
+  const [revealConfirmText, setRevealConfirmText] = useState("");
   const [hasNsecOverride, setHasNsecOverride] = useState(false);
   const [revealedNostrKey, setRevealedNostrKey] = useState(false);
   const [revealedArkKey, setRevealedArkKey] = useState(false);
@@ -156,12 +157,13 @@ export default function SettingsPage() {
     loadNostrKey();
   }, [mnemonic]);
 
-  // Load mnemonic from IndexedDB on-demand when user clicks "Reveal"
+  // Load mnemonic from IndexedDB on-demand when user types "REVEAL" to confirm
   const handleRevealMnemonic = async () => {
     if (mnemonic) {
       setRevealed(true);
       return;
     }
+    if (revealConfirmText !== "REVEAL") return;
     try {
       const stored = await getMnemonic();
       if (stored) {
@@ -342,13 +344,24 @@ export default function SettingsPage() {
           </div>
 
           {!revealed ? (
-            <button
-              onClick={handleRevealMnemonic}
-              disabled={!walletReady}
-              className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-medium transition-all hover:bg-white/[0.12] hover:border-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {walletReady ? "Reveal Seed Phrase" : "Generating wallet..."}
-            </button>
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground/40">Type <span className="font-mono text-foreground/60">REVEAL</span> to confirm</p>
+              <input
+                type="text"
+                value={revealConfirmText}
+                onChange={(e) => setRevealConfirmText(e.target.value.toUpperCase())}
+                placeholder="Type REVEAL"
+                className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all font-mono"
+                autoComplete="off"
+              />
+              <button
+                onClick={handleRevealMnemonic}
+                disabled={!walletReady || revealConfirmText !== "REVEAL"}
+                className="w-full h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] text-sm font-medium transition-all hover:bg-white/[0.12] hover:border-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {walletReady ? "Reveal Seed Phrase" : "Generating wallet..."}
+              </button>
+            </div>
           ) : (
             <>
               <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">

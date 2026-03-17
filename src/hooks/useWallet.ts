@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
-import { saveMnemonic, getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
+import { getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
 import {
-  generateMnemonic,
   mnemonicToArkPrivateKeyHex,
   mnemonicToNostrPrivateKeyHex,
 } from "@/lib/wallet-crypto";
@@ -21,20 +20,19 @@ export function useWallet() {
     initRef.current = true;
 
     async function init() {
-      // 1. Mnemonic: load or create
+      // 1. Mnemonic: load from storage (saved by AuthGate)
       let mnemonic: string;
       try {
         const stored = await getMnemonic();
-        if (stored) {
-          mnemonic = stored;
-        } else {
-          mnemonic = generateMnemonic();
-          await saveMnemonic(mnemonic);
+        if (!stored) {
+          console.error("[wallet] No mnemonic available");
+          return;
         }
+        mnemonic = stored;
         console.log("[wallet] Mnemonic ready");
       } catch (e) {
-        console.error("[wallet] Mnemonic storage failed, using ephemeral:", e);
-        mnemonic = generateMnemonic();
+        console.error("[wallet] Mnemonic load failed:", e);
+        return;
       }
       // 2. Derive keys (mnemonic stays in local variable only — never stored in global state)
       let arkKeyHex: string;

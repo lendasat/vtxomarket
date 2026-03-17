@@ -15,6 +15,8 @@ import { useOffers } from "@/hooks/useOffers";
 import { formatTokenAmount, parseTokenInput, formatSats, formatPrice } from "@/lib/format";
 import type { Token } from "@/lib/store";
 
+import { safeUrl } from "@/lib/safe-url";
+
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 
 type InfoTab = "buy-offers" | "sell-offers" | "thread" | "trades" | "manage";
@@ -138,12 +140,25 @@ export default function TokenPage() {
     try {
       await reissueToken(arkWallet, token.assetId, amt);
       const newSupply = token.supply + amt;
-      // Update supply in indexer
-      await fetch(`${INDEXER_URL}/assets/${token.assetId}/metadata`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supply: newSupply }),
-      }).catch((err) => console.warn("Metadata update failed:", err));
+      // Update supply in indexer (signed with creator key)
+      try {
+        const { sha256: sha256Meta } = await import("@noble/hashes/sha256");
+        const { hex: hexMeta } = await import("@scure/base");
+        const { getMnemonic } = await import("@/lib/wallet-storage");
+        const { mnemonicToNostrPrivateKeyHex } = await import("@/lib/wallet-crypto");
+        const { schnorr } = await import("@noble/curves/secp256k1");
+        const mnemonic = await getMnemonic();
+        if (mnemonic) {
+          const nostrPrivKey = mnemonicToNostrPrivateKeyHex(mnemonic);
+          const metaMsg = sha256Meta(new TextEncoder().encode(`metadata:${token.assetId}`));
+          const metaSig = schnorr.sign(metaMsg, nostrPrivKey);
+          await fetch(`${INDEXER_URL}/assets/${token.assetId}/metadata`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ supply: newSupply, creator: user?.pubkey, signature: hexMeta.encode(metaSig) }),
+          });
+        }
+      } catch (err) { console.warn("Metadata update failed:", err); }
       upsertToken({ ...token, supply: newSupply });
       setReissueSuccess(`Minted ${formatTokenAmount(amt, token.decimals)} tokens. New supply: ${formatTokenAmount(newSupply, token.decimals)}`);
       setReissueAmount("");
@@ -180,6 +195,13 @@ export default function TokenPage() {
         satAmount: satAmt,
       });
 
+      // Sign offer registration to prove maker key ownership
+      const { sha256 } = await import("@noble/hashes/sha256");
+      const { hex: scureHex } = await import("@scure/base");
+      const offerMsg = sha256(new TextEncoder().encode(`offer:${offer.offerOutpoint}`));
+      const offerSigBytes = await arkWallet.identity.signMessage(offerMsg, "schnorr");
+      const offerPayload = { ...offer, signature: scureHex.encode(offerSigBytes) };
+
       // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
       let posted = false;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -187,7 +209,7 @@ export default function TokenPage() {
         const resp = await fetch(`${INDEXER_URL}/offers`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(offer),
+          body: JSON.stringify(offerPayload),
         });
         if (resp.ok) { posted = true; break; }
         const errText = await resp.text().catch(() => "");
@@ -286,6 +308,13 @@ export default function TokenPage() {
         satAmount: satAmt,
       });
 
+      // Sign offer registration to prove maker key ownership
+      const { sha256: sha256Buy } = await import("@noble/hashes/sha256");
+      const { hex: hexBuy } = await import("@scure/base");
+      const buyOfferMsg = sha256Buy(new TextEncoder().encode(`offer:${offer.offerOutpoint}`));
+      const buyOfferSigBytes = await arkWallet.identity.signMessage(buyOfferMsg, "schnorr");
+      const buyOfferPayload = { ...offer, signature: hexBuy.encode(buyOfferSigBytes) };
+
       // Self-report to indexer (retry on VTXO not found — Ark server may need a moment)
       let posted = false;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -293,7 +322,7 @@ export default function TokenPage() {
         const resp = await fetch(`${INDEXER_URL}/offers`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(offer),
+          body: JSON.stringify(buyOfferPayload),
         });
         if (resp.ok) { posted = true; break; }
         const errText = await resp.text().catch(() => "");
@@ -369,7 +398,7 @@ export default function TokenPage() {
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <div className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/60 tracking-wider">
             {token.image ? (
-              <img src={token.image} alt={token.name} className="h-full w-full rounded-xl object-cover" />
+              <img src={safeUrl(token.image) ?? ""} alt={token.name} className="h-full w-full rounded-xl object-cover" />
             ) : (
               token.ticker.slice(0, 2)
             )}
@@ -820,18 +849,18 @@ export default function TokenPage() {
               <>
                 <div className="h-px bg-white/[0.06]" />
                 <div className="flex flex-wrap gap-2">
-                  {token.website && (
-                    <a href={token.website} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.website) && (
+                    <a href={safeUrl(token.website)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       Website
                     </a>
                   )}
-                  {token.twitter && (
-                    <a href={token.twitter} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.twitter) && (
+                    <a href={safeUrl(token.twitter)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       X/Twitter
                     </a>
                   )}
-                  {token.telegram && (
-                    <a href={token.telegram} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.telegram) && (
+                    <a href={safeUrl(token.telegram)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       Telegram
                     </a>
                   )}

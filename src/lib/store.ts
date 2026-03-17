@@ -45,6 +45,7 @@ interface AppState {
   balance: BalanceInfo | null;
   addresses: { offchainAddr: string; boardingAddr: string } | null;
 
+
   // Tokens
   tokens: Token[];
   tokensLoading: boolean;
