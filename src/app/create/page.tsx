@@ -180,6 +180,26 @@ export default function CreatePage() {
         ...(telegram && { telegram }),
         ...(controlAssetId && { controlAssetId }),
       });
+      // Sign metadata to prove creator key ownership
+      let signedMetaBody = metaBody;
+      try {
+        const { sha256 } = await import("@noble/hashes/sha256");
+        const { hex: scureHex } = await import("@scure/base");
+        const { getMnemonic, getNostrKeyOverride } = await import("@/lib/wallet-storage");
+        const { mnemonicToNostrPrivateKeyHex } = await import("@/lib/wallet-crypto");
+        const { schnorr } = await import("@noble/curves/secp256k1");
+        const mnemonic = await getMnemonic();
+        const nostrOverride = await getNostrKeyOverride();
+        const nostrPrivKey = nostrOverride || (mnemonic ? mnemonicToNostrPrivateKeyHex(mnemonic) : null);
+        if (nostrPrivKey) {
+          const metaMsg = sha256(new TextEncoder().encode(`metadata:${result.assetId}`));
+          const metaSig = schnorr.sign(metaMsg, nostrPrivKey);
+          const parsed = JSON.parse(metaBody);
+          parsed.signature = scureHex.encode(metaSig);
+          signedMetaBody = JSON.stringify(parsed);
+        }
+      } catch (e) { console.warn("Failed to sign metadata:", e); }
+
       let metaOk = false;
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise((r) => setTimeout(r, attempt === 0 ? 3000 : 2000));
@@ -187,7 +207,7 @@ export default function CreatePage() {
           const metaResp = await fetch(`${INDEXER_URL}/assets/${result.assetId}/metadata`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: metaBody,
+            body: signedMetaBody,
           });
           if (metaResp.ok) { metaOk = true; break; }
           if (metaResp.status !== 404) break; // non-retryable error

@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
-import { saveMnemonic, getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
+import { getMnemonicDecrypted, getNostrKeyOverrideDecrypted } from "@/lib/wallet-storage";
 import {
-  generateMnemonic,
   mnemonicToArkPrivateKeyHex,
   mnemonicToNostrPrivateKeyHex,
 } from "@/lib/wallet-crypto";
@@ -21,20 +20,20 @@ export function useWallet() {
     initRef.current = true;
 
     async function init() {
-      // 1. Mnemonic: load or create
+      // 1. Mnemonic: load and decrypt (password set by AuthGate)
+      const password = useAppStore.getState().walletPassword;
       let mnemonic: string;
       try {
-        const stored = await getMnemonic();
-        if (stored) {
-          mnemonic = stored;
-        } else {
-          mnemonic = generateMnemonic();
-          await saveMnemonic(mnemonic);
+        const stored = await getMnemonicDecrypted(password ?? undefined);
+        if (!stored) {
+          console.error("[wallet] No mnemonic available (encrypted and no password?)");
+          return;
         }
+        mnemonic = stored;
         console.log("[wallet] Mnemonic ready");
       } catch (e) {
-        console.error("[wallet] Mnemonic storage failed, using ephemeral:", e);
-        mnemonic = generateMnemonic();
+        console.error("[wallet] Mnemonic decryption failed:", e);
+        return;
       }
       // 2. Derive keys (mnemonic stays in local variable only — never stored in global state)
       let arkKeyHex: string;
@@ -52,7 +51,7 @@ export function useWallet() {
       //    Check for an imported nsec override first
       import("@/lib/nostr").then(async ({ loginWithPrivateKey, connectNDK, fetchMyProfile }) => {
         try {
-          const override = await getNostrKeyOverride();
+          const override = await getNostrKeyOverrideDecrypted(password ?? undefined);
           const key = override || nostrKeyHex;
           // Connect first, then set signer (avoids user-relay lookup before connection)
           await connectNDK();
