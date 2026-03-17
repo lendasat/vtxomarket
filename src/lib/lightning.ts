@@ -91,7 +91,7 @@ const REFUNDABLE_STATUSES = new Set([
 export async function getSwapHistory(lightning: any): Promise<SwapHistoryItem[]> {
   try {
     const history = await lightning.getSwapHistory();
-     
+
     return history
       .map((swap: any) => {
         const isReverse = swap.type === "reverse";

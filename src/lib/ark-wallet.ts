@@ -175,7 +175,7 @@ export function isBtcAddress(addr: string): boolean {
  * Collaborative exit: send sats to an on-chain Bitcoin address via Ramps.offboard().
  * Uses the SDK's official method which properly handles fee deduction via CEL expressions.
  */
- 
+
 async function collaborativeExit(
   wallet: any,
   address: string,
@@ -217,7 +217,7 @@ async function computeMinExpiryWait(wallet: any, errorMsg: string): Promise<numb
   try {
     const vtxos = await wallet.getVtxos();
     if (vtxos.length === 0) return 24;
-     
+
     const earliestExpiry = Math.min(
       ...vtxos.map((v: any) => v.virtualStatus?.batchExpiry ?? Infinity)
     );
@@ -231,7 +231,6 @@ async function computeMinExpiryWait(wallet: any, errorMsg: string): Promise<numb
   }
 }
 
- 
 export async function sendPayment(
   wallet: any,
   address: string,
@@ -460,12 +459,12 @@ export async function getRawBalance(wallet: any): Promise<WalletBalance> {
 export async function getVtxoDetails(wallet: any): Promise<VtxoInfo[]> {
   const results: VtxoInfo[] = [];
   const boardingUtxos = await wallet.getBoardingUtxos();
-   
+
   for (const utxo of boardingUtxos) {
     results.push({ type: "boarding", value: utxo.value, confirmed: utxo.status.confirmed });
   }
   const vtxos = await wallet.getVtxos({ withRecoverable: true });
-   
+
   for (const vtxo of vtxos) {
     results.push({
       type: "vtxo",
@@ -517,7 +516,7 @@ export async function settleVtxos(wallet: any): Promise<string> {
 }
 
 /** Finalize any pending (preconfirmed) transactions. Non-destructive no-op if none exist. */
- 
+
 export async function finalizePending(
   wallet: any
 ): Promise<{ finalized: string[]; pending: string[] }> {
@@ -610,7 +609,7 @@ export interface AssetDetails {
 }
 
 /** Send asset tokens to a recipient Ark address */
- 
+
 export async function sendAsset(
   wallet: any,
   recipientAddress: string,
@@ -639,7 +638,7 @@ export async function getAssets(wallet: any): Promise<AssetInfo[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const withAssets = vtxos.filter((v: any) => v.assets && v.assets.length > 0);
     console.log(`[ark] VTXOs: ${vtxos.length} total, ${withAssets.length} with assets`);
-     
+
     for (const v of vtxos.slice(0, 5)) {
       console.log(
         `[ark]   VTXO ${v.txid}:${v.vout} value=${v.value} spent=${v.isSpent} assets=`,
@@ -727,7 +726,7 @@ export async function computeRenewalThreshold(wallet: any): Promise<number> {
   try {
     const vtxos = await wallet.getVtxos({ withRecoverable: true });
     // Find a settled VTXO with batchExpiry and commitment txids to estimate batch lifetime
-     
+
     const sample = vtxos.find(
       (v: any) =>
         v.virtualStatus?.batchExpiry &&
@@ -867,7 +866,7 @@ export async function isAspReachable(): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getUnilateralExitEligibleVtxos(wallet: any): Promise<VtxoInfo[]> {
   const vtxos = await wallet.getVtxos({ withRecoverable: true, withUnrolled: true });
-   
+
   return (
     vtxos
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -897,7 +896,7 @@ export async function getUnilateralExitEligibleVtxos(wallet: any): Promise<VtxoI
  * @param vtxoVout - The vout of the VTXO (default 0)
  * @param onStep - Callback for progress updates
  */
- 
+
 export async function unilateralExit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wallet: any,
@@ -961,7 +960,7 @@ export async function unilateralExit(
  * @param vtxoTxids - Array of unrolled VTXO txids
  * @param destinationAddress - On-chain Bitcoin address to receive funds
  */
- 
+
 export async function completeUnilateralExit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wallet: any,
@@ -987,7 +986,7 @@ export async function completeUnilateralExit(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getUnrolledVtxos(wallet: any): Promise<VtxoInfo[]> {
   const vtxos = await wallet.getVtxos({ withUnrolled: true });
-   
+
   return (
     vtxos
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
