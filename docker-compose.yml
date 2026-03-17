@@ -1,0 +1,48 @@
+## vtxo.market backend services
+##
+## The indexer and introspector are independent — they don't talk to each other.
+## Both connect to the same Ark server, and the frontend connects to both.
+##
+##   ┌──────────┐     ┌──────────────┐     ┌───────────────┐
+##   │ Frontend │────▶│   Indexer     │────▶│  Ark Server   │
+##   │ (CF Pages)│    │  :3001       │     │ (arkd)        │
+##   │          │     └──────────────┘     └───────────────┘
+##   │          │     ┌──────────────┐           ▲
+##   │          │────▶│ Introspector │           │
+##   │          │     │  :7073       │───────────┘
+##   └──────────┘     └──────────────┘
+##
+## Usage:
+##   cp .env.indexer.example .env.indexer
+##   cp .env.introspector.example .env.introspector
+##   # Edit both .env files with your values
+##   docker compose up -d
+
+services:
+  indexer:
+    build:
+      context: ./indexer
+      dockerfile: Dockerfile
+    container_name: vtxomarket-indexer
+    restart: unless-stopped
+    ports:
+      - "${INDEXER_PORT:-3001}:3001"
+    volumes:
+      - indexer-data:/app/data
+    env_file:
+      - .env.indexer
+
+  introspector:
+    image: ghcr.io/arklabshq/introspector:latest
+    container_name: vtxomarket-introspector
+    restart: unless-stopped
+    ports:
+      - "${INTROSPECTOR_PORT:-7073}:7073"
+    volumes:
+      - introspector-data:/app/data
+    env_file:
+      - .env.introspector
+
+volumes:
+  indexer-data:
+  introspector-data:
