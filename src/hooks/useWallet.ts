@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
-import { getMnemonicDecrypted, getNostrKeyOverrideDecrypted } from "@/lib/wallet-storage";
+import { getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
 import {
   mnemonicToArkPrivateKeyHex,
   mnemonicToNostrPrivateKeyHex,
@@ -20,19 +20,18 @@ export function useWallet() {
     initRef.current = true;
 
     async function init() {
-      // 1. Mnemonic: load and decrypt (password set by AuthGate)
-      const password = useAppStore.getState().walletPassword;
+      // 1. Mnemonic: load from storage (saved by AuthGate)
       let mnemonic: string;
       try {
-        const stored = await getMnemonicDecrypted(password ?? undefined);
+        const stored = await getMnemonic();
         if (!stored) {
-          console.error("[wallet] No mnemonic available (encrypted and no password?)");
+          console.error("[wallet] No mnemonic available");
           return;
         }
         mnemonic = stored;
         console.log("[wallet] Mnemonic ready");
       } catch (e) {
-        console.error("[wallet] Mnemonic decryption failed:", e);
+        console.error("[wallet] Mnemonic load failed:", e);
         return;
       }
       // 2. Derive keys (mnemonic stays in local variable only — never stored in global state)
@@ -51,7 +50,7 @@ export function useWallet() {
       //    Check for an imported nsec override first
       import("@/lib/nostr").then(async ({ loginWithPrivateKey, connectNDK, fetchMyProfile }) => {
         try {
-          const override = await getNostrKeyOverrideDecrypted(password ?? undefined);
+          const override = await getNostrKeyOverride();
           const key = override || nostrKeyHex;
           // Connect first, then set signer (avoids user-relay lookup before connection)
           await connectNDK();

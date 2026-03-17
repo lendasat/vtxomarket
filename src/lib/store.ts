@@ -45,8 +45,6 @@ interface AppState {
   balance: BalanceInfo | null;
   addresses: { offchainAddr: string; boardingAddr: string } | null;
 
-  // Session password (in-memory only, never persisted)
-  walletPassword: string | null;
 
   // Tokens
   tokens: Token[];
@@ -77,7 +75,6 @@ interface AppState {
   setTokensLoaded: (loaded: boolean) => void;
   setHeldAssets: (assets: HeldAsset[]) => void;
   upsertStablecoinTx: (tx: StablecoinTxItem) => void;
-  setWalletPassword: (password: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -93,7 +90,6 @@ export const useAppStore = create<AppState>((set) => ({
   tokens: [],
   tokensLoading: false,
   tokensLoaded: false,
-  walletPassword: null,
   heldAssets: [],
   stablecoinTxs: [],
   setUser: (user) => set({ user }),
@@ -121,7 +117,6 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setTokensLoading: (tokensLoading) => set({ tokensLoading }),
   setTokensLoaded: (tokensLoaded) => set({ tokensLoaded }),
-  setWalletPassword: (walletPassword) => set({ walletPassword }),
   setHeldAssets: (heldAssets) => set({ heldAssets }),
   upsertStablecoinTx: (tx) =>
     set((state) => {
