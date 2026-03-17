@@ -23,12 +23,18 @@ interface VolumeData {
 
 function getIntervalSec(tf: Timeframe): number {
   switch (tf) {
-    case "1m": return 60;
-    case "5m": return 300;
-    case "15m": return 900;
-    case "1H": return 3600;
-    case "4H": return 14400;
-    case "1D": return 86400;
+    case "1m":
+      return 60;
+    case "5m":
+      return 300;
+    case "15m":
+      return 900;
+    case "1H":
+      return 3600;
+    case "4H":
+      return 14400;
+    case "1D":
+      return 86400;
   }
 }
 
@@ -115,7 +121,8 @@ export function TokenChart({ trades = [], basePrice }: TokenChartProps) {
     let disposed = false;
 
     (async () => {
-      const { createChart, CandlestickSeries, HistogramSeries, ColorType } = await import("lightweight-charts");
+      const { createChart, CandlestickSeries, HistogramSeries, ColorType } =
+        await import("lightweight-charts");
 
       if (disposed || !containerRef.current) return;
 
@@ -213,7 +220,10 @@ export function TokenChart({ trades = [], basePrice }: TokenChartProps) {
           </button>
         ))}
       </div>
-      <div ref={containerRef} className="w-full h-[260px] sm:h-[320px] lg:h-[360px] rounded-lg overflow-hidden" />
+      <div
+        ref={containerRef}
+        className="w-full h-[260px] sm:h-[320px] lg:h-[360px] rounded-lg overflow-hidden"
+      />
     </div>
   );
 }

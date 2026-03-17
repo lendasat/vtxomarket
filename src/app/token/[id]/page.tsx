@@ -9,7 +9,15 @@ import { useAppStore } from "@/lib/store";
 import { useComments } from "@/hooks/useComments";
 import { useTrades } from "@/hooks/useTrades";
 import { useTokens } from "@/hooks/useTokens";
-import { reissueToken, createSwapOffer, fillSwapOffer, cancelSwapOffer, createBuyOffer, fillBuyOffer, cancelBuyOffer } from "@/lib/ark-wallet";
+import {
+  reissueToken,
+  createSwapOffer,
+  fillSwapOffer,
+  cancelSwapOffer,
+  createBuyOffer,
+  fillBuyOffer,
+  cancelBuyOffer,
+} from "@/lib/ark-wallet";
 import { TokenChart } from "@/components/token-chart";
 import { useOffers } from "@/hooks/useOffers";
 import { formatTokenAmount, parseTokenInput, formatSats, formatPrice } from "@/lib/format";
@@ -55,7 +63,11 @@ export default function TokenPage() {
   const { trades, loading: tradesLoading } = useTrades(token?.assetId ?? null);
 
   // Swap offers
-  const { offers, loading: offersLoading, refetch: refetchOffers } = useOffers(token?.assetId ?? null);
+  const {
+    offers,
+    loading: offersLoading,
+    refetch: refetchOffers,
+  } = useOffers(token?.assetId ?? null);
 
   // User holding for this token
   const userHolding = useMemo(() => {
@@ -77,13 +89,13 @@ export default function TokenPage() {
 
   // Trade tab state — sell offer form
   const [offerTokenAmount, setOfferTokenAmount] = useState("");
-  const [offerPricePerToken, setOfferPricePerToken] = useState("");
+  const [offerSatAmount, setOfferSatAmount] = useState("");
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState("");
   const [offerSuccess, setOfferSuccess] = useState("");
   // Buy offer form
   const [buyOfferTokenAmount, setBuyOfferTokenAmount] = useState("");
-  const [buyOfferPricePerToken, setBuyOfferPricePerToken] = useState("");
+  const [buyOfferSatAmount, setBuyOfferSatAmount] = useState("");
   const [buyOfferLoading, setBuyOfferLoading] = useState(false);
   const [buyOfferError, setBuyOfferError] = useState("");
   const [buyOfferSuccess, setBuyOfferSuccess] = useState("");
@@ -92,7 +104,10 @@ export default function TokenPage() {
   const [fillError, setFillError] = useState("");
   const [cancelLoading, setCancelLoading] = useState<string | null>(null); // offerOutpoint being cancelled
   const [cancelError, setCancelError] = useState("");
-  const [confirmAction, setConfirmAction] = useState<{ type: "buy" | "sell" | "cancel"; outpoint: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: "buy" | "sell" | "cancel";
+    outpoint: string;
+  } | null>(null);
   const [commentError, setCommentError] = useState("");
   const [userArkAddress, setUserArkAddress] = useState("");
 
@@ -103,10 +118,16 @@ export default function TokenPage() {
       setUserArkAddress("");
       return;
     }
-    arkWallet.getAddress().then(setUserArkAddress).catch((err: unknown) => {
-      console.warn("[token] Failed to fetch user Ark address:", err instanceof Error ? err.message : err);
-      setUserArkAddress("");
-    });
+    arkWallet
+      .getAddress()
+      .then(setUserArkAddress)
+      .catch((err: unknown) => {
+        console.warn(
+          "[token] Failed to fetch user Ark address:",
+          err instanceof Error ? err.message : err
+        );
+        setUserArkAddress("");
+      });
   }, [arkWallet, walletReady, user]);
 
   // Only creator who holds the control asset can manage
@@ -114,8 +135,8 @@ export default function TokenPage() {
   const canManage = isCreator && !!token?.controlAssetId;
 
   // Split offers by type
-  const sellOffers = useMemo(() => offers.filter((o) => o.offerType !== 'buy'), [offers]);
-  const buyOffers = useMemo(() => offers.filter((o) => o.offerType === 'buy'), [offers]);
+  const sellOffers = useMemo(() => offers.filter((o) => o.offerType !== "buy"), [offers]);
+  const buyOffers = useMemo(() => offers.filter((o) => o.offerType === "buy"), [offers]);
 
   // Post comment
   const handlePostComment = async () => {
@@ -155,12 +176,20 @@ export default function TokenPage() {
           await fetch(`${INDEXER_URL}/assets/${token.assetId}/metadata`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ supply: newSupply, creator: user?.pubkey, signature: hexMeta.encode(metaSig) }),
+            body: JSON.stringify({
+              supply: newSupply,
+              creator: user?.pubkey,
+              signature: hexMeta.encode(metaSig),
+            }),
           });
         }
-      } catch (err) { console.warn("Metadata update failed:", err); }
+      } catch (err) {
+        console.warn("Metadata update failed:", err);
+      }
       upsertToken({ ...token, supply: newSupply });
-      setReissueSuccess(`Minted ${formatTokenAmount(amt, token.decimals)} tokens. New supply: ${formatTokenAmount(newSupply, token.decimals)}`);
+      setReissueSuccess(
+        `Minted ${formatTokenAmount(amt, token.decimals)} tokens. New supply: ${formatTokenAmount(newSupply, token.decimals)}`
+      );
       setReissueAmount("");
     } catch (err) {
       setReissueError(err instanceof Error ? err.message : "Reissue failed");
@@ -173,13 +202,12 @@ export default function TokenPage() {
   const handleCreateOffer = async () => {
     if (!arkWallet || !token) return;
     const tokenAmt = parseTokenInput(offerTokenAmount, token.decimals);
-    const price = parseFloat(offerPricePerToken);
-    if (!tokenAmt || tokenAmt <= 0 || !price || price <= 0) return;
-    const displayTokens = token.decimals ? tokenAmt / 10 ** token.decimals : tokenAmt;
-    const satAmt = Math.round(displayTokens * price);
-    if (satAmt <= 0) return;
+    const satAmt = parseInt(offerSatAmount, 10);
+    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
     if (tokenAmt > userHolding) {
-      setOfferError(`Insufficient balance: you hold ${formatTokenAmount(userHolding, token.decimals)} ${token.ticker}`);
+      setOfferError(
+        `Insufficient balance: you hold ${formatTokenAmount(userHolding, token.decimals)} ${token.ticker}`
+      );
       return;
     }
 
@@ -211,7 +239,10 @@ export default function TokenPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(offerPayload),
         });
-        if (resp.ok) { posted = true; break; }
+        if (resp.ok) {
+          posted = true;
+          break;
+        }
         const errText = await resp.text().catch(() => "");
         if (!errText.includes("VTXO not found")) {
           console.warn("[offer] Indexer POST failed:", errText);
@@ -220,9 +251,9 @@ export default function TokenPage() {
       }
       if (!posted) console.warn("[offer] Could not register offer with indexer");
 
-      setOfferSuccess(`Offer created! ${offerTokenAmount} ${token.ticker} at ${offerPricePerToken} sat/token (${formatSats(satAmt)} total)`);
+      setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
       setOfferTokenAmount("");
-      setOfferPricePerToken("");
+      setOfferSatAmount("");
       setShowSellDialog(false);
       refetchOffers();
     } catch (err) {
@@ -259,7 +290,7 @@ export default function TokenPage() {
     setCancelLoading(offer.offerOutpoint);
     setCancelError("");
     try {
-      if (offer.offerType === 'buy') {
+      if (offer.offerType === "buy") {
         await cancelBuyOffer(arkWallet, offer);
       } else {
         await cancelSwapOffer(arkWallet, offer);
@@ -291,11 +322,8 @@ export default function TokenPage() {
   const handleCreateBuyOffer = async () => {
     if (!arkWallet || !token) return;
     const tokenAmt = parseTokenInput(buyOfferTokenAmount, token.decimals);
-    const price = parseFloat(buyOfferPricePerToken);
-    if (!tokenAmt || tokenAmt <= 0 || !price || price <= 0) return;
-    const displayTokens = token.decimals ? tokenAmt / 10 ** token.decimals : tokenAmt;
-    const satAmt = Math.round(displayTokens * price);
-    if (satAmt <= 0) return;
+    const satAmt = parseInt(buyOfferSatAmount, 10);
+    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
 
     setBuyOfferLoading(true);
     setBuyOfferError("");
@@ -324,7 +352,10 @@ export default function TokenPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(buyOfferPayload),
         });
-        if (resp.ok) { posted = true; break; }
+        if (resp.ok) {
+          posted = true;
+          break;
+        }
         const errText = await resp.text().catch(() => "");
         if (!errText.includes("VTXO not found")) {
           console.warn("[offer] Indexer POST failed:", errText);
@@ -333,9 +364,11 @@ export default function TokenPage() {
       }
       if (!posted) console.warn("[offer] Could not register offer with indexer");
 
-      setBuyOfferSuccess(`Buy offer created! Buying ${buyOfferTokenAmount} ${token.ticker} at ${buyOfferPricePerToken} sat/token (${formatSats(satAmt)} total)`);
+      setBuyOfferSuccess(
+        `Buy offer created! Buying ${tokenAmt} ${token.ticker} for ${satAmt} sats`
+      );
       setBuyOfferTokenAmount("");
-      setBuyOfferPricePerToken("");
+      setBuyOfferSatAmount("");
       setShowBuyDialog(false);
       refetchOffers();
     } catch (err) {
@@ -391,14 +424,27 @@ export default function TokenPage() {
           onClick={() => router.push("/")}
           className="shrink-0 h-8 w-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.1] transition-all"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className="h-4 w-4"
+          >
+            <path
+              fillRule="evenodd"
+              d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z"
+              clipRule="evenodd"
+            />
           </svg>
         </button>
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <div className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/60 tracking-wider">
             {token.image ? (
-              <img src={safeUrl(token.image) ?? ""} alt={token.name} className="h-full w-full rounded-xl object-cover" />
+              <img
+                src={safeUrl(token.image) ?? ""}
+                alt={token.name}
+                className="h-full w-full rounded-xl object-cover"
+              />
             ) : (
               token.ticker.slice(0, 2)
             )}
@@ -406,7 +452,9 @@ export default function TokenPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h1 className="font-bold text-base sm:text-lg truncate">{token.name}</h1>
-              <span className="text-[11px] font-mono text-muted-foreground/40 hidden sm:inline">${token.ticker}</span>
+              <span className="text-[11px] font-mono text-muted-foreground/40 hidden sm:inline">
+                ${token.ticker}
+              </span>
             </div>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
               <span className="sm:hidden font-mono">${token.ticker}</span>
@@ -417,7 +465,8 @@ export default function TokenPage() {
         </div>
         <div className="shrink-0 text-right">
           <p className="text-sm tabular-nums text-muted-foreground/50">
-            {formatTokenAmount(token.supply, token.decimals)} <span className="text-muted-foreground/30 text-xs">supply</span>
+            {formatTokenAmount(token.supply, token.decimals)}{" "}
+            <span className="text-muted-foreground/30 text-xs">supply</span>
           </p>
         </div>
       </div>
@@ -428,10 +477,7 @@ export default function TokenPage() {
         <div className="space-y-4">
           {/* Price chart */}
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4">
-            <TokenChart
-              trades={trades}
-              basePrice={trades.length > 0 ? trades[0].price : 0}
-            />
+            <TokenChart trades={trades} basePrice={trades.length > 0 ? trades[0].price : 0} />
           </div>
 
           {/* Buy / Sell offer buttons */}
@@ -442,7 +488,12 @@ export default function TokenPage() {
                 className="flex-1 group relative py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(52,211,153,0.08)]"
               >
                 <span className="flex items-center justify-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    className="h-4 w-4 opacity-60"
+                  >
                     <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
                   </svg>
                   Buy Offer
@@ -454,7 +505,12 @@ export default function TokenPage() {
                 className="flex-1 group relative py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(248,113,113,0.08)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 <span className="flex items-center justify-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-60">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    className="h-4 w-4 opacity-60"
+                  >
                     <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
                   </svg>
                   Sell Offer
@@ -466,12 +522,14 @@ export default function TokenPage() {
           {/* Info tabs */}
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
             <div className="flex border-b border-white/[0.07] overflow-x-auto">
-              {([
-                ["buy-offers", "Buy Offers", buyOffers.length],
-                ["sell-offers", "Sell Offers", sellOffers.length],
-                ["thread", "Thread", comments.length],
-                ["trades", "Trades", trades.length],
-              ] as const).map(([tab, label, count]) => (
+              {(
+                [
+                  ["buy-offers", "Buy Offers", buyOffers.length],
+                  ["sell-offers", "Sell Offers", sellOffers.length],
+                  ["thread", "Thread", comments.length],
+                  ["trades", "Trades", trades.length],
+                ] as const
+              ).map(([tab, label, count]) => (
                 <button
                   key={tab}
                   onClick={() => setInfoTab(tab)}
@@ -508,19 +566,29 @@ export default function TokenPage() {
                   {offersLoading && buyOffers.length === 0 && (
                     <div className="flex items-center justify-center gap-2 py-8">
                       <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/30 border-t-emerald-400" />
-                      <span className="text-xs text-muted-foreground/40">Loading buy offers...</span>
+                      <span className="text-xs text-muted-foreground/40">
+                        Loading buy offers...
+                      </span>
                     </div>
                   )}
                   {!offersLoading && buyOffers.length === 0 && (
                     <div className="text-center py-8 space-y-2">
                       <div className="h-10 w-10 mx-auto rounded-xl bg-emerald-500/10 border border-emerald-500/15 flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-emerald-400/40">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="h-5 w-5 text-emerald-400/40"
+                        >
                           <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
                         </svg>
                       </div>
                       <p className="text-xs text-muted-foreground/40">No buy offers yet</p>
                       {walletReady && (
-                        <button onClick={() => setShowBuyDialog(true)} className="text-[11px] text-emerald-400/70 hover:text-emerald-400 transition-colors">
+                        <button
+                          onClick={() => setShowBuyDialog(true)}
+                          className="text-[11px] text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                        >
                           Create the first buy offer
                         </button>
                       )}
@@ -531,30 +599,62 @@ export default function TokenPage() {
                       {buyOffers.map((offer) => {
                         const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
                         return (
-                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-emerald-500/[0.03] border-emerald-500/10 hover:border-emerald-500/20"}`}>
+                          <div
+                            key={offer.offerOutpoint}
+                            className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-emerald-500/[0.03] border-emerald-500/10 hover:border-emerald-500/20"}`}
+                          >
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-2">
                                   <span className="text-sm font-semibold tabular-nums">
                                     {formatTokenAmount(offer.tokenAmount, token.decimals)}
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">
+                                    ${token.ticker}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-3 mt-1">
                                   <span className="text-[11px] text-muted-foreground/50 tabular-nums">
-                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                    {formatPrice(
+                                      offer.satAmount,
+                                      offer.tokenAmount,
+                                      token.decimals
+                                    )}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground/30">|</span>
                                   <span className="text-[11px] text-emerald-400/60 tabular-nums font-medium">
                                     {formatSats(offer.satAmount)} sat
                                   </span>
-                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                  {isOwn && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">
+                                      You
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               {isOwn ? (
-                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                                <OfferCancelButton
+                                  offer={offer}
+                                  cancelLoading={cancelLoading}
+                                  confirmAction={confirmAction}
+                                  setConfirmAction={setConfirmAction}
+                                  handleCancelOffer={handleCancelOffer}
+                                  walletReady={walletReady}
+                                  tradeInFlight={tradeInFlight}
+                                />
                               ) : (
-                                <OfferFillButton offer={offer} type="sell" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFillBuyOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} disabled={userHolding < offer.tokenAmount} label="Sell" />
+                                <OfferFillButton
+                                  offer={offer}
+                                  type="sell"
+                                  fillLoading={fillLoading}
+                                  confirmAction={confirmAction}
+                                  setConfirmAction={setConfirmAction}
+                                  handleFill={handleFillBuyOffer}
+                                  walletReady={walletReady}
+                                  tradeInFlight={tradeInFlight}
+                                  disabled={userHolding < offer.tokenAmount}
+                                  label="Sell"
+                                />
                               )}
                             </div>
                           </div>
@@ -581,19 +681,29 @@ export default function TokenPage() {
                   {offersLoading && sellOffers.length === 0 && (
                     <div className="flex items-center justify-center gap-2 py-8">
                       <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/30 border-t-red-400" />
-                      <span className="text-xs text-muted-foreground/40">Loading sell offers...</span>
+                      <span className="text-xs text-muted-foreground/40">
+                        Loading sell offers...
+                      </span>
                     </div>
                   )}
                   {!offersLoading && sellOffers.length === 0 && (
                     <div className="text-center py-8 space-y-2">
                       <div className="h-10 w-10 mx-auto rounded-xl bg-red-500/10 border border-red-500/15 flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-red-400/40">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="h-5 w-5 text-red-400/40"
+                        >
                           <path d="M8 1a.75.75 0 0 1 .75.75V6.5h4.75a.75.75 0 0 1 0 1.5H8.75v4.75a.75.75 0 0 1-1.5 0V8H2.5a.75.75 0 0 1 0-1.5h4.75V1.75A.75.75 0 0 1 8 1Z" />
                         </svg>
                       </div>
                       <p className="text-xs text-muted-foreground/40">No sell offers yet</p>
                       {walletReady && userHolding > 0 && (
-                        <button onClick={() => setShowSellDialog(true)} className="text-[11px] text-red-400/70 hover:text-red-400 transition-colors">
+                        <button
+                          onClick={() => setShowSellDialog(true)}
+                          className="text-[11px] text-red-400/70 hover:text-red-400 transition-colors"
+                        >
                           Create the first sell offer
                         </button>
                       )}
@@ -604,30 +714,61 @@ export default function TokenPage() {
                       {sellOffers.map((offer) => {
                         const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
                         return (
-                          <div key={offer.offerOutpoint} className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-red-500/[0.03] border-red-500/10 hover:border-red-500/20"}`}>
+                          <div
+                            key={offer.offerOutpoint}
+                            className={`rounded-xl border p-3 transition-all ${isOwn ? "bg-white/[0.03] border-white/[0.08]" : "bg-red-500/[0.03] border-red-500/10 hover:border-red-500/20"}`}
+                          >
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-2">
                                   <span className="text-sm font-semibold tabular-nums">
                                     {formatTokenAmount(offer.tokenAmount, token.decimals)}
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground/40 font-mono">${token.ticker}</span>
+                                  <span className="text-[10px] text-muted-foreground/40 font-mono">
+                                    ${token.ticker}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-3 mt-1">
                                   <span className="text-[11px] text-muted-foreground/50 tabular-nums">
-                                    {formatPrice(offer.satAmount, offer.tokenAmount, token.decimals)}
+                                    {formatPrice(
+                                      offer.satAmount,
+                                      offer.tokenAmount,
+                                      token.decimals
+                                    )}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground/30">|</span>
                                   <span className="text-[11px] text-red-400/60 tabular-nums font-medium">
                                     {formatSats(offer.satAmount)} sat
                                   </span>
-                                  {isOwn && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">You</span>}
+                                  {isOwn && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-muted-foreground/40 font-medium">
+                                      You
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                               {isOwn ? (
-                                <OfferCancelButton offer={offer} cancelLoading={cancelLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleCancelOffer={handleCancelOffer} walletReady={walletReady} tradeInFlight={tradeInFlight} />
+                                <OfferCancelButton
+                                  offer={offer}
+                                  cancelLoading={cancelLoading}
+                                  confirmAction={confirmAction}
+                                  setConfirmAction={setConfirmAction}
+                                  handleCancelOffer={handleCancelOffer}
+                                  walletReady={walletReady}
+                                  tradeInFlight={tradeInFlight}
+                                />
                               ) : (
-                                <OfferFillButton offer={offer} type="buy" fillLoading={fillLoading} confirmAction={confirmAction} setConfirmAction={setConfirmAction} handleFill={handleFill} walletReady={walletReady} tradeInFlight={tradeInFlight} label="Buy" />
+                                <OfferFillButton
+                                  offer={offer}
+                                  type="buy"
+                                  fillLoading={fillLoading}
+                                  confirmAction={confirmAction}
+                                  setConfirmAction={setConfirmAction}
+                                  handleFill={handleFill}
+                                  walletReady={walletReady}
+                                  tradeInFlight={tradeInFlight}
+                                  label="Buy"
+                                />
                               )}
                             </div>
                           </div>
@@ -674,16 +815,18 @@ export default function TokenPage() {
                     </Button>
                   </div>
 
-                  {commentError && (
-                    <p className="text-xs text-red-400/80">{commentError}</p>
-                  )}
+                  {commentError && <p className="text-xs text-red-400/80">{commentError}</p>}
 
                   {commentsLoading && comments.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">Loading comments...</p>
+                    <p className="text-xs text-muted-foreground/40 text-center py-4">
+                      Loading comments...
+                    </p>
                   )}
 
                   {!commentsLoading && comments.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">No comments yet. Be the first!</p>
+                    <p className="text-xs text-muted-foreground/40 text-center py-4">
+                      No comments yet. Be the first!
+                    </p>
                   )}
 
                   <div className="space-y-3">
@@ -694,10 +837,16 @@ export default function TokenPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-mono text-muted-foreground/70">{shortPubkey(c.pubkey)}</span>
-                            <span className="text-[10px] text-muted-foreground/40">{timeAgo(c.time)}</span>
+                            <span className="text-[11px] font-mono text-muted-foreground/70">
+                              {shortPubkey(c.pubkey)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/40">
+                              {timeAgo(c.time)}
+                            </span>
                           </div>
-                          <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">{c.text}</p>
+                          <p className="text-xs text-foreground/90 mt-0.5 leading-relaxed">
+                            {c.text}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -709,11 +858,15 @@ export default function TokenPage() {
               {infoTab === "trades" && (
                 <div>
                   {tradesLoading && trades.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">Loading trades...</p>
+                    <p className="text-xs text-muted-foreground/40 text-center py-4">
+                      Loading trades...
+                    </p>
                   )}
 
                   {!tradesLoading && trades.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">No trades yet.</p>
+                    <p className="text-xs text-muted-foreground/40 text-center py-4">
+                      No trades yet.
+                    </p>
                   )}
 
                   <div className="divide-y divide-white/[0.05]">
@@ -726,22 +879,29 @@ export default function TokenPage() {
                           key={t.filledInTxid || t.offerOutpoint}
                           className="flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0"
                         >
-                          <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            isBuy ? "bg-emerald-400" : "bg-amber-400"
-                          }`} />
+                          <div
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                              isBuy ? "bg-emerald-400" : "bg-amber-400"
+                            }`}
+                          />
                           <span className="shrink-0 text-[11px] font-mono text-muted-foreground/40">
                             {shortPubkey(t.makerArkAddress)}
                           </span>
-                          <span className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-amber-400/80"}`}>
+                          <span
+                            className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-amber-400/80"}`}
+                          >
                             {isBuy ? "sold" : "bought"}
                           </span>
                           <span className="text-[11px] font-semibold tabular-nums">
                             {formatTokenAmount(t.tokenAmount, token?.decimals)}
-                            <span className="text-muted-foreground/35 font-normal ml-0.5">${token?.ticker}</span>
+                            <span className="text-muted-foreground/35 font-normal ml-0.5">
+                              ${token?.ticker}
+                            </span>
                           </span>
                           <div className="flex-1" />
                           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
-                            {formatSats(t.satAmount)} <span className="text-muted-foreground/30">sat</span>
+                            {formatSats(t.satAmount)}{" "}
+                            <span className="text-muted-foreground/30">sat</span>
                           </span>
                           <span className="shrink-0 text-[10px] text-muted-foreground/25 tabular-nums">
                             {timeAgo(t.timestamp)}
@@ -760,11 +920,15 @@ export default function TokenPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-muted-foreground/50">Total supply</span>
-                      <span className="text-xs font-medium tabular-nums">{formatTokenAmount(token.supply, token.decimals)} tokens</span>
+                      <span className="text-xs font-medium tabular-nums">
+                        {formatTokenAmount(token.supply, token.decimals)} tokens
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-muted-foreground/50">Control asset</span>
-                      <span className="text-xs font-mono text-muted-foreground/70">{token.controlAssetId?.slice(0, 8)}…{token.controlAssetId?.slice(-4)}</span>
+                      <span className="text-xs font-mono text-muted-foreground/70">
+                        {token.controlAssetId?.slice(0, 8)}…{token.controlAssetId?.slice(-4)}
+                      </span>
                     </div>
                   </div>
 
@@ -772,7 +936,9 @@ export default function TokenPage() {
 
                   {/* Reissue form */}
                   <div className="space-y-3">
-                    <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em]">Mint more tokens</p>
+                    <p className="text-[11px] font-medium text-muted-foreground/60 uppercase tracking-[0.12em]">
+                      Mint more tokens
+                    </p>
                     <input
                       type="number"
                       min={1}
@@ -795,7 +961,12 @@ export default function TokenPage() {
 
                     <button
                       onClick={handleReissue}
-                      disabled={!reissueAmount || parseInt(reissueAmount, 10) <= 0 || reissueLoading || !walletReady}
+                      disabled={
+                        !reissueAmount ||
+                        parseInt(reissueAmount, 10) <= 0 ||
+                        reissueLoading ||
+                        !walletReady
+                      }
                       className="w-full py-2.5 rounded-xl bg-white/[0.1] border border-white/[0.14] text-sm font-semibold transition-all hover:bg-white/[0.15] disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       {reissueLoading ? (
@@ -803,11 +974,14 @@ export default function TokenPage() {
                           <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-foreground/50 border-t-transparent" />
                           Minting...
                         </span>
-                      ) : "Reissue"}
+                      ) : (
+                        "Reissue"
+                      )}
                     </button>
 
                     <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
-                      Reissuing mints new tokens into your wallet. This is inflation — existing holders are diluted.
+                      Reissuing mints new tokens into your wallet. This is inflation — existing
+                      holders are diluted.
                     </p>
                   </div>
                 </div>
@@ -824,7 +998,9 @@ export default function TokenPage() {
               <h3 className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
                 Your Holdings
               </h3>
-              <span className="text-sm font-semibold tabular-nums">{formatTokenAmount(userHolding, token.decimals)} ${token.ticker}</span>
+              <span className="text-sm font-semibold tabular-nums">
+                {formatTokenAmount(userHolding, token.decimals)} ${token.ticker}
+              </span>
             </div>
           )}
 
@@ -842,7 +1018,9 @@ export default function TokenPage() {
             {token.description && (
               <>
                 <div className="h-px bg-white/[0.06]" />
-                <p className="text-xs text-muted-foreground/50 leading-relaxed">{token.description}</p>
+                <p className="text-xs text-muted-foreground/50 leading-relaxed">
+                  {token.description}
+                </p>
               </>
             )}
             {(token.website || token.twitter || token.telegram) && (
@@ -850,17 +1028,32 @@ export default function TokenPage() {
                 <div className="h-px bg-white/[0.06]" />
                 <div className="flex flex-wrap gap-2">
                   {safeUrl(token.website) && (
-                    <a href={safeUrl(token.website)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                    <a
+                      href={safeUrl(token.website)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline"
+                    >
                       Website
                     </a>
                   )}
                   {safeUrl(token.twitter) && (
-                    <a href={safeUrl(token.twitter)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                    <a
+                      href={safeUrl(token.twitter)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline"
+                    >
                       X/Twitter
                     </a>
                   )}
                   {safeUrl(token.telegram) && (
-                    <a href={safeUrl(token.telegram)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                    <a
+                      href={safeUrl(token.telegram)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline"
+                    >
                       Telegram
                     </a>
                   )}
@@ -877,37 +1070,74 @@ export default function TokenPage() {
           <DialogContent className="bg-zinc-950 border-white/[0.1]">
             <DialogHeader>
               <DialogTitle>Create Buy Offer</DialogTitle>
-              <p className="text-xs text-muted-foreground">Lock sats to buy ${token.ticker}. Any seller can fill it.</p>
+              <p className="text-xs text-muted-foreground">
+                Lock sats to buy ${token.ticker}. Any seller can fill it.
+              </p>
             </DialogHeader>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">How many tokens</label>
-                  <input type="number" min={1} value={buyOfferTokenAmount} onChange={(e) => setBuyOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">
+                    Token amount
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={buyOfferTokenAmount}
+                    onChange={(e) => setBuyOfferTokenAmount(e.target.value)}
+                    placeholder="Amount"
+                    className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                  />
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Price per token (sats)</label>
-                  <input type="number" min={0} step="any" value={buyOfferPricePerToken} onChange={(e) => setBuyOfferPricePerToken(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">
+                    Sats to pay
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={buyOfferSatAmount}
+                    onChange={(e) => setBuyOfferSatAmount(e.target.value)}
+                    placeholder="Sats"
+                    className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                  />
                 </div>
               </div>
-              {buyOfferTokenAmount && buyOfferPricePerToken && Number(buyOfferTokenAmount) > 0 && Number(buyOfferPricePerToken) > 0 && (() => {
-                const qty = token.decimals ? Number(buyOfferTokenAmount) : Number(buyOfferTokenAmount);
-                const total = Math.round(qty * Number(buyOfferPricePerToken));
-                return (
-                  <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
-                    <span className="text-[11px] text-muted-foreground/50">Total to lock</span>
-                    <span className="text-xs font-semibold tabular-nums">{formatSats(total)}</span>
-                  </div>
-                );
-              })()}
+              {buyOfferTokenAmount &&
+                buyOfferSatAmount &&
+                Number(buyOfferTokenAmount) > 0 &&
+                Number(buyOfferSatAmount) > 0 && (
+                  <p className="text-[11px] text-muted-foreground/50 tabular-nums">
+                    Price:{" "}
+                    {formatPrice(
+                      Number(buyOfferSatAmount),
+                      Number(buyOfferTokenAmount),
+                      token.decimals
+                    )}
+                  </p>
+                )}
               {buyOfferError && <p className="text-xs text-red-400">{buyOfferError}</p>}
               {buyOfferSuccess && <p className="text-xs text-emerald-400">{buyOfferSuccess}</p>}
               <button
                 onClick={handleCreateBuyOffer}
-                disabled={!buyOfferTokenAmount || !buyOfferPricePerToken || Number(buyOfferTokenAmount) <= 0 || Number(buyOfferPricePerToken) <= 0 || buyOfferLoading || !walletReady}
+                disabled={
+                  !buyOfferTokenAmount ||
+                  !buyOfferSatAmount ||
+                  parseInt(buyOfferTokenAmount, 10) <= 0 ||
+                  parseInt(buyOfferSatAmount, 10) <= 0 ||
+                  buyOfferLoading ||
+                  !walletReady
+                }
                 className="w-full py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {buyOfferLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/50 border-t-transparent" />Creating...</span> : "Create Buy Offer"}
+                {buyOfferLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/50 border-t-transparent" />
+                    Creating...
+                  </span>
+                ) : (
+                  "Create Buy Offer"
+                )}
               </button>
             </div>
           </DialogContent>
@@ -920,7 +1150,9 @@ export default function TokenPage() {
           <DialogContent className="bg-zinc-950 border-white/[0.1]">
             <DialogHeader>
               <DialogTitle>Create Sell Offer</DialogTitle>
-              <p className="text-xs text-muted-foreground">Lock ${token.ticker} tokens. Any buyer can fill with sats.</p>
+              <p className="text-xs text-muted-foreground">
+                Lock ${token.ticker} tokens. Any buyer can fill with sats.
+              </p>
             </DialogHeader>
             <div className="space-y-3">
               {userHolding > 0 ? (
@@ -929,49 +1161,91 @@ export default function TokenPage() {
                   <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
                     <span className="text-[11px] text-muted-foreground/50">Available balance</span>
                     <span className="text-xs font-semibold tabular-nums">
-                      {formatTokenAmount(userHolding, token.decimals)} <span className="text-muted-foreground/40 font-normal">${token.ticker}</span>
+                      {formatTokenAmount(userHolding, token.decimals)}{" "}
+                      <span className="text-muted-foreground/40 font-normal">${token.ticker}</span>
                     </span>
                   </div>
                   <div className="space-y-2">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] text-muted-foreground/40">How many tokens</label>
+                        <label className="text-[10px] text-muted-foreground/40">Token amount</label>
                         <button
                           type="button"
-                          onClick={() => setOfferTokenAmount(formatTokenAmount(userHolding, token.decimals).replace(/,/g, ""))}
+                          onClick={() =>
+                            setOfferTokenAmount(
+                              formatTokenAmount(userHolding, token.decimals).replace(/,/g, "")
+                            )
+                          }
                           className="text-[10px] font-medium text-red-400/70 hover:text-red-400 transition-colors"
                         >
                           Max
                         </button>
                       </div>
-                      <input type="number" min={1} max={userHolding} value={offerTokenAmount} onChange={(e) => setOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                      <input
+                        type="number"
+                        min={1}
+                        max={userHolding}
+                        value={offerTokenAmount}
+                        onChange={(e) => setOfferTokenAmount(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">Price per token (sats)</label>
-                      <input type="number" min={0} step="any" value={offerPricePerToken} onChange={(e) => setOfferPricePerToken(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">
+                        Sats to receive
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={offerSatAmount}
+                        onChange={(e) => setOfferSatAmount(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all"
+                      />
                     </div>
                   </div>
-                  {offerTokenAmount && offerPricePerToken && Number(offerTokenAmount) > 0 && Number(offerPricePerToken) > 0 && (() => {
-                    const total = Math.round(Number(offerTokenAmount) * Number(offerPricePerToken));
-                    return (
-                      <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
-                        <span className="text-[11px] text-muted-foreground/50">Total you receive</span>
-                        <span className="text-xs font-semibold tabular-nums">{formatSats(total)}</span>
-                      </div>
-                    );
-                  })()}
+                  {offerTokenAmount &&
+                    offerSatAmount &&
+                    Number(offerTokenAmount) > 0 &&
+                    Number(offerSatAmount) > 0 && (
+                      <p className="text-[11px] text-muted-foreground/50 tabular-nums">
+                        Price:{" "}
+                        {formatPrice(
+                          Number(offerSatAmount),
+                          Number(offerTokenAmount),
+                          token.decimals
+                        )}
+                      </p>
+                    )}
                   {offerError && <p className="text-xs text-red-400">{offerError}</p>}
                   {offerSuccess && <p className="text-xs text-emerald-400">{offerSuccess}</p>}
                   <button
                     onClick={handleCreateOffer}
-                    disabled={!offerTokenAmount || !offerPricePerToken || Number(offerTokenAmount) <= 0 || Number(offerPricePerToken) <= 0 || offerLoading || !walletReady}
+                    disabled={
+                      !offerTokenAmount ||
+                      !offerSatAmount ||
+                      parseInt(offerTokenAmount, 10) <= 0 ||
+                      parseInt(offerSatAmount, 10) <= 0 ||
+                      offerLoading ||
+                      !walletReady
+                    }
                     className="w-full py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    {offerLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/50 border-t-transparent" />Creating...</span> : "Create Sell Offer"}
+                    {offerLoading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/50 border-t-transparent" />
+                        Creating...
+                      </span>
+                    ) : (
+                      "Create Sell Offer"
+                    )}
                   </button>
                 </>
               ) : (
-                <p className="text-xs text-muted-foreground/40 text-center py-3">You don&apos;t hold any ${token.ticker} to sell.</p>
+                <p className="text-xs text-muted-foreground/40 text-center py-3">
+                  You don&apos;t hold any ${token.ticker} to sell.
+                </p>
               )}
             </div>
           </DialogContent>
@@ -983,53 +1257,120 @@ export default function TokenPage() {
 
 // ── Offer action button helpers ──────────────────────────────────────────────
 
-function OfferCancelButton({ offer, cancelLoading, confirmAction, setConfirmAction, handleCancelOffer, walletReady, tradeInFlight }: {
+function OfferCancelButton({
+  offer,
+  cancelLoading,
+  confirmAction,
+  setConfirmAction,
+  handleCancelOffer,
+  walletReady,
+  tradeInFlight,
+}: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  offer: any; cancelLoading: string | null; confirmAction: { type: string; outpoint: string } | null;
+  offer: any;
+  cancelLoading: string | null;
+  confirmAction: { type: string; outpoint: string } | null;
   setConfirmAction: (v: { type: "buy" | "sell" | "cancel"; outpoint: string } | null) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handleCancelOffer: (o: any) => void; walletReady: boolean; tradeInFlight: boolean;
+  handleCancelOffer: (o: any) => void;
+  walletReady: boolean;
+  tradeInFlight: boolean;
 }) {
   if (cancelLoading === offer.offerOutpoint) {
-    return <span className="w-20 py-1 flex items-center justify-center"><span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" /></span>;
+    return (
+      <span className="w-20 py-1 flex items-center justify-center">
+        <span className="h-2.5 w-2.5 animate-spin rounded-full border border-red-400/50 border-t-transparent" />
+      </span>
+    );
   }
   if (confirmAction?.type === "cancel" && confirmAction.outpoint === offer.offerOutpoint) {
     return (
       <div className="flex gap-1">
-        <button onClick={() => handleCancelOffer(offer)} className="px-2 py-1 rounded-lg bg-red-500/30 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-500/40 transition-colors">Yes</button>
-        <button onClick={() => setConfirmAction(null)} className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors">No</button>
+        <button
+          onClick={() => handleCancelOffer(offer)}
+          className="px-2 py-1 rounded-lg bg-red-500/30 border border-red-500/40 text-[10px] font-semibold text-red-400 hover:bg-red-500/40 transition-colors"
+        >
+          Yes
+        </button>
+        <button
+          onClick={() => setConfirmAction(null)}
+          className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
+        >
+          No
+        </button>
       </div>
     );
   }
   return (
-    <button onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })} disabled={!walletReady || tradeInFlight} className="w-20 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+    <button
+      onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })}
+      disabled={!walletReady || tradeInFlight}
+      className="w-20 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    >
       Cancel
     </button>
   );
 }
 
-function OfferFillButton({ offer, type, fillLoading, confirmAction, setConfirmAction, handleFill, walletReady, tradeInFlight, disabled, label }: {
+function OfferFillButton({
+  offer,
+  type,
+  fillLoading,
+  confirmAction,
+  setConfirmAction,
+  handleFill,
+  walletReady,
+  tradeInFlight,
+  disabled,
+  label,
+}: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  offer: any; type: "buy" | "sell"; fillLoading: string | null;
+  offer: any;
+  type: "buy" | "sell";
+  fillLoading: string | null;
   confirmAction: { type: string; outpoint: string } | null;
   setConfirmAction: (v: { type: "buy" | "sell" | "cancel"; outpoint: string } | null) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handleFill: (o: any) => void; walletReady: boolean; tradeInFlight: boolean; disabled?: boolean; label: string;
+  handleFill: (o: any) => void;
+  walletReady: boolean;
+  tradeInFlight: boolean;
+  disabled?: boolean;
+  label: string;
 }) {
   const isBuy = type === "buy";
   if (fillLoading === offer.offerOutpoint) {
-    return <span className="w-20 py-1 flex items-center justify-center"><span className={`h-2.5 w-2.5 animate-spin rounded-full border border-t-transparent ${isBuy ? "border-emerald-400/50" : "border-amber-400/50"}`} /></span>;
+    return (
+      <span className="w-20 py-1 flex items-center justify-center">
+        <span
+          className={`h-2.5 w-2.5 animate-spin rounded-full border border-t-transparent ${isBuy ? "border-emerald-400/50" : "border-amber-400/50"}`}
+        />
+      </span>
+    );
   }
   if (confirmAction?.type === type && confirmAction.outpoint === offer.offerOutpoint) {
     return (
       <div className="flex gap-1">
-        <button onClick={() => handleFill(offer)} className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${isBuy ? "bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/40" : "bg-amber-500/30 border border-amber-500/40 text-amber-400 hover:bg-amber-500/40"}`}>Yes</button>
-        <button onClick={() => setConfirmAction(null)} className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors">No</button>
+        <button
+          onClick={() => handleFill(offer)}
+          className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${isBuy ? "bg-emerald-500/30 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/40" : "bg-amber-500/30 border border-amber-500/40 text-amber-400 hover:bg-amber-500/40"}`}
+        >
+          Yes
+        </button>
+        <button
+          onClick={() => setConfirmAction(null)}
+          className="px-2 py-1 rounded-lg bg-white/[0.06] border border-white/[0.08] text-[10px] font-semibold text-muted-foreground hover:bg-white/[0.1] transition-colors"
+        >
+          No
+        </button>
       </div>
     );
   }
   return (
-    <button onClick={() => setConfirmAction({ type, outpoint: offer.offerOutpoint })} disabled={!walletReady || tradeInFlight || disabled} className={`w-20 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isBuy ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30" : "bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30"}`}>
+    <button
+      onClick={() => setConfirmAction({ type, outpoint: offer.offerOutpoint })}
+      disabled={!walletReady || tradeInFlight || disabled}
+      className={`w-20 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isBuy ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30" : "bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30"}`}
+    >
       {label}
     </button>
   );
@@ -1039,7 +1380,9 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   return (
     <div className="flex items-center justify-between">
       <span className="text-[11px] text-muted-foreground/50">{label}</span>
-      <span className={`text-xs font-medium tabular-nums ${mono ? "font-mono text-muted-foreground/70" : ""}`}>
+      <span
+        className={`text-xs font-medium tabular-nums ${mono ? "font-mono text-muted-foreground/70" : ""}`}
+      >
         {value}
       </span>
     </div>

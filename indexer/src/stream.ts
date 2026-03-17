@@ -142,7 +142,8 @@ async function processEvent(data: string, onTx: TxHandler): Promise<void> {
     txid: rawTx.txid as string,
     tx: rawTx.tx as string | undefined,
     spentVtxos: (rawTx.spentVtxos as Array<{ outpoint: { txid: string; vout: number } }>) ?? [],
-    spendableVtxos: (rawTx.spendableVtxos as Array<{ outpoint: { txid: string; vout: number } }>) ?? [],
+    spendableVtxos:
+      (rawTx.spendableVtxos as Array<{ outpoint: { txid: string; vout: number } }>) ?? [],
   };
 
   log.debug("SSE stream: new tx", {

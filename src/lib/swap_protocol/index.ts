@@ -59,8 +59,20 @@ export {
 } from "./opcodes";
 
 // Script construction
-export { buildSwapScript, buildBuySwapScript, decodeSwapScript, buildArkadeScript, buildBuyArkadeScript, computeIntrospectorTweakedPubkey } from "./script";
-export type { SwapScriptParams, BuySwapScriptParams, SwapScriptResult, TapLeafScript } from "./script";
+export {
+  buildSwapScript,
+  buildBuySwapScript,
+  decodeSwapScript,
+  buildArkadeScript,
+  buildBuyArkadeScript,
+  computeIntrospectorTweakedPubkey,
+} from "./script";
+export type {
+  SwapScriptParams,
+  BuySwapScriptParams,
+  SwapScriptResult,
+  TapLeafScript,
+} from "./script";
 
 // Offer lifecycle
 export { createSwapOffer, cancelSwapOffer, createBuyOffer, cancelBuyOffer } from "./offers";
@@ -70,11 +82,7 @@ export type { SwapOfferParams, SwapOffer, BuyOfferParams, BuyOffer } from "./off
 export { lightFillSwapOffer, lightFillBuyOffer } from "./light-fill";
 
 // Introspector client
-export {
-  getIntrospectorInfo,
-  submitIntent,
-  submitFinalization,
-} from "./introspector-client";
+export { getIntrospectorInfo, submitIntent, submitFinalization } from "./introspector-client";
 export type {
   IntrospectorInfo,
   SubmitIntentRequest,

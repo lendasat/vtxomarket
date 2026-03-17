@@ -13,10 +13,8 @@
 // Proxy all Lendaswap API calls through the server-side API route (/api/lendaswap/*)
 // which injects the API key header — the key never reaches the client bundle.
 const LENDASWAP_API_URL = "/api/lendaswap";
-const ARKADE_SERVER_URL =
-  process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
-const ESPLORA_URL =
-  process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
+const ARKADE_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
+const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let clientPromise: Promise<any> | null = null;
@@ -50,9 +48,7 @@ export function resetLendaswapClient(): void {
 
 async function initClient() {
   // Dynamic import to avoid Turbopack static bundling issues
-  const { Client, IdbWalletStorage, IdbSwapStorage } = await import(
-    "@lendasat/lendaswap-sdk-pure"
-  );
+  const { Client, IdbWalletStorage, IdbSwapStorage } = await import("@lendasat/lendaswap-sdk-pure");
 
   const client = await Client.builder()
     .withBaseUrl(LENDASWAP_API_URL)

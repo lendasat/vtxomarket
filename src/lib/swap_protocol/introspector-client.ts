@@ -7,18 +7,16 @@
  * @see https://github.com/ArkLabsHQ/introspector
  */
 
-export const INTROSPECTOR_URL =
-  process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
+export const INTROSPECTOR_URL = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
 
 // Block non-localhost HTTP to prevent MITM on PSBTs containing partial signatures
-const _isLocalhost = INTROSPECTOR_URL.includes("localhost") || INTROSPECTOR_URL.includes("127.0.0.1");
-if (
-  INTROSPECTOR_URL.startsWith("http://") &&
-  !_isLocalhost
-) {
+const _isLocalhost =
+  INTROSPECTOR_URL.includes("localhost") || INTROSPECTOR_URL.includes("127.0.0.1");
+if (INTROSPECTOR_URL.startsWith("http://") && !_isLocalhost) {
   throw new Error(
     "[introspector-client] BLOCKED: Refusing to use unencrypted HTTP for a remote introspector URL. " +
-    "PSBTs contain partial signatures — use HTTPS in production. URL: " + INTROSPECTOR_URL
+      "PSBTs contain partial signatures — use HTTPS in production. URL: " +
+      INTROSPECTOR_URL
   );
 }
 
@@ -29,7 +27,7 @@ export interface IntrospectorInfo {
 
 export interface SubmitIntentRequest {
   intent: {
-    proof: string;   // base64 PSBT
+    proof: string; // base64 PSBT
     message: string; // base64 register message
   };
 }
@@ -49,20 +47,17 @@ export interface SubmitFinalizationRequest {
     proof: string;
     message: string;
   };
-  forfeits: string[];        // base64 PSBTs
+  forfeits: string[]; // base64 PSBTs
   connectorTree: TxTreeNode[];
-  commitmentTx?: string;     // base64 PSBT
+  commitmentTx?: string; // base64 PSBT
 }
 
 export interface SubmitFinalizationResponse {
-  signedForfeits: string[];    // base64 PSBTs
+  signedForfeits: string[]; // base64 PSBTs
   signedCommitmentTx?: string; // base64 PSBT
 }
 
-async function introspectorFetch<T>(
-  path: string,
-  body?: unknown
-): Promise<T> {
+async function introspectorFetch<T>(path: string, body?: unknown): Promise<T> {
   const opts: RequestInit = {
     signal: AbortSignal.timeout(30_000),
   };
@@ -91,10 +86,7 @@ export async function getIntrospectorInfo(): Promise<IntrospectorInfo> {
 }
 
 /** Submit intent proof for arkade script validation and co-signing. */
-export async function submitIntent(
-  proof: string,
-  message: string
-): Promise<SubmitIntentResponse> {
+export async function submitIntent(proof: string, message: string): Promise<SubmitIntentResponse> {
   const data = await introspectorFetch<Record<string, unknown>>("/v1/intent", {
     intent: { proof, message },
   });
@@ -109,10 +101,7 @@ export async function submitIntent(
 export async function submitFinalization(
   req: SubmitFinalizationRequest
 ): Promise<SubmitFinalizationResponse> {
-  const data = await introspectorFetch<Record<string, unknown>>(
-    "/v1/finalization",
-    req
-  );
+  const data = await introspectorFetch<Record<string, unknown>>("/v1/finalization", req);
   // Validate response — signedForfeits must be an array
   if (!Array.isArray(data.signedForfeits)) {
     throw new Error("Introspector /v1/finalization: missing or invalid signedForfeits in response");

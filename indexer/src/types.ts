@@ -16,9 +16,9 @@ export interface IndexerVtxo {
     txid: string;
     vout: number;
   };
-  pubkey: string;  // spending pubkey hex
-  script: string;  // full output script hex
-  amount: string;  // sats as decimal string
+  pubkey: string; // spending pubkey hex
+  script: string; // full output script hex
+  amount: string; // sats as decimal string
   assets?: VtxoAsset[];
   isSpent: boolean;
 }
@@ -33,9 +33,9 @@ export interface SpendableVtxoRef {
 
 /** Normalized transaction event — used for both arkTx and commitmentTx */
 export interface TxNotification {
-  eventType: 'arkTx' | 'commitmentTx';
+  eventType: "arkTx" | "commitmentTx";
   txid: string;
-  tx?: string;  // raw hex (optional, for future decoding)
+  tx?: string; // raw hex (optional, for future decoding)
   spentVtxos: Array<{ outpoint: { txid: string; vout: number } }>;
   spendableVtxos: SpendableVtxoRef[];
 }
@@ -46,7 +46,7 @@ export interface AssetMetadata {
   name?: string;
   ticker?: string;
   decimals?: number;
-  supply?: string;        // raw decimal string from the "supply" field
+  supply?: string; // raw decimal string from the "supply" field
   controlAssetId?: string;
-  icon?: string;           // image URL from TLV "icon" key
+  icon?: string; // image URL from TLV "icon" key
 }

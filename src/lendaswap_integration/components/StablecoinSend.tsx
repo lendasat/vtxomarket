@@ -29,14 +29,7 @@ import { getChainName, type EvmChainKey, type StablecoinKey } from "../lib/const
 
 export function StablecoinSend() {
   const balance = useAppStore((s) => s.balance);
-  const {
-    ready,
-    state,
-    getQuote,
-    createSendSwap,
-    reset,
-    setStep,
-  } = useLendaswap();
+  const { ready, state, getQuote, createSendSwap, reset, setStep } = useLendaswap();
 
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
 
@@ -140,7 +133,13 @@ export function StablecoinSend() {
   if (step === "confirming" && quote) {
     return (
       <div className="space-y-4">
-        <CoinChainSelectors coin={coin} setCoin={setCoin} chain={chain} setChain={setChain} disabled />
+        <CoinChainSelectors
+          coin={coin}
+          setCoin={setCoin}
+          chain={chain}
+          setChain={setChain}
+          disabled
+        />
 
         <QuoteDisplay quote={quote} coin={coin} direction="send" />
 
@@ -177,9 +176,7 @@ export function StablecoinSend() {
           </button>
         </div>
 
-        <p className="text-center text-[10px] text-muted-foreground/30">
-          Powered by LendaSwap
-        </p>
+        <p className="text-center text-[10px] text-muted-foreground/30">Powered by LendaSwap</p>
       </div>
     );
   }
@@ -189,7 +186,13 @@ export function StablecoinSend() {
   if (step === "quoting") {
     return (
       <div className="space-y-4">
-        <CoinChainSelectors coin={coin} setCoin={setCoin} chain={chain} setChain={setChain} disabled />
+        <CoinChainSelectors
+          coin={coin}
+          setCoin={setCoin}
+          chain={chain}
+          setChain={setChain}
+          disabled
+        />
         <div className="flex items-center justify-center py-8 gap-3">
           <div className="h-4 w-4 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
           <span className="text-sm text-muted-foreground/50">Fetching quote...</span>
@@ -207,7 +210,9 @@ export function StablecoinSend() {
       {/* Connect wallet + Recipient address */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">Recipient on {chainLabel}</span>
+          <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">
+            Recipient on {chainLabel}
+          </span>
           <EvmConnectButton />
         </div>
         <div className="relative">
@@ -261,12 +266,16 @@ export function StablecoinSend() {
         disabled={!canQuote}
         className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
       >
-        {!ready ? "Initializing..." : !isValidAddress ? "Enter valid EVM address" : !isValidAmount ? "Enter amount" : `Send ${coin}`}
+        {!ready
+          ? "Initializing..."
+          : !isValidAddress
+            ? "Enter valid EVM address"
+            : !isValidAmount
+              ? "Enter amount"
+              : `Send ${coin}`}
       </button>
 
-      <p className="text-center text-[10px] text-muted-foreground/30">
-        Powered by LendaSwap
-      </p>
+      <p className="text-center text-[10px] text-muted-foreground/30">Powered by LendaSwap</p>
     </div>
   );
 }

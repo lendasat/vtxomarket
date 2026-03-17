@@ -20,27 +20,27 @@ export interface AssetRow {
   name: string | null;
   ticker: string | null;
   decimals: number;
-  supply: string;       // bigint stored as TEXT to avoid JS precision loss
+  supply: string; // bigint stored as TEXT to avoid JS precision loss
   firstSeenTxid: string;
-  updatedAt: number;    // unix seconds
+  updatedAt: number; // unix seconds
   // Creator-submitted metadata (via PUT /assets/:id/metadata)
   description: string | null;
   image: string | null;
-  creator: string | null;          // pubkey hex of the issuer
+  creator: string | null; // pubkey hex of the issuer
   creatorArkAddress: string | null;
-  controlAssetId: string | null;   // present when token is reissuable
+  controlAssetId: string | null; // present when token is reissuable
   website: string | null;
   twitter: string | null;
   telegram: string | null;
-  createdAt: number | null;        // unix seconds of issuance
+  createdAt: number | null; // unix seconds of issuance
 }
 
 export interface VtxoRow {
-  outpoint: string;     // "txid:vout"
+  outpoint: string; // "txid:vout"
   assetId: string;
-  amount: string;       // bigint stored as TEXT
-  script: string;       // hex pubkey/address script
-  isSpent: number;      // 0 | 1 — SQLite INTEGER
+  amount: string; // bigint stored as TEXT
+  script: string; // hex pubkey/address script
+  isSpent: number; // 0 | 1 — SQLite INTEGER
   seenInTxid: string;
   spentInTxid: string | null;
   createdAt: number;
@@ -57,19 +57,19 @@ export interface HolderRow {
 }
 
 export interface OfferRow {
-  offerOutpoint: string;    // PRIMARY KEY: "txid:vout" of the swap VTXO
+  offerOutpoint: string; // PRIMARY KEY: "txid:vout" of the swap VTXO
   assetId: string;
   tokenAmount: string;
   satAmount: string;
-  vtxoSatsValue: string;    // sats value of the swap VTXO (dust for sell, satAmount for buy)
+  vtxoSatsValue: string; // sats value of the swap VTXO (dust for sell, satAmount for buy)
   makerArkAddress: string;
   makerPkScript: string;
   makerXOnlyPubkey: string;
   swapScriptHex: string;
-  arkadeScriptHex: string;  // hex-encoded arkade script (introspection conditions for PSBT field)
-  offerType: 'sell' | 'buy'; // sell = maker locks tokens, buy = maker locks sats
+  arkadeScriptHex: string; // hex-encoded arkade script (introspection conditions for PSBT field)
+  offerType: "sell" | "buy"; // sell = maker locks tokens, buy = maker locks sats
   expiresAt: number;
-  status: 'open' | 'filled' | 'expired' | 'cancelled';
+  status: "open" | "filled" | "expired" | "cancelled";
   filledInTxid: string | null;
   createdAt: number;
   updatedAt: number;
@@ -172,7 +172,17 @@ function migrate(db: Database): void {
 
   // Add metadata columns to assets table (migration for existing DBs)
   const assetCols = db.query("PRAGMA table_info(assets)").all() as { name: string }[];
-  const metadataCols = ["description", "image", "creator", "creatorArkAddress", "controlAssetId", "website", "twitter", "telegram", "createdAt"];
+  const metadataCols = [
+    "description",
+    "image",
+    "creator",
+    "creatorArkAddress",
+    "controlAssetId",
+    "website",
+    "twitter",
+    "telegram",
+    "createdAt",
+  ];
   for (const col of metadataCols) {
     if (!assetCols.some((c) => c.name === col)) {
       db.run(`ALTER TABLE assets ADD COLUMN ${col} TEXT`);
@@ -206,10 +216,10 @@ export function isTxProcessed(txid: string): boolean {
 
 export function markTxProcessed(txid: string): void {
   const db = getDb();
-  db.run(
-    "INSERT OR IGNORE INTO processed_txs (txid, processedAt) VALUES (?, ?)",
-    [txid, Math.floor(Date.now() / 1000)]
-  );
+  db.run("INSERT OR IGNORE INTO processed_txs (txid, processedAt) VALUES (?, ?)", [
+    txid,
+    Math.floor(Date.now() / 1000),
+  ]);
 }
 
 export function upsertAsset(asset: Omit<AssetRow, "updatedAt">): void {
@@ -369,7 +379,7 @@ export function getStats() {
 // ── Offer query helpers ─────────────────────────────────────────────────────
 
 export function upsertOffer(
-  offer: Omit<OfferRow, 'status' | 'filledInTxid' | 'createdAt' | 'updatedAt'>
+  offer: Omit<OfferRow, "status" | "filledInTxid" | "createdAt" | "updatedAt">
 ): void {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
@@ -394,13 +404,13 @@ export function upsertOffer(
       offer.assetId,
       offer.tokenAmount,
       offer.satAmount,
-      offer.vtxoSatsValue ?? '330',
+      offer.vtxoSatsValue ?? "330",
       offer.makerArkAddress,
       offer.makerPkScript,
       offer.makerXOnlyPubkey,
       offer.swapScriptHex,
-      offer.arkadeScriptHex ?? '',
-      offer.offerType ?? 'sell',
+      offer.arkadeScriptHex ?? "",
+      offer.offerType ?? "sell",
       offer.expiresAt,
       now,
       now,
@@ -411,7 +421,9 @@ export function upsertOffer(
 /** Look up an offer by its offerOutpoint (the swap VTXO's "txid:vout") */
 export function getOffer(offerOutpoint: string): OfferRow | null {
   const db = getDb();
-  return db.query("SELECT * FROM offers WHERE offerOutpoint = ?").get(offerOutpoint) as OfferRow | null;
+  return db
+    .query("SELECT * FROM offers WHERE offerOutpoint = ?")
+    .get(offerOutpoint) as OfferRow | null;
 }
 
 export function getOpenOffersForAsset(assetId: string, offerType?: string): OfferRow[] {
@@ -475,9 +487,9 @@ export function markOfferCancelled(offerOutpoint: string): void {
 export interface MarketSummaryRow {
   assetId: string;
   openOfferCount: number;
-  bestOfferPrice: number | null;   // cheapest satAmount/tokenAmount ratio
-  lastFilledPrice: number | null;  // most recent filled offer price
-  lastFilledAt: number | null;     // unix timestamp of last fill
+  bestOfferPrice: number | null; // cheapest satAmount/tokenAmount ratio
+  lastFilledPrice: number | null; // most recent filled offer price
+  lastFilledAt: number | null; // unix timestamp of last fill
 }
 
 export function getMarketSummary(): MarketSummaryRow[] {
@@ -521,7 +533,7 @@ export interface TradeRow {
   satAmount: string;
   makerArkAddress: string;
   filledInTxid: string;
-  filledAt: number;   // updatedAt when status became 'filled'
+  filledAt: number; // updatedAt when status became 'filled'
 }
 
 export function getTradesForAsset(assetId: string, limit = 100): TradeRow[] {
@@ -551,4 +563,3 @@ export function getRecentTrades(limit = 20): TradeRow[] {
     )
     .all(limit) as TradeRow[];
 }
-

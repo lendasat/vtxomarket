@@ -15,9 +15,7 @@ export function EvmConnectButton() {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
 
-  const truncated = address
-    ? `${address.slice(0, 6)}...${address.slice(-4)}`
-    : "";
+  const truncated = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 
   if (isConnected && address) {
     return (
@@ -44,7 +42,12 @@ export function EvmConnectButton() {
       onClick={() => open().catch(console.error)}
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.1] text-xs font-medium text-muted-foreground/50 hover:bg-white/[0.1] hover:text-muted-foreground/70 transition-all"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="h-3.5 w-3.5"
+      >
         <path d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1H2V4Zm0 3v5a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H2Zm7 2a1 1 0 1 1 2 0 1 1 0 0 1-2 0Z" />
       </svg>
       Connect Wallet

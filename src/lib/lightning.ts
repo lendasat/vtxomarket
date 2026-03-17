@@ -40,9 +40,7 @@ export function calcSendFee(fees: FeesResponse, sats: number): number {
 
 export function calcReceiveFee(fees: FeesResponse, sats: number): number {
   const { percentage, minerFees } = fees.reverse;
-  return Math.ceil(
-    (sats * percentage) / 100 + minerFees.claim + minerFees.lockup
-  );
+  return Math.ceil((sats * percentage) / 100 + minerFees.claim + minerFees.lockup);
 }
 
 // -- Swap history & recovery --
@@ -94,25 +92,28 @@ export async function getSwapHistory(lightning: any): Promise<SwapHistoryItem[]>
   try {
     const history = await lightning.getSwapHistory();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return history.map((swap: any) => {
-      const isReverse = swap.type === "reverse";
-      const status = STATUS_MAP[swap.status] ?? "Pending";
-      const refundable = !isReverse &&
-        REFUNDABLE_STATUSES.has(swap.status) &&
-        swap.refundable !== false &&
-        swap.refunded !== true;
+    return history
+      .map((swap: any) => {
+        const isReverse = swap.type === "reverse";
+        const status = STATUS_MAP[swap.status] ?? "Pending";
+        const refundable =
+          !isReverse &&
+          REFUNDABLE_STATUSES.has(swap.status) &&
+          swap.refundable !== false &&
+          swap.refunded !== true;
 
-      return {
-        id: swap.id ?? swap.response?.id ?? "",
-        type: isReverse ? "receive" as const : "send" as const,
-        status,
-        amount: isReverse
-          ? (swap.response?.onchainAmount ?? swap.request?.invoiceAmount ?? 0)
-          : (swap.response?.expectedAmount ?? 0),
-        createdAt: swap.createdAt ?? 0,
-        refundable,
-      };
-    }).sort((a: SwapHistoryItem, b: SwapHistoryItem) => b.createdAt - a.createdAt);
+        return {
+          id: swap.id ?? swap.response?.id ?? "",
+          type: isReverse ? ("receive" as const) : ("send" as const),
+          status,
+          amount: isReverse
+            ? (swap.response?.onchainAmount ?? swap.request?.invoiceAmount ?? 0)
+            : (swap.response?.expectedAmount ?? 0),
+          createdAt: swap.createdAt ?? 0,
+          refundable,
+        };
+      })
+      .sort((a: SwapHistoryItem, b: SwapHistoryItem) => b.createdAt - a.createdAt);
   } catch (e) {
     console.warn("[lightning] Failed to get swap history:", e);
     return [];

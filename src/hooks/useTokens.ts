@@ -32,26 +32,25 @@ export function useTokens() {
         if (cancelled) return;
 
         // Map indexer AssetRow to Token
-        const mapped: Token[] = assets
-          .map((a: Record<string, unknown>) => ({
-            id: a.assetId as string,
-            assetId: a.assetId as string,
-            name: (a.name as string) || "",
-            ticker: (a.ticker as string) || "",
-            description: (a.description as string) || "",
-            image: (a.image as string) || undefined,
-            creator: (a.creator as string) || "",
-            creatorArkAddress: (a.creatorArkAddress as string) || "",
-            createdAt: (a.createdAt as number) ?? (a.updatedAt as number) ?? 0,
-            supply: Number(a.supply) || 0,
-            decimals: (a.decimals as number) || undefined,
-            controlAssetId: (a.controlAssetId as string) || undefined,
-            replies: 0,
-            tradeCount: 0,
-            website: (a.website as string) || undefined,
-            twitter: (a.twitter as string) || undefined,
-            telegram: (a.telegram as string) || undefined,
-          }));
+        const mapped: Token[] = assets.map((a: Record<string, unknown>) => ({
+          id: a.assetId as string,
+          assetId: a.assetId as string,
+          name: (a.name as string) || "",
+          ticker: (a.ticker as string) || "",
+          description: (a.description as string) || "",
+          image: (a.image as string) || undefined,
+          creator: (a.creator as string) || "",
+          creatorArkAddress: (a.creatorArkAddress as string) || "",
+          createdAt: (a.createdAt as number) ?? (a.updatedAt as number) ?? 0,
+          supply: Number(a.supply) || 0,
+          decimals: (a.decimals as number) || undefined,
+          controlAssetId: (a.controlAssetId as string) || undefined,
+          replies: 0,
+          tradeCount: 0,
+          website: (a.website as string) || undefined,
+          twitter: (a.twitter as string) || undefined,
+          telegram: (a.telegram as string) || undefined,
+        }));
 
         // Merge with existing local tokens so locally upserted tokens
         // (e.g. just-created tokens the indexer hasn't seen yet) aren't wiped.
@@ -86,15 +85,18 @@ export function useTokens() {
   useEffect(() => {
     if (!tokensLoaded || heldAssets.length === 0) return;
     const tokenIds = new Set(tokens.map((t) => t.assetId));
-    const missing = heldAssets
-      .filter((a) => a.amount > 0 && a.assetId && !tokenIds.has(a.assetId) && !discoveredIds.has(a.assetId));
+    const missing = heldAssets.filter(
+      (a) => a.amount > 0 && a.assetId && !tokenIds.has(a.assetId) && !discoveredIds.has(a.assetId)
+    );
 
     if (missing.length === 0) return;
 
     for (const asset of missing) {
       discoveredIds.add(asset.assetId);
-      fetch(`${INDEXER_URL}/assets/${encodeURIComponent(asset.assetId)}/discover`, { method: "POST" })
-        .then((r) => r.ok ? r.json() : null)
+      fetch(`${INDEXER_URL}/assets/${encodeURIComponent(asset.assetId)}/discover`, {
+        method: "POST",
+      })
+        .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (!data?.asset) return;
           const a = data.asset;

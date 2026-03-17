@@ -7,8 +7,8 @@ const POLL_INTERVAL = 30_000;
 
 export interface TokenMarketData {
   openOfferCount: number;
-  bestOfferPrice: number | null;   // sat/token (raw units)
-  lastTradePrice: number | null;   // sat/token (raw units)
+  bestOfferPrice: number | null; // sat/token (raw units)
+  lastTradePrice: number | null; // sat/token (raw units)
   lastTradeAt: number | null;
 }
 

@@ -12,76 +12,76 @@
 
 // ── Opcode constants used in buildArkadeScript ────────────────────────────────
 
-export const OP_INSPECTOUTPUTVALUE        = 0xCF;
-export const OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xD1;
-export const OP_INSPECTOUTASSETLOOKUP    = 0xEF;
-export const OP_GREATERTHANOREQUAL64      = 0xDF;
-export const OP_SCRIPTNUMTOLE64           = 0xE0;
-export const OP_VERIFY                    = 0x69;
-export const OP_EQUAL                     = 0x87;
-export const OP_EQUALVERIFY               = 0x88;
-export const OP_CHECKSIG                  = 0xAC;
-export const OP_1                         = 0x51;
+export const OP_INSPECTOUTPUTVALUE = 0xcf;
+export const OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xd1;
+export const OP_INSPECTOUTASSETLOOKUP = 0xef;
+export const OP_GREATERTHANOREQUAL64 = 0xdf;
+export const OP_SCRIPTNUMTOLE64 = 0xe0;
+export const OP_VERIFY = 0x69;
+export const OP_EQUAL = 0x87;
+export const OP_EQUALVERIFY = 0x88;
+export const OP_CHECKSIG = 0xac;
+export const OP_1 = 0x51;
 
 // ── Full opcode registry ──────────────────────────────────────────────────────
 
 /** All Arkade opcodes — hex values from introspector/pkg/arkade/opcode.go */
 const ARKADE_OPCODES: Record<string, number> = {
   // Streaming hash opcodes (0xC4-0xC6)
-  OP_SHA256INITIALIZE:           0xC4,
-  OP_SHA256UPDATE:               0xC5,
-  OP_SHA256FINALIZE:             0xC6,
+  OP_SHA256INITIALIZE: 0xc4,
+  OP_SHA256UPDATE: 0xc5,
+  OP_SHA256FINALIZE: 0xc6,
   // Input introspection (0xC7-0xCD)
-  OP_INSPECTINPUTOUTPOINT:       0xC7,
+  OP_INSPECTINPUTOUTPOINT: 0xc7,
   // 0xC8 reserved (OP_UNKNOWN200)
-  OP_INSPECTINPUTVALUE:          0xC9,
-  OP_INSPECTINPUTSCRIPTPUBKEY:   0xCA,
-  OP_INSPECTINPUTSEQUENCE:       0xCB,
-  OP_CHECKSIGFROMSTACK:          0xCC,
-  OP_PUSHCURRENTINPUTINDEX:      0xCD,
+  OP_INSPECTINPUTVALUE: 0xc9,
+  OP_INSPECTINPUTSCRIPTPUBKEY: 0xca,
+  OP_INSPECTINPUTSEQUENCE: 0xcb,
+  OP_CHECKSIGFROMSTACK: 0xcc,
+  OP_PUSHCURRENTINPUTINDEX: 0xcd,
   // Output introspection (0xCF, 0xD1)
   // 0xCE reserved (OP_UNKNOWN206)
-  OP_INSPECTOUTPUTVALUE:         0xCF,
+  OP_INSPECTOUTPUTVALUE: 0xcf,
   // 0xD0 reserved (OP_UNKNOWN208)
-  OP_INSPECTOUTPUTSCRIPTPUBKEY:  0xD1,
+  OP_INSPECTOUTPUTSCRIPTPUBKEY: 0xd1,
   // Transaction introspection (0xD2-0xD6)
-  OP_INSPECTVERSION:             0xD2,
-  OP_INSPECTLOCKTIME:            0xD3,
-  OP_INSPECTNUMINPUTS:           0xD4,
-  OP_INSPECTNUMOUTPUTS:          0xD5,
-  OP_TXWEIGHT:                   0xD6,
+  OP_INSPECTVERSION: 0xd2,
+  OP_INSPECTLOCKTIME: 0xd3,
+  OP_INSPECTNUMINPUTS: 0xd4,
+  OP_INSPECTNUMOUTPUTS: 0xd5,
+  OP_TXWEIGHT: 0xd6,
   // 64-bit arithmetic (0xD7-0xDF)
-  OP_ADD64:                      0xD7,
-  OP_SUB64:                      0xD8,
-  OP_MUL64:                      0xD9,
-  OP_DIV64:                      0xDA,
-  OP_NEG64:                      0xDB,
-  OP_LESSTHAN64:                 0xDC,
-  OP_LESSTHANOREQUAL64:          0xDD,
-  OP_GREATERTHAN64:              0xDE,
-  OP_GREATERTHANOREQUAL64:       0xDF,
+  OP_ADD64: 0xd7,
+  OP_SUB64: 0xd8,
+  OP_MUL64: 0xd9,
+  OP_DIV64: 0xda,
+  OP_NEG64: 0xdb,
+  OP_LESSTHAN64: 0xdc,
+  OP_LESSTHANOREQUAL64: 0xdd,
+  OP_GREATERTHAN64: 0xde,
+  OP_GREATERTHANOREQUAL64: 0xdf,
   // Conversion opcodes (0xE0-0xE2)
-  OP_SCRIPTNUMTOLE64:            0xE0,
-  OP_LE64TOSCRIPTNUM:            0xE1,
-  OP_LE32TOLE64:                 0xE2,
+  OP_SCRIPTNUMTOLE64: 0xe0,
+  OP_LE64TOSCRIPTNUM: 0xe1,
+  OP_LE32TOLE64: 0xe2,
   // Crypto opcodes (0xE3-0xE4)
-  OP_ECMULSCALARVERIFY:          0xE3,
-  OP_TWEAKVERIFY:                0xE4,
+  OP_ECMULSCALARVERIFY: 0xe3,
+  OP_TWEAKVERIFY: 0xe4,
   // Asset group introspection (0xE5-0xF2)
-  OP_INSPECTNUMASSETGROUPS:      0xE5,
-  OP_INSPECTASSETGROUPASSETID:   0xE6,
-  OP_INSPECTASSETGROUPCTRL:      0xE7,
+  OP_INSPECTNUMASSETGROUPS: 0xe5,
+  OP_INSPECTASSETGROUPASSETID: 0xe6,
+  OP_INSPECTASSETGROUPCTRL: 0xe7,
   // 0xE8 reserved
-  OP_INSPECTASSETGROUPMETADATAHASH: 0xE9,
-  OP_INSPECTASSETGROUPNUM:       0xEA,
-  OP_INSPECTASSETGROUP:          0xEB,
-  OP_INSPECTASSETGROUPSUM:       0xEC,
-  OP_INSPECTOUTASSETCOUNT:       0xED,
-  OP_INSPECTOUTASSETAT:          0xEE,
-  OP_INSPECTOUTASSETLOOKUP:      0xEF,
-  OP_INSPECTINASSETCOUNT:        0xF0,
-  OP_INSPECTINASSETAT:           0xF1,
-  OP_INSPECTINASSETLOOKUP:       0xF2,
+  OP_INSPECTASSETGROUPMETADATAHASH: 0xe9,
+  OP_INSPECTASSETGROUPNUM: 0xea,
+  OP_INSPECTASSETGROUP: 0xeb,
+  OP_INSPECTASSETGROUPSUM: 0xec,
+  OP_INSPECTOUTASSETCOUNT: 0xed,
+  OP_INSPECTOUTASSETAT: 0xee,
+  OP_INSPECTOUTASSETLOOKUP: 0xef,
+  OP_INSPECTINASSETCOUNT: 0xf0,
+  OP_INSPECTINASSETAT: 0xf1,
+  OP_INSPECTINASSETLOOKUP: 0xf2,
 };
 
 // ── Registration ──────────────────────────────────────────────────────────────

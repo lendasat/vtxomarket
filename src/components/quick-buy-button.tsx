@@ -18,7 +18,9 @@ export function QuickBuyButton({ assetId, ticker, decimals, onSuccess }: QuickBu
   const arkWallet = useAppStore((s) => s.arkWallet);
   const walletReady = useAppStore((s) => s.walletReady);
 
-  const [state, setState] = useState<"idle" | "loading" | "confirm" | "filling" | "success" | "error">("idle");
+  const [state, setState] = useState<
+    "idle" | "loading" | "confirm" | "filling" | "success" | "error"
+  >("idle");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [offer, setOffer] = useState<any>(null);
   const [error, setError] = useState("");
@@ -74,17 +76,17 @@ export function QuickBuyButton({ assetId, ticker, decimals, onSuccess }: QuickBu
   if (!walletReady) return null;
 
   if (state === "success") {
-    return (
-      <span className="text-[10px] font-semibold text-emerald-400/80 px-2 py-1">
-        Filled!
-      </span>
-    );
+    return <span className="text-[10px] font-semibold text-emerald-400/80 px-2 py-1">Filled!</span>;
   }
 
   if (state === "error") {
     return (
       <button
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); reset(); }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          reset();
+        }}
         className="text-[10px] text-red-400/80 px-2 py-1 hover:text-red-400 transition-colors"
         title={error}
       >
@@ -95,7 +97,13 @@ export function QuickBuyButton({ assetId, ticker, decimals, onSuccess }: QuickBu
 
   if (state === "confirm" && offer) {
     return (
-      <div className="flex gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+      <div
+        className="flex gap-1"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
         <button
           onClick={handleFill}
           className="px-2 py-1 rounded-lg bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/40 transition-colors"
@@ -115,7 +123,13 @@ export function QuickBuyButton({ assetId, ticker, decimals, onSuccess }: QuickBu
 
   if (state === "loading" || state === "filling") {
     return (
-      <span className="px-2 py-1 flex items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+      <span
+        className="px-2 py-1 flex items-center"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
         <span className="h-2.5 w-2.5 animate-spin rounded-full border border-emerald-400/50 border-t-transparent" />
       </span>
     );
@@ -123,7 +137,11 @@ export function QuickBuyButton({ assetId, ticker, decimals, onSuccess }: QuickBu
 
   return (
     <button
-      onClick={(e) => { e.preventDefault(); e.stopPropagation(); fetchCheapest(); }}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fetchCheapest();
+      }}
       className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/25 text-[10px] font-semibold text-emerald-400/80 hover:bg-emerald-500/25 hover:text-emerald-400 transition-colors"
     >
       Buy

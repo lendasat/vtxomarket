@@ -29,9 +29,7 @@ export function useComments(ticker: string | null) {
       onComment: (comment) => {
         if (seenRef.current.has(comment.id)) return;
         seenRef.current.add(comment.id);
-        setComments((prev) =>
-          [...prev, comment].sort((a, b) => b.time - a.time)
-        );
+        setComments((prev) => [...prev, comment].sort((a, b) => b.time - a.time));
       },
       onEose: () => {
         setLoading(false);

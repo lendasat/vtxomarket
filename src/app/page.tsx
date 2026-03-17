@@ -86,7 +86,10 @@ export default function Home() {
           {loading && tokens.length === 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[0, 1].map((i) => (
-                <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5 space-y-3 animate-pulse">
+                <div
+                  key={i}
+                  className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5 space-y-3 animate-pulse"
+                >
                   <div className="flex items-center gap-3">
                     <div className="h-11 w-11 rounded-xl bg-white/[0.06]" />
                     <div className="flex-1 space-y-2">
@@ -117,14 +120,20 @@ export default function Home() {
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold bg-white/[0.06] border border-white/[0.08] text-muted-foreground/50">
                           {t.image ? (
-                            <img src={safeUrl(t.image) ?? ""} alt={t.name} className="h-full w-full rounded-xl object-cover" />
+                            <img
+                              src={safeUrl(t.image) ?? ""}
+                              alt={t.name}
+                              className="h-full w-full rounded-xl object-cover"
+                            />
                           ) : (
                             t.ticker.slice(0, 2)
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm sm:text-base font-bold truncate">{t.name}</p>
-                          <p className="text-[11px] font-mono text-muted-foreground/40">${t.ticker}</p>
+                          <p className="text-[11px] font-mono text-muted-foreground/40">
+                            ${t.ticker}
+                          </p>
                         </div>
                         <div className="shrink-0 text-right">
                           {price != null ? (
@@ -145,20 +154,28 @@ export default function Home() {
                         </span>
                         <div className="h-5 w-px bg-white/[0.06]" />
                         <div>
-                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Replies</p>
+                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
+                            Replies
+                          </p>
                           <p className="text-xs font-semibold tabular-nums">{t.replies}</p>
                         </div>
                         <div className="h-5 w-px bg-white/[0.06]" />
                         <div>
-                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Trades</p>
+                          <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
+                            Trades
+                          </p>
                           <p className="text-xs font-semibold tabular-nums">{t.tradeCount}</p>
                         </div>
                         {md && md.openOfferCount > 0 && (
                           <>
                             <div className="h-5 w-px bg-white/[0.06]" />
                             <div>
-                              <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">Offers</p>
-                              <p className="text-xs font-semibold tabular-nums text-emerald-400/60">{md.openOfferCount}</p>
+                              <p className="text-[9px] text-muted-foreground/30 uppercase tracking-wider">
+                                Offers
+                              </p>
+                              <p className="text-xs font-semibold tabular-nums text-emerald-400/60">
+                                {md.openOfferCount}
+                              </p>
                             </div>
                           </>
                         )}
@@ -182,7 +199,9 @@ export default function Home() {
                   href={`/token/${t.ticker}`}
                   className="shrink-0 flex items-center gap-1.5 rounded-lg bg-white/[0.05] border border-white/[0.07] px-2.5 py-1.5 text-[11px] transition-all hover:bg-white/[0.09] hover:border-white/[0.1]"
                 >
-                  <span className="font-mono font-medium text-muted-foreground/70">${t.ticker}</span>
+                  <span className="font-mono font-medium text-muted-foreground/70">
+                    ${t.ticker}
+                  </span>
                   <span className="font-medium tabular-nums text-muted-foreground/50">
                     {formatTokenAmount(t.supply, t.decimals)}
                   </span>
@@ -210,7 +229,11 @@ export default function Home() {
                 >
                   <div className="h-9 w-9 shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/50">
                     {t.image ? (
-                      <img src={safeUrl(t.image) ?? ""} alt={t.name} className="h-full w-full rounded-lg object-cover" />
+                      <img
+                        src={safeUrl(t.image) ?? ""}
+                        alt={t.name}
+                        className="h-full w-full rounded-lg object-cover"
+                      />
                     ) : (
                       t.ticker.slice(0, 2)
                     )}
@@ -259,8 +282,17 @@ export default function Home() {
         </div>
 
         <div className="relative flex-1 w-full sm:max-w-xs ml-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40">
-            <path fillRule="evenodd" d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z" clipRule="evenodd" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40"
+          >
+            <path
+              fillRule="evenodd"
+              d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"
+              clipRule="evenodd"
+            />
           </svg>
           <input
             value={search}
@@ -275,7 +307,10 @@ export default function Home() {
       {loading && tokens.length === 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 space-y-3 animate-pulse">
+            <div
+              key={i}
+              className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 space-y-3 animate-pulse"
+            >
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-white/[0.06]" />
                 <div className="flex-1 space-y-2">
@@ -294,11 +329,7 @@ export default function Home() {
       {filtered.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((token) => (
-            <TokenCard
-              key={token.id}
-              token={token}
-              marketData={marketData.get(token.assetId)}
-            />
+            <TokenCard key={token.id} token={token} marketData={marketData.get(token.assetId)} />
           ))}
         </div>
       )}

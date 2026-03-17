@@ -26,7 +26,10 @@ export interface LnurlInvoiceResult {
 // ── Detection ──────────────────────────────────────────────────────
 
 export function isLnurl(input: string): boolean {
-  const cleaned = input.toLowerCase().trim().replace(/^lightning:/, "");
+  const cleaned = input
+    .toLowerCase()
+    .trim()
+    .replace(/^lightning:/, "");
   return cleaned.startsWith("lnurl");
 }
 
@@ -49,7 +52,10 @@ export function isLnurlOrLightningAddress(input: string): boolean {
 /** Decode bech32-encoded LNURL to a URL string */
 export function decodeLnurl(lnurl: string): string | null {
   try {
-    const cleaned = lnurl.toLowerCase().trim().replace(/^lightning:/, "");
+    const cleaned = lnurl
+      .toLowerCase()
+      .trim()
+      .replace(/^lightning:/, "");
     const decoded = bech32.decodeToBytes(cleaned);
     return new TextDecoder().decode(decoded.bytes);
   } catch {
@@ -66,9 +72,7 @@ export function lightningAddressToUrl(address: string): string {
 // ── Fetch pay params ───────────────────────────────────────────────
 
 /** Fetch LNURL-pay parameters from an LNURL string or Lightning Address */
-export async function fetchPayParams(
-  input: string
-): Promise<LnurlPayParams | null> {
+export async function fetchPayParams(input: string): Promise<LnurlPayParams | null> {
   try {
     let url: string;
 
@@ -105,11 +109,7 @@ export async function fetchPayParams(
       try {
         const metadataList = JSON.parse(metadata) as unknown[][];
         for (const item of metadataList) {
-          if (
-            Array.isArray(item) &&
-            item.length >= 2 &&
-            item[0] === "text/plain"
-          ) {
+          if (Array.isArray(item) && item.length >= 2 && item[0] === "text/plain") {
             description = item[1] as string;
             break;
           }

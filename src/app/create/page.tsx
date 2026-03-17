@@ -42,7 +42,9 @@ export default function CreatePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState("");
-  const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "done" | "error">(
+    "idle"
+  );
   const [imageUploadedUrl, setImageUploadedUrl] = useState<string | null>(null);
   const [showUploadedBadge, setShowUploadedBadge] = useState(false);
 
@@ -190,7 +192,8 @@ export default function CreatePage() {
         const { schnorr } = await import("@noble/curves/secp256k1");
         const mnemonic = await getMnemonic();
         const nostrOverride = await getNostrKeyOverride();
-        const nostrPrivKey = nostrOverride || (mnemonic ? mnemonicToNostrPrivateKeyHex(mnemonic) : null);
+        const nostrPrivKey =
+          nostrOverride || (mnemonic ? mnemonicToNostrPrivateKeyHex(mnemonic) : null);
         if (nostrPrivKey) {
           const metaMsg = sha256(new TextEncoder().encode(`metadata:${result.assetId}`));
           const metaSig = schnorr.sign(metaMsg, nostrPrivKey);
@@ -198,7 +201,9 @@ export default function CreatePage() {
           parsed.signature = scureHex.encode(metaSig);
           signedMetaBody = JSON.stringify(parsed);
         }
-      } catch (e) { console.warn("Failed to sign metadata:", e); }
+      } catch (e) {
+        console.warn("Failed to sign metadata:", e);
+      }
 
       let metaOk = false;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -209,9 +214,14 @@ export default function CreatePage() {
             headers: { "Content-Type": "application/json" },
             body: signedMetaBody,
           });
-          if (metaResp.ok) { metaOk = true; break; }
+          if (metaResp.ok) {
+            metaOk = true;
+            break;
+          }
           if (metaResp.status !== 404) break; // non-retryable error
-        } catch { /* network error, retry */ }
+        } catch {
+          /* network error, retry */
+        }
         setStep("Token issued! Waiting for indexer...");
       }
       if (!metaOk) {
@@ -247,7 +257,9 @@ export default function CreatePage() {
         // The tx was already submitted — token exists on Ark server.
         // This happens when a previous attempt succeeded server-side
         // but the client didn't get the response back.
-        setError("Token was already created (previous attempt succeeded). Check your wallet for the asset.");
+        setError(
+          "Token was already created (previous attempt succeeded). Check your wallet for the asset."
+        );
       } else if (/insufficient|not enough|funds|AMOUNT_TOO_LOW/i.test(msg)) {
         setError("__insufficient__");
       } else {
@@ -284,9 +296,7 @@ export default function CreatePage() {
       {!walletReady && (
         <div className="mb-6 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 flex items-center gap-3">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-400/50 border-t-transparent shrink-0" />
-          <p className="text-xs text-orange-400/80">
-            Connecting to Ark wallet...
-          </p>
+          <p className="text-xs text-orange-400/80">Connecting to Ark wallet...</p>
         </div>
       )}
 
@@ -361,13 +371,16 @@ export default function CreatePage() {
                   className="h-6 w-6 text-muted-foreground/60"
                 >
                   <path d="M12 16V4m0 0-4 4m4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-foreground/80">
-                  Drop image here or{" "}
-                  <span className="text-foreground">browse</span>
+                  Drop image here or <span className="text-foreground">browse</span>
                 </p>
                 <p className="text-xs text-muted-foreground/40 mt-1">
                   JPG, PNG, GIF &middot; Max 15 MB &middot; Auto-hosted on nostr.build
@@ -444,8 +457,7 @@ export default function CreatePage() {
                 placeholder="FROG"
                 value={ticker}
                 onChange={(e) => {
-                  if (e.target.value.length <= TICKER_MAX)
-                    setTicker(e.target.value.toUpperCase());
+                  if (e.target.value.length <= TICKER_MAX) setTicker(e.target.value.toUpperCase());
                 }}
                 className={`${inputClass} h-11 font-mono tracking-wider`}
               />
@@ -466,8 +478,7 @@ export default function CreatePage() {
               placeholder="Describe your token, its purpose, community, and vision..."
               value={description}
               onChange={(e) => {
-                if (e.target.value.length <= DESC_MAX)
-                  setDescription(e.target.value);
+                if (e.target.value.length <= DESC_MAX) setDescription(e.target.value);
               }}
               rows={3}
               className={`${inputClass} py-3 resize-none`}
@@ -510,9 +521,7 @@ export default function CreatePage() {
                 }}
                 className={`${inputClass} h-11`}
               />
-              <p className="text-[11px] text-muted-foreground/40">
-                0–18
-              </p>
+              <p className="text-[11px] text-muted-foreground/40">0–18</p>
             </div>
           </div>
 
@@ -540,7 +549,9 @@ export default function CreatePage() {
             {showSocials && (
               <div className="mt-4 space-y-3 pl-5 border-l-2 border-white/[0.06]">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-muted-foreground/50 font-medium">Website</label>
+                  <label className="text-[11px] text-muted-foreground/50 font-medium">
+                    Website
+                  </label>
                   <input
                     value={website}
                     onChange={(e) => setWebsite(e.target.value)}
@@ -549,7 +560,9 @@ export default function CreatePage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-muted-foreground/50 font-medium">X / Twitter</label>
+                  <label className="text-[11px] text-muted-foreground/50 font-medium">
+                    X / Twitter
+                  </label>
                   <input
                     value={twitter}
                     onChange={(e) => setTwitter(e.target.value)}
@@ -558,7 +571,9 @@ export default function CreatePage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-muted-foreground/50 font-medium">Telegram</label>
+                  <label className="text-[11px] text-muted-foreground/50 font-medium">
+                    Telegram
+                  </label>
                   <input
                     value={telegram}
                     onChange={(e) => setTelegram(e.target.value)}
@@ -588,8 +603,19 @@ export default function CreatePage() {
                   }`}
                 >
                   {reissuable && (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
-                      <path d="M2 6l3 3 5-5" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      className="w-2.5 h-2.5"
+                    >
+                      <path
+                        d="M2 6l3 3 5-5"
+                        stroke="#000"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                     </svg>
                   )}
                 </div>
@@ -597,8 +623,9 @@ export default function CreatePage() {
               <div className="space-y-1">
                 <p className="text-xs font-medium text-foreground/80">Reissuable supply</p>
                 <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                  Creates a control asset that lets you mint more tokens later.
-                  Costs ~{dustAmount > 0 ? (dustAmount * 4).toLocaleString() : "1,320"} sats (two Ark transactions).
+                  Creates a control asset that lets you mint more tokens later. Costs ~
+                  {dustAmount > 0 ? (dustAmount * 4).toLocaleString() : "1,320"} sats (two Ark
+                  transactions).
                 </p>
               </div>
             </label>
@@ -631,9 +658,7 @@ export default function CreatePage() {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold leading-tight truncate">
-                    {name || "Token Name"}
-                  </p>
+                  <p className="font-semibold leading-tight truncate">{name || "Token Name"}</p>
                   <p className="text-xs text-muted-foreground/50 font-mono mt-0.5">
                     ${ticker || "TICKER"}
                   </p>
@@ -644,10 +669,11 @@ export default function CreatePage() {
                       {supplyNum >= 1_000_000_000
                         ? `${(supplyNum / 1_000_000_000).toFixed(1)}B`
                         : supplyNum >= 1_000_000
-                        ? `${(supplyNum / 1_000_000).toFixed(1)}M`
-                        : supplyNum >= 1_000
-                        ? `${(supplyNum / 1_000).toFixed(1)}K`
-                        : supplyNum.toLocaleString()} supply
+                          ? `${(supplyNum / 1_000_000).toFixed(1)}M`
+                          : supplyNum >= 1_000
+                            ? `${(supplyNum / 1_000).toFixed(1)}K`
+                            : supplyNum.toLocaleString()}{" "}
+                      supply
                     </span>
                   </div>
                 )}
@@ -673,7 +699,8 @@ export default function CreatePage() {
               <p className="text-xs font-medium text-foreground/80">Token Issuance</p>
               <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
                 Your token is issued on Arkade (Ark protocol) and listed on vtxo.market
-                automatically. Costs ~{minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats.
+                automatically. Costs ~
+                {minIssuanceCost > 0 ? minIssuanceCost.toLocaleString() : "660"} sats.
               </p>
             </div>
           </div>
@@ -688,20 +715,29 @@ export default function CreatePage() {
           {/* Insufficient funds error (after failed attempt) */}
           {error === "__insufficient__" && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 space-y-2">
-              <p className="text-xs text-red-400 font-medium">
-                Not enough sats to issue a token
-              </p>
+              <p className="text-xs text-red-400 font-medium">Not enough sats to issue a token</p>
               <p className="text-[11px] text-red-400/70 leading-relaxed">
-                You need at least {minIssuanceCost > 0 ? `${minIssuanceCost.toLocaleString()} sats` : "more sats"} available
-                in your Ark wallet. You currently have {(balance?.available ?? 0).toLocaleString()} sats.
+                You need at least{" "}
+                {minIssuanceCost > 0 ? `${minIssuanceCost.toLocaleString()} sats` : "more sats"}{" "}
+                available in your Ark wallet. You currently have{" "}
+                {(balance?.available ?? 0).toLocaleString()} sats.
               </p>
               <Link
                 href="/wallet"
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground transition-colors mt-1"
               >
                 Go to Wallet
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="h-3 w-3"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </Link>
             </div>
@@ -714,16 +750,26 @@ export default function CreatePage() {
                 Minimum {minIssuanceCost.toLocaleString()} sats required to create a token
               </p>
               <p className="text-[11px] text-orange-400/70 leading-relaxed">
-                You have {(balance?.available ?? 0).toLocaleString()} sats available.
-                Deposit at least {(minIssuanceCost - (balance?.available ?? 0)).toLocaleString()} more sats to your Ark wallet.
+                You have {(balance?.available ?? 0).toLocaleString()} sats available. Deposit at
+                least {(minIssuanceCost - (balance?.available ?? 0)).toLocaleString()} more sats to
+                your Ark wallet.
               </p>
               <Link
                 href="/wallet"
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-orange-400 hover:text-orange-300 transition-colors mt-1"
               >
                 Deposit sats
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="h-3 w-3"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </Link>
             </div>
@@ -742,7 +788,12 @@ export default function CreatePage() {
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="h-4 w-4"
+                >
                   <path d="M7.628 1.099a.75.75 0 0 1 .744 0l5.25 3a.75.75 0 0 1 0 1.302l-5.25 3a.75.75 0 0 1-.744 0l-5.25-3a.75.75 0 0 1 0-1.302l5.25-3ZM2.57 7.24l4.308 2.462a.75.75 0 0 0 .744 0L11.93 7.24a.75.75 0 0 1 .744 1.302l-4.308 2.462a2.25 2.25 0 0 1-2.232 0L1.826 8.542A.75.75 0 0 1 2.57 7.24Z" />
                   <path d="M2.57 10.24l4.308 2.462a.75.75 0 0 0 .744 0l4.308-2.462a.75.75 0 0 1 .744 1.302l-4.308 2.462a2.25 2.25 0 0 1-2.232 0l-4.308-2.462a.75.75 0 0 1 .744-1.302Z" />
                 </svg>

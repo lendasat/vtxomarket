@@ -1,4 +1,8 @@
-import { generateMnemonic as bip39Generate, mnemonicToSeedSync, validateMnemonic as bip39Validate } from "@scure/bip39";
+import {
+  generateMnemonic as bip39Generate,
+  mnemonicToSeedSync,
+  validateMnemonic as bip39Validate,
+} from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { HDKey } from "@scure/bip32";
 import { hex, bech32, base64 } from "@scure/base";
@@ -63,14 +67,14 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
     new TextEncoder().encode(password),
     "PBKDF2",
     false,
-    ["deriveKey"],
+    ["deriveKey"]
   );
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt", "decrypt"],
+    ["encrypt", "decrypt"]
   );
 }
 
@@ -86,7 +90,7 @@ export async function encryptWithPassword(plaintext: string, password: string): 
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     key,
-    new TextEncoder().encode(plaintext),
+    new TextEncoder().encode(plaintext)
   );
 
   const saltB64 = base64.encode(salt);
@@ -117,7 +121,7 @@ export async function decryptWithPassword(encrypted: string, password: string): 
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: iv as BufferSource },
     key,
-    ciphertext as BufferSource,
+    ciphertext as BufferSource
   );
 
   return new TextDecoder().decode(plaintext);

@@ -8,7 +8,7 @@ const POLL_INTERVAL = 30_000;
 export interface GlobalTrade {
   offerOutpoint: string;
   assetId: string;
-  offerType: string;          // "sell" | "buy"
+  offerType: string; // "sell" | "buy"
   tokenAmount: number;
   satAmount: number;
   price: number;

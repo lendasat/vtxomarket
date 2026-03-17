@@ -4,18 +4,18 @@ import type { BalanceInfo } from "./ark-wallet";
 import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
 
 export interface Token {
-  id: string;                    // Nostr event id
-  assetId: string;               // Ark asset id
+  id: string; // Nostr event id
+  assetId: string; // Ark asset id
   name: string;
   ticker: string;
   description: string;
   image?: string;
-  creator: string;               // pubkey hex
-  creatorArkAddress: string;     // for trading
+  creator: string; // pubkey hex
+  creatorArkAddress: string; // for trading
   createdAt: number;
   supply: number;
-  decimals?: number;               // 0–18, default 0 (whole units)
-  controlAssetId?: string;        // present when token is reissuable
+  decimals?: number; // 0–18, default 0 (whole units)
+  controlAssetId?: string; // present when token is reissuable
   // Social
   replies: number;
   tradeCount: number;
@@ -44,7 +44,6 @@ interface AppState {
   arkWallet: any;
   balance: BalanceInfo | null;
   addresses: { offchainAddr: string; boardingAddr: string } | null;
-
 
   // Tokens
   tokens: Token[];
@@ -105,9 +104,7 @@ export const useAppStore = create<AppState>((set) => ({
   addToken: (token) => set((state) => ({ tokens: [token, ...state.tokens] })),
   upsertToken: (token) =>
     set((state) => {
-      const idx = state.tokens.findIndex(
-        (t) => t.ticker === token.ticker || t.id === token.id
-      );
+      const idx = state.tokens.findIndex((t) => t.ticker === token.ticker || t.id === token.id);
       if (idx >= 0) {
         const updated = [...state.tokens];
         updated[idx] = token;

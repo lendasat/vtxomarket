@@ -41,20 +41,30 @@ function getReceiveSteps(chain: EvmChainKey): StepConfig[] {
 function stepToIndex(step: SwapStep, direction: "send" | "receive"): number {
   if (direction === "send") {
     switch (step) {
-      case "funding": return 0;
-      case "processing": return 1;
-      case "claiming": return 2;
-      case "success": return 3;
-      default: return -1;
+      case "funding":
+        return 0;
+      case "processing":
+        return 1;
+      case "claiming":
+        return 2;
+      case "success":
+        return 3;
+      default:
+        return -1;
     }
   }
   // receive
   switch (step) {
-    case "awaiting_deposit": return 0;
-    case "processing": return 1;
-    case "claiming": return 2;
-    case "success": return 3;
-    default: return -1;
+    case "awaiting_deposit":
+      return 0;
+    case "processing":
+      return 1;
+    case "claiming":
+      return 2;
+    case "success":
+      return 3;
+    default:
+      return -1;
   }
 }
 
@@ -66,9 +76,7 @@ interface SwapStatusTrackerProps {
 }
 
 export function SwapStatusTracker({ step, swap }: SwapStatusTrackerProps) {
-  const steps = swap.direction === "send"
-    ? getSendSteps(swap.chain)
-    : getReceiveSteps(swap.chain);
+  const steps = swap.direction === "send" ? getSendSteps(swap.chain) : getReceiveSteps(swap.chain);
   const currentIdx = stepToIndex(step, swap.direction);
   const isError = step === "error";
 
@@ -124,8 +132,17 @@ export function SwapStatusTracker({ step, swap }: SwapStatusTrackerProps) {
                   }`}
                 >
                   {isDone ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                      <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      className="h-3 w-3"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   ) : isCurrent && !isError ? (
                     <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
@@ -156,9 +173,7 @@ export function SwapStatusTracker({ step, swap }: SwapStatusTrackerProps) {
                   {s.label}
                 </p>
                 {(isCurrent || isDone) && (
-                  <p className="text-[11px] text-muted-foreground/40 mt-0.5">
-                    {s.description}
-                  </p>
+                  <p className="text-[11px] text-muted-foreground/40 mt-0.5">{s.description}</p>
                 )}
               </div>
             </div>
@@ -170,11 +185,15 @@ export function SwapStatusTracker({ step, swap }: SwapStatusTrackerProps) {
       {swap.backendStatus && (
         <div className="flex items-center justify-center">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
-            <div className={`h-1.5 w-1.5 rounded-full ${
-              step === "success" ? "bg-emerald-400" :
-              step === "error" ? "bg-red-400" :
-              "bg-blue-400 animate-pulse"
-            }`} />
+            <div
+              className={`h-1.5 w-1.5 rounded-full ${
+                step === "success"
+                  ? "bg-emerald-400"
+                  : step === "error"
+                    ? "bg-red-400"
+                    : "bg-blue-400 animate-pulse"
+              }`}
+            />
             <span className="text-[10px] text-muted-foreground/40 font-mono uppercase tracking-wider">
               {swap.backendStatus}
             </span>

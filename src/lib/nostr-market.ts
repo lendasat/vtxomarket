@@ -22,18 +22,12 @@ function labelTags(type: string): string[][] {
 
 // ── Comments (kind 1) ───────────────────────────────────────────────
 
-export async function publishComment(
-  ticker: string,
-  text: string
-): Promise<NDKEvent> {
+export async function publishComment(ticker: string, text: string): Promise<NDKEvent> {
   const ndk = ensureNostrReady();
   const event = new NDKEvent(ndk);
   event.kind = 1;
   event.content = text;
-  event.tags = [
-    ["t", `vtxomarket-${ticker.toLowerCase()}`],
-    ...labelTags("comment"),
-  ];
+  event.tags = [["t", `vtxomarket-${ticker.toLowerCase()}`], ...labelTags("comment")];
   await event.publish();
   return event;
 }

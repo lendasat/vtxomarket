@@ -45,22 +45,22 @@ const bytesToHex = scureHex.encode;
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface SwapScriptParams {
-  makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
-  makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
+  makerPkScript: Uint8Array; // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
+  makerXOnlyPubkey: Uint8Array; // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   satAmount: number | bigint;
-  cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
+  cancelSeconds: number; // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
-  aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
+  aspPubkey: Uint8Array; // 32-byte x-only ASP signer pubkey
 }
 
 export interface BuySwapScriptParams {
-  buyerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey — buyer (maker) receives tokens here
-  buyerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
-  assetTxidBytes: Uint8Array;    // 32-byte asset ID (txid bytes for OP_INSPECTOUTASSETLOOKUP)
-  tokenAmount: number | bigint;  // required token amount
-  cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
+  buyerPkScript: Uint8Array; // 34-byte P2TR scriptPubKey — buyer (maker) receives tokens here
+  buyerXOnlyPubkey: Uint8Array; // 32-byte x-only pubkey for cancel leaf + cancel forfeit
+  assetTxidBytes: Uint8Array; // 32-byte asset ID (txid bytes for OP_INSPECTOUTASSETLOOKUP)
+  tokenAmount: number | bigint; // required token amount
+  cancelSeconds: number; // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
-  aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
+  aspPubkey: Uint8Array; // 32-byte x-only ASP signer pubkey
 }
 
 export type TapLeafScript = [
@@ -74,7 +74,7 @@ export interface SwapScriptResult {
   leaves: [TapLeafScript, TapLeafScript, TapLeafScript]; // [swap, cancel, cancelForfeit]
   tweakedPublicKey: Uint8Array;
   scripts: [Uint8Array, Uint8Array, Uint8Array];
-  arkadeScript: Uint8Array;     // standalone introspection conditions (PSBT custom field)
+  arkadeScript: Uint8Array; // standalone introspection conditions (PSBT custom field)
   arkadeScriptHash: Uint8Array; // TaggedHash("ArkScriptHash", arkadeScript)
   introspectorTweakedPubkey: Uint8Array; // base + scriptHash * G
   encode(): Uint8Array;
@@ -156,7 +156,10 @@ export async function computeIntrospectorTweakedPubkey(
  *   - scriptType: 1 for P2TR (segwit v1)
  *   - scriptBody: 32-byte witness program (without 0x5120 prefix)
  */
-export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number | bigint): Uint8Array {
+export function buildArkadeScript(
+  makerPkScript: Uint8Array,
+  satAmount: number | bigint
+): Uint8Array {
   const satAmountLE64 = encodeLE64(satAmount);
 
   // Extract the 32-byte witness program from the P2TR pkScript (OP_1 <32-byte-key>).
@@ -164,25 +167,29 @@ export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number |
   // NOT the raw x-only pubkey. The introspector's OP_INSPECTOUTPUTSCRIPTPUBKEY
   // pushes the witness program, so we must match it.
   if (makerPkScript.length !== 34 || makerPkScript[0] !== 0x51) {
-    throw new Error(`Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${makerPkScript.length} bytes`);
+    throw new Error(
+      `Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${makerPkScript.length} bytes`
+    );
   }
   const makerWitnessProgram = makerPkScript.slice(2); // skip OP_1 (0x51) + push length (0x20)
 
   return new Uint8Array([
     // Check: output[0].value >= satAmount
-    0x00,                            // OP_0 — output index 0
-    OP_INSPECTOUTPUTVALUE,           // push output[0].value as 8-byte LE64
-    0x08, ...satAmountLE64,          // push required sat amount (8 bytes)
-    OP_GREATERTHANOREQUAL64,         // compare: output value >= required
-    OP_VERIFY,                       // abort if false
+    0x00, // OP_0 — output index 0
+    OP_INSPECTOUTPUTVALUE, // push output[0].value as 8-byte LE64
+    0x08,
+    ...satAmountLE64, // push required sat amount (8 bytes)
+    OP_GREATERTHANOREQUAL64, // compare: output value >= required
+    OP_VERIFY, // abort if false
 
     // Check: output[0].scriptPubKey == maker's Ark address (P2TR tweaked key)
-    0x00,                            // OP_0 — output index 0
-    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // pushes [program(32 bytes), version(int)]
-    OP_1,                            // push 1 (P2TR script type / segwit v1)
-    OP_EQUALVERIFY,                  // check version == 1, pop both
-    0x20, ...makerWitnessProgram,    // push 32-byte expected witness program
-    OP_EQUAL,                        // check program matches — leaves true on stack
+    0x00, // OP_0 — output index 0
+    OP_INSPECTOUTPUTSCRIPTPUBKEY, // pushes [program(32 bytes), version(int)]
+    OP_1, // push 1 (P2TR script type / segwit v1)
+    OP_EQUALVERIFY, // check version == 1, pop both
+    0x20,
+    ...makerWitnessProgram, // push 32-byte expected witness program
+    OP_EQUAL, // check program matches — leaves true on stack
   ]);
 }
 
@@ -208,7 +215,9 @@ export function buildBuyArkadeScript(
 
   // Extract 32-byte witness program from P2TR pkScript
   if (buyerPkScript.length !== 34 || buyerPkScript[0] !== 0x51) {
-    throw new Error(`Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${buyerPkScript.length} bytes`);
+    throw new Error(
+      `Expected 34-byte P2TR pkScript (OP_1 + 32 bytes), got ${buyerPkScript.length} bytes`
+    );
   }
   const buyerWitnessProgram = buyerPkScript.slice(2); // skip OP_1 (0x51) + push length (0x20)
 
@@ -218,21 +227,24 @@ export function buildBuyArkadeScript(
 
   return new Uint8Array([
     // 1. Verify output[0].scriptPubKey == buyer's Ark address (P2TR)
-    0x00,                            // OP_0 — output index 0
-    OP_INSPECTOUTPUTSCRIPTPUBKEY,    // pushes [program(32 bytes), version(int)]
-    OP_1,                            // push 1 (P2TR script type / segwit v1)
-    OP_EQUALVERIFY,                  // check version == 1
-    0x20, ...buyerWitnessProgram,    // push 32-byte expected witness program
-    OP_EQUALVERIFY,                  // check program matches
+    0x00, // OP_0 — output index 0
+    OP_INSPECTOUTPUTSCRIPTPUBKEY, // pushes [program(32 bytes), version(int)]
+    OP_1, // push 1 (P2TR script type / segwit v1)
+    OP_EQUALVERIFY, // check version == 1
+    0x20,
+    ...buyerWitnessProgram, // push 32-byte expected witness program
+    OP_EQUALVERIFY, // check program matches
 
     // 2. Verify output[0] has >= tokenAmount of the specified asset
-    0x00,                            // OP_0 — output index 0
-    0x20, ...assetTxidBytes,         // push 32-byte asset ID txid
-    0x00,                            // OP_0 — group index 0
-    OP_INSPECTOUTASSETLOOKUP,        // pushes token amount (scriptNum) or -1 if not found
-    OP_SCRIPTNUMTOLE64,              // convert to 8-byte LE64
-    0x08, ...tokenAmountLE64,        // push required amount (8 bytes LE64)
-    OP_GREATERTHANOREQUAL64,         // amount >= required — leaves bool on stack
+    0x00, // OP_0 — output index 0
+    0x20,
+    ...assetTxidBytes, // push 32-byte asset ID txid
+    0x00, // OP_0 — group index 0
+    OP_INSPECTOUTASSETLOOKUP, // pushes token amount (scriptNum) or -1 if not found
+    OP_SCRIPTNUMTOLE64, // convert to 8-byte LE64
+    0x08,
+    ...tokenAmountLE64, // push required amount (8 bytes LE64)
+    OP_GREATERTHANOREQUAL64, // amount >= required — leaves bool on stack
   ]);
 }
 
@@ -261,8 +273,16 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
   const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
   const btc = await import("@scure/btc-signer");
   const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
-  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
-  const { makerPkScript, makerXOnlyPubkey, satAmount, cancelSeconds, introspectorPubkey, aspPubkey } = params;
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } =
+    await import("@scure/btc-signer/utils.js");
+  const {
+    makerPkScript,
+    makerXOnlyPubkey,
+    satAmount,
+    cancelSeconds,
+    introspectorPubkey,
+    aspPubkey,
+  } = params;
 
   // Build standalone arkade script (PSBT custom field for introspector validation)
   // Uses makerPkScript (P2TR with tweaked key) — the introspector inspects the actual output scriptPubKey
@@ -302,7 +322,11 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
     "CHECKSIG",
   ]);
 
-  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [swapLeafBytes, cancelLeafBytes, cancelForfeitLeafBytes];
+  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [
+    swapLeafBytes,
+    cancelLeafBytes,
+    cancelForfeitLeafBytes,
+  ];
   const version = TAP_LEAF_VERSION;
   const internalKey = TAPROOT_UNSPENDABLE_KEY;
 
@@ -373,8 +397,17 @@ export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<S
   const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
   const btc = await import("@scure/btc-signer");
   const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
-  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
-  const { buyerPkScript, buyerXOnlyPubkey, assetTxidBytes, tokenAmount, cancelSeconds, introspectorPubkey, aspPubkey } = params;
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } =
+    await import("@scure/btc-signer/utils.js");
+  const {
+    buyerPkScript,
+    buyerXOnlyPubkey,
+    assetTxidBytes,
+    tokenAmount,
+    cancelSeconds,
+    introspectorPubkey,
+    aspPubkey,
+  } = params;
 
   // Build standalone buy arkade script
   const arkadeScript = buildBuyArkadeScript(buyerPkScript, assetTxidBytes, tokenAmount);
@@ -413,7 +446,11 @@ export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<S
   ]);
 
   // Manual 3-leaf taproot tree (same structure as sell offers)
-  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [swapLeafBytes, cancelLeafBytes, cancelForfeitLeafBytes];
+  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [
+    swapLeafBytes,
+    cancelLeafBytes,
+    cancelForfeitLeafBytes,
+  ];
   const version = TAP_LEAF_VERSION;
   const internalKey = TAPROOT_UNSPENDABLE_KEY;
 
@@ -471,17 +508,22 @@ export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<S
 export async function decodeSwapScript(
   tapTreeBytes: Uint8Array,
   arkadeScriptBytes: Uint8Array,
-  introspectorPubkey: Uint8Array,
+  introspectorPubkey: Uint8Array
 ): Promise<SwapScriptResult> {
   const sdk = await getSDK();
   const { ArkAddress: ArkAddr, TapTreeCoder } = sdk;
   const { tapLeafHash, TAP_LEAF_VERSION } = await import("@scure/btc-signer/payment.js");
-  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } = await import("@scure/btc-signer/utils.js");
+  const { taprootTweakPubkey, TAPROOT_UNSPENDABLE_KEY, concatBytes, tagSchnorr, compareBytes } =
+    await import("@scure/btc-signer/utils.js");
 
   const leaves = TapTreeCoder.decode(tapTreeBytes);
   if (leaves.length !== 3) throw new Error(`Expected 3 leaves, got ${leaves.length}`);
 
-  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [leaves[0].script, leaves[1].script, leaves[2].script];
+  const scripts: [Uint8Array, Uint8Array, Uint8Array] = [
+    leaves[0].script,
+    leaves[1].script,
+    leaves[2].script,
+  ];
   const version = TAP_LEAF_VERSION;
   const internalKey = TAPROOT_UNSPENDABLE_KEY;
 

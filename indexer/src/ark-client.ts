@@ -37,7 +37,7 @@ export async function fetchVtxosByOutpoints(outpoints: string[]): Promise<Indexe
       return [];
     }
 
-    const json = await res.json() as { vtxos?: IndexerVtxo[] };
+    const json = (await res.json()) as { vtxos?: IndexerVtxo[] };
     return json.vtxos ?? [];
   } catch (err) {
     log.error("fetchVtxosByOutpoints: fetch failed", { error: String(err) });
@@ -65,7 +65,7 @@ export async function fetchAssetMetadata(assetId: string): Promise<AssetMetadata
 
     if (!res.ok) return null;
 
-    const json = await res.json() as {
+    const json = (await res.json()) as {
       assetId?: string;
       supply?: string;
       controlAsset?: string;

@@ -63,8 +63,8 @@ function elapsed(secs: number) {
 
 const LEVEL_STYLE: Record<string, string> = {
   debug: "text-zinc-500",
-  info:  "text-blue-400",
-  warn:  "text-yellow-400",
+  info: "text-blue-400",
+  warn: "text-yellow-400",
   warning: "text-yellow-400",
   error: "text-red-400",
 };
@@ -139,9 +139,13 @@ export default function DevPage() {
   // ── Auto-scroll logs ─────────────────────────────────────────────────────────
 
   const activeLogs = logSource === "indexer" ? indexerLogs : introspectorLogs;
-  const filteredLogs = logFilter === "all"
-    ? activeLogs
-    : activeLogs.filter((l) => l.level === logFilter || (logFilter === "warn" && l.level === ("warning" as string)));
+  const filteredLogs =
+    logFilter === "all"
+      ? activeLogs
+      : activeLogs.filter(
+          (l) =>
+            l.level === logFilter || (logFilter === "warn" && l.level === ("warning" as string))
+        );
 
   useEffect(() => {
     if (autoScroll) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -150,12 +154,18 @@ export default function DevPage() {
   // ── Load VTXOs when asset selected ──────────────────────────────────────────
 
   useEffect(() => {
-    if (!selectedAsset) { setVtxos([]); return; }
+    if (!selectedAsset) {
+      setVtxos([]);
+      return;
+    }
     setVtxosLoading(true);
     const url = `${INDEXER}/assets/${selectedAsset}/vtxos${spendableOnly ? "?spendable=true" : ""}`;
     fetch(url)
       .then((r) => r.json())
-      .then((d) => { setVtxos(d.vtxos ?? []); setVtxosLoading(false); })
+      .then((d) => {
+        setVtxos(d.vtxos ?? []);
+        setVtxosLoading(false);
+      })
       .catch(() => setVtxosLoading(false));
   }, [selectedAsset, spendableOnly]);
 
@@ -163,18 +173,23 @@ export default function DevPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-mono text-sm p-4 space-y-4">
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-white">Developer Dashboard</h1>
-          <p className="text-zinc-500 text-xs">indexer + introspector · polls every {POLL_MS / 1000}s</p>
+          <p className="text-zinc-500 text-xs">
+            indexer + introspector · polls every {POLL_MS / 1000}s
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded text-xs font-bold ${healthErr ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"}`}>
+          <span
+            className={`px-2 py-0.5 rounded text-xs font-bold ${healthErr ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"}`}
+          >
             IDX {healthErr ? "OFF" : "ON"}
           </span>
-          <span className={`px-2 py-0.5 rounded text-xs font-bold ${introOnline ? "bg-purple-900 text-purple-300" : "bg-red-900 text-red-300"}`}>
+          <span
+            className={`px-2 py-0.5 rounded text-xs font-bold ${introOnline ? "bg-purple-900 text-purple-300" : "bg-red-900 text-red-300"}`}
+          >
             INTRO {introOnline ? "ON" : "OFF"}
           </span>
         </div>
@@ -184,30 +199,32 @@ export default function DevPage() {
       {health && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
-            { label: "Network",   value: health.network },
-            { label: "Assets",    value: health.assetCount },
-            { label: "VTXOs",     value: health.vtxoCount },
-            { label: "Txs seen",  value: health.txCount },
-            { label: "Uptime",    value: elapsed(health.uptime) },
+            { label: "Network", value: health.network },
+            { label: "Assets", value: health.assetCount },
+            { label: "VTXOs", value: health.vtxoCount },
+            { label: "Txs seen", value: health.txCount },
+            { label: "Uptime", value: elapsed(health.uptime) },
             { label: "ARK server", value: new URL(health.arkServerUrl).hostname },
-            ...(introInfo ? [
-              { label: "Introspector", value: introInfo.version },
-              { label: "Signer key", value: shortId(introInfo.signerPubkey) },
-            ] : []),
+            ...(introInfo
+              ? [
+                  { label: "Introspector", value: introInfo.version },
+                  { label: "Signer key", value: shortId(introInfo.signerPubkey) },
+                ]
+              : []),
           ].map(({ label, value }) => (
             <div key={label} className="bg-zinc-900 border border-zinc-800 rounded p-2">
               <div className="text-zinc-500 text-xs">{label}</div>
-              <div className="text-white font-bold truncate" title={String(value)}>{String(value)}</div>
+              <div className="text-white font-bold truncate" title={String(value)}>
+                {String(value)}
+              </div>
             </div>
           ))}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
         {/* Left: Assets + VTXOs */}
         <div className="space-y-4">
-
           {/* Assets table */}
           <div className="bg-zinc-900 border border-zinc-800 rounded">
             <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
@@ -233,15 +250,23 @@ export default function DevPage() {
                     {assets.map((a) => (
                       <tr
                         key={a.assetId}
-                        onClick={() => setSelectedAsset(a.assetId === selectedAsset ? null : a.assetId)}
+                        onClick={() =>
+                          setSelectedAsset(a.assetId === selectedAsset ? null : a.assetId)
+                        }
                         className={`cursor-pointer border-b border-zinc-800/50 hover:bg-zinc-800 transition-colors ${
-                          selectedAsset === a.assetId ? "bg-zinc-800 border-l-2 border-l-blue-500" : ""
+                          selectedAsset === a.assetId
+                            ? "bg-zinc-800 border-l-2 border-l-blue-500"
+                            : ""
                         }`}
                       >
                         <td className="px-3 py-1.5 text-blue-400 font-bold">{a.ticker ?? "—"}</td>
                         <td className="px-3 py-1.5 text-white">{a.name ?? "—"}</td>
-                        <td className="px-3 py-1.5 text-zinc-300">{Number(a.supply).toLocaleString()}</td>
-                        <td className="px-3 py-1.5 text-zinc-500" title={a.assetId}>{shortId(a.assetId)}</td>
+                        <td className="px-3 py-1.5 text-zinc-300">
+                          {Number(a.supply).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-1.5 text-zinc-500" title={a.assetId}>
+                          {shortId(a.assetId)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -255,7 +280,9 @@ export default function DevPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded">
               <div className="px-3 py-2 border-b border-zinc-800 flex items-center gap-3">
                 <span className="font-bold text-white">VTXOs</span>
-                <span className="text-zinc-500 text-xs" title={selectedAsset}>{shortId(selectedAsset)}</span>
+                <span className="text-zinc-500 text-xs" title={selectedAsset}>
+                  {shortId(selectedAsset)}
+                </span>
                 <label className="ml-auto flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
                   <input
                     type="checkbox"
@@ -283,15 +310,26 @@ export default function DevPage() {
                     </thead>
                     <tbody>
                       {vtxos.map((v) => (
-                        <tr key={v.outpoint} className="border-b border-zinc-800/50 hover:bg-zinc-800">
-                          <td className="px-3 py-1.5 text-zinc-400 font-mono" title={v.outpoint}>{shortId(v.outpoint)}</td>
-                          <td className="px-3 py-1.5 text-white">{Number(v.amount).toLocaleString()}</td>
+                        <tr
+                          key={v.outpoint}
+                          className="border-b border-zinc-800/50 hover:bg-zinc-800"
+                        >
+                          <td className="px-3 py-1.5 text-zinc-400 font-mono" title={v.outpoint}>
+                            {shortId(v.outpoint)}
+                          </td>
+                          <td className="px-3 py-1.5 text-white">
+                            {Number(v.amount).toLocaleString()}
+                          </td>
                           <td className="px-3 py-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${v.isSpent ? "bg-zinc-700 text-zinc-400" : "bg-green-900 text-green-300"}`}>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-xs ${v.isSpent ? "bg-zinc-700 text-zinc-400" : "bg-green-900 text-green-300"}`}
+                            >
                               {v.isSpent ? "spent" : "live"}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 text-zinc-500" title={v.seenInTxid}>{shortId(v.seenInTxid)}</td>
+                          <td className="px-3 py-1.5 text-zinc-500" title={v.seenInTxid}>
+                            {shortId(v.seenInTxid)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -303,14 +341,19 @@ export default function DevPage() {
         </div>
 
         {/* Right: Log stream with tabs */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded flex flex-col" style={{ minHeight: "500px", maxHeight: "70vh" }}>
-
+        <div
+          className="bg-zinc-900 border border-zinc-800 rounded flex flex-col"
+          style={{ minHeight: "500px", maxHeight: "70vh" }}
+        >
           {/* Log source tabs */}
           <div className="flex border-b border-zinc-800 flex-shrink-0">
             {(["indexer", "introspector"] as const).map((src) => (
               <button
                 key={src}
-                onClick={() => { setLogSource(src); setLogFilter("all"); }}
+                onClick={() => {
+                  setLogSource(src);
+                  setLogFilter("all");
+                }}
                 className={`flex-1 px-3 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
                   logSource === src
                     ? src === "indexer"
@@ -320,11 +363,13 @@ export default function DevPage() {
                 }`}
               >
                 {src}
-                <span className={`ml-1.5 px-1 py-0.5 rounded text-[10px] ${
-                  (src === "indexer" ? !healthErr : introOnline)
-                    ? "bg-green-900/50 text-green-400"
-                    : "bg-red-900/50 text-red-400"
-                }`}>
+                <span
+                  className={`ml-1.5 px-1 py-0.5 rounded text-[10px] ${
+                    (src === "indexer" ? !healthErr : introOnline)
+                      ? "bg-green-900/50 text-green-400"
+                      : "bg-red-900/50 text-red-400"
+                  }`}
+                >
                   {(src === "indexer" ? indexerLogs : introspectorLogs).length}
                 </span>
               </button>
@@ -342,7 +387,9 @@ export default function DevPage() {
                   key={lvl}
                   onClick={() => setLogFilter(lvl)}
                   className={`px-1.5 py-0.5 rounded text-xs transition-colors ${
-                    logFilter === lvl ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"
+                    logFilter === lvl
+                      ? "bg-zinc-700 text-white"
+                      : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
                   {lvl}
@@ -352,7 +399,12 @@ export default function DevPage() {
 
             {/* Auto-scroll toggle */}
             <label className="flex items-center gap-1 text-xs text-zinc-500 cursor-pointer ml-2">
-              <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-blue-500" />
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
+                className="accent-blue-500"
+              />
               scroll
             </label>
           </div>
@@ -366,11 +418,16 @@ export default function DevPage() {
               </div>
             ) : (
               filteredLogs.map((entry, i) => (
-                <div key={i} className="flex gap-2 text-xs leading-5 hover:bg-zinc-800/50 rounded px-1">
+                <div
+                  key={i}
+                  className="flex gap-2 text-xs leading-5 hover:bg-zinc-800/50 rounded px-1"
+                >
                   <span className="text-zinc-600 flex-shrink-0 tabular-nums">
                     {(entry.ts ?? "").slice(11, 19) || "—"}
                   </span>
-                  <span className={`flex-shrink-0 w-10 font-bold uppercase ${LEVEL_STYLE[entry.level] ?? "text-zinc-500"}`}>
+                  <span
+                    className={`flex-shrink-0 w-10 font-bold uppercase ${LEVEL_STYLE[entry.level] ?? "text-zinc-500"}`}
+                  >
                     {(entry.level ?? "info").slice(0, 4)}
                   </span>
                   <span className="text-zinc-300 break-all">{entry.msg}</span>
@@ -394,11 +451,14 @@ export default function DevPage() {
             Raw JSON — {selectedAsset}
           </summary>
           <pre className="px-3 pb-3 text-xs text-zinc-400 overflow-x-auto">
-            {JSON.stringify(assets.find((a) => a.assetId === selectedAsset), null, 2)}
+            {JSON.stringify(
+              assets.find((a) => a.assetId === selectedAsset),
+              null,
+              2
+            )}
           </pre>
         </details>
       )}
-
     </div>
   );
 }
