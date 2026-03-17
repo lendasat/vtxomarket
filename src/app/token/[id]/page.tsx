@@ -75,13 +75,13 @@ export default function TokenPage() {
 
   // Trade tab state — sell offer form
   const [offerTokenAmount, setOfferTokenAmount] = useState("");
-  const [offerSatAmount, setOfferSatAmount] = useState("");
+  const [offerPricePerToken, setOfferPricePerToken] = useState("");
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState("");
   const [offerSuccess, setOfferSuccess] = useState("");
   // Buy offer form
   const [buyOfferTokenAmount, setBuyOfferTokenAmount] = useState("");
-  const [buyOfferSatAmount, setBuyOfferSatAmount] = useState("");
+  const [buyOfferPricePerToken, setBuyOfferPricePerToken] = useState("");
   const [buyOfferLoading, setBuyOfferLoading] = useState(false);
   const [buyOfferError, setBuyOfferError] = useState("");
   const [buyOfferSuccess, setBuyOfferSuccess] = useState("");
@@ -158,8 +158,11 @@ export default function TokenPage() {
   const handleCreateOffer = async () => {
     if (!arkWallet || !token) return;
     const tokenAmt = parseTokenInput(offerTokenAmount, token.decimals);
-    const satAmt = parseInt(offerSatAmount, 10);
-    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
+    const price = parseFloat(offerPricePerToken);
+    if (!tokenAmt || tokenAmt <= 0 || !price || price <= 0) return;
+    const displayTokens = token.decimals ? tokenAmt / 10 ** token.decimals : tokenAmt;
+    const satAmt = Math.round(displayTokens * price);
+    if (satAmt <= 0) return;
     if (tokenAmt > userHolding) {
       setOfferError(`Insufficient balance: you hold ${formatTokenAmount(userHolding, token.decimals)} ${token.ticker}`);
       return;
@@ -195,9 +198,9 @@ export default function TokenPage() {
       }
       if (!posted) console.warn("[offer] Could not register offer with indexer");
 
-      setOfferSuccess(`Offer created! ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
+      setOfferSuccess(`Offer created! ${offerTokenAmount} ${token.ticker} at ${offerPricePerToken} sat/token (${formatSats(satAmt)} total)`);
       setOfferTokenAmount("");
-      setOfferSatAmount("");
+      setOfferPricePerToken("");
       setShowSellDialog(false);
       refetchOffers();
     } catch (err) {
@@ -266,8 +269,11 @@ export default function TokenPage() {
   const handleCreateBuyOffer = async () => {
     if (!arkWallet || !token) return;
     const tokenAmt = parseTokenInput(buyOfferTokenAmount, token.decimals);
-    const satAmt = parseInt(buyOfferSatAmount, 10);
-    if (!tokenAmt || tokenAmt <= 0 || !satAmt || satAmt <= 0) return;
+    const price = parseFloat(buyOfferPricePerToken);
+    if (!tokenAmt || tokenAmt <= 0 || !price || price <= 0) return;
+    const displayTokens = token.decimals ? tokenAmt / 10 ** token.decimals : tokenAmt;
+    const satAmt = Math.round(displayTokens * price);
+    if (satAmt <= 0) return;
 
     setBuyOfferLoading(true);
     setBuyOfferError("");
@@ -298,9 +304,9 @@ export default function TokenPage() {
       }
       if (!posted) console.warn("[offer] Could not register offer with indexer");
 
-      setBuyOfferSuccess(`Buy offer created! Buying ${tokenAmt} ${token.ticker} for ${satAmt} sats`);
+      setBuyOfferSuccess(`Buy offer created! Buying ${buyOfferTokenAmount} ${token.ticker} at ${buyOfferPricePerToken} sat/token (${formatSats(satAmt)} total)`);
       setBuyOfferTokenAmount("");
-      setBuyOfferSatAmount("");
+      setBuyOfferPricePerToken("");
       setShowBuyDialog(false);
       refetchOffers();
     } catch (err) {
@@ -847,24 +853,29 @@ export default function TokenPage() {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Token amount</label>
-                  <input type="number" min={1} value={buyOfferTokenAmount} onChange={(e) => setBuyOfferTokenAmount(e.target.value)} placeholder="Amount" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">How many tokens</label>
+                  <input type="number" min={1} value={buyOfferTokenAmount} onChange={(e) => setBuyOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to pay</label>
-                  <input type="number" min={1} value={buyOfferSatAmount} onChange={(e) => setBuyOfferSatAmount(e.target.value)} placeholder="Sats" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                  <label className="text-[10px] text-muted-foreground/40 mb-1 block">Price per token (sats)</label>
+                  <input type="number" min={0} step="any" value={buyOfferPricePerToken} onChange={(e) => setBuyOfferPricePerToken(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                 </div>
               </div>
-              {buyOfferTokenAmount && buyOfferSatAmount && Number(buyOfferTokenAmount) > 0 && Number(buyOfferSatAmount) > 0 && (
-                <p className="text-[11px] text-muted-foreground/50 tabular-nums">
-                  Price: {formatPrice(Number(buyOfferSatAmount), Number(buyOfferTokenAmount), token.decimals)}
-                </p>
-              )}
+              {buyOfferTokenAmount && buyOfferPricePerToken && Number(buyOfferTokenAmount) > 0 && Number(buyOfferPricePerToken) > 0 && (() => {
+                const qty = token.decimals ? Number(buyOfferTokenAmount) : Number(buyOfferTokenAmount);
+                const total = Math.round(qty * Number(buyOfferPricePerToken));
+                return (
+                  <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
+                    <span className="text-[11px] text-muted-foreground/50">Total to lock</span>
+                    <span className="text-xs font-semibold tabular-nums">{formatSats(total)}</span>
+                  </div>
+                );
+              })()}
               {buyOfferError && <p className="text-xs text-red-400">{buyOfferError}</p>}
               {buyOfferSuccess && <p className="text-xs text-emerald-400">{buyOfferSuccess}</p>}
               <button
                 onClick={handleCreateBuyOffer}
-                disabled={!buyOfferTokenAmount || !buyOfferSatAmount || parseInt(buyOfferTokenAmount, 10) <= 0 || parseInt(buyOfferSatAmount, 10) <= 0 || buyOfferLoading || !walletReady}
+                disabled={!buyOfferTokenAmount || !buyOfferPricePerToken || Number(buyOfferTokenAmount) <= 0 || Number(buyOfferPricePerToken) <= 0 || buyOfferLoading || !walletReady}
                 className="w-full py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {buyOfferLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-emerald-400/50 border-t-transparent" />Creating...</span> : "Create Buy Offer"}
@@ -895,7 +906,7 @@ export default function TokenPage() {
                   <div className="space-y-2">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] text-muted-foreground/40">Token amount</label>
+                        <label className="text-[10px] text-muted-foreground/40">How many tokens</label>
                         <button
                           type="button"
                           onClick={() => setOfferTokenAmount(formatTokenAmount(userHolding, token.decimals).replace(/,/g, ""))}
@@ -907,20 +918,24 @@ export default function TokenPage() {
                       <input type="number" min={1} max={userHolding} value={offerTokenAmount} onChange={(e) => setOfferTokenAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">Sats to receive</label>
-                      <input type="number" min={1} value={offerSatAmount} onChange={(e) => setOfferSatAmount(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
+                      <label className="text-[10px] text-muted-foreground/40 mb-1 block">Price per token (sats)</label>
+                      <input type="number" min={0} step="any" value={offerPricePerToken} onChange={(e) => setOfferPricePerToken(e.target.value)} placeholder="0" className="w-full px-3 h-9 text-xs rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] transition-all" />
                     </div>
                   </div>
-                  {offerTokenAmount && offerSatAmount && Number(offerTokenAmount) > 0 && Number(offerSatAmount) > 0 && (
-                    <p className="text-[11px] text-muted-foreground/50 tabular-nums">
-                      Price: {formatPrice(Number(offerSatAmount), Number(offerTokenAmount), token.decimals)}
-                    </p>
-                  )}
+                  {offerTokenAmount && offerPricePerToken && Number(offerTokenAmount) > 0 && Number(offerPricePerToken) > 0 && (() => {
+                    const total = Math.round(Number(offerTokenAmount) * Number(offerPricePerToken));
+                    return (
+                      <div className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
+                        <span className="text-[11px] text-muted-foreground/50">Total you receive</span>
+                        <span className="text-xs font-semibold tabular-nums">{formatSats(total)}</span>
+                      </div>
+                    );
+                  })()}
                   {offerError && <p className="text-xs text-red-400">{offerError}</p>}
                   {offerSuccess && <p className="text-xs text-emerald-400">{offerSuccess}</p>}
                   <button
                     onClick={handleCreateOffer}
-                    disabled={!offerTokenAmount || !offerSatAmount || parseInt(offerTokenAmount, 10) <= 0 || parseInt(offerSatAmount, 10) <= 0 || offerLoading || !walletReady}
+                    disabled={!offerTokenAmount || !offerPricePerToken || Number(offerTokenAmount) <= 0 || Number(offerPricePerToken) <= 0 || offerLoading || !walletReady}
                     className="w-full py-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     {offerLoading ? <span className="flex items-center justify-center gap-2"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400/50 border-t-transparent" />Creating...</span> : "Create Sell Offer"}
