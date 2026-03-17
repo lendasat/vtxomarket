@@ -406,6 +406,21 @@ export default function LabPage() {
         });
       }
       addLog("success", `Cancelled! arkTxId: ${txid}`);
+      // Notify indexer with signed cancel message
+      try {
+        const { sha256 } = await import("@noble/hashes/sha256");
+        const { hex } = await import("@scure/base");
+        const message = sha256(new TextEncoder().encode(`cancel:${fcOutpoint}`));
+        const sigBytes = await arkWallet.identity.signMessage(message, "schnorr");
+        await fetch(`${INDEXER_URL}/offers/${encodeURIComponent(fcOutpoint)}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signature: hex.encode(sigBytes) }),
+        });
+        addLog("info", "Indexer notified of cancellation");
+      } catch (e) {
+        addLog("info", `Indexer notification failed (non-critical): ${e}`);
+      }
     } catch (e) {
       addLog("error", String(e));
     } finally {

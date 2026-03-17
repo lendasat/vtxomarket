@@ -13,6 +13,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { config } from "./config";
 import {
   getAllAssets,
@@ -308,7 +310,8 @@ export function buildApp(): Hono {
     return c.json({ offer });
   });
 
-  // Maker cancels their offer — requires maker's pubkey to prevent unauthorized cancellation
+  // Maker cancels their offer — requires Schnorr signature to prove key ownership.
+  // The maker must sign sha256("cancel:{outpoint}") with their x-only private key.
   app.delete("/offers/:outpoint", async (c) => {
     const outpoint = c.req.param("outpoint");
     const offer = getOffer(outpoint);
@@ -319,20 +322,32 @@ export function buildApp(): Hono {
       return c.json({ error: `offer already ${offer.status}` }, 409);
     }
 
-    // Require the maker's pubkey as proof of ownership.
-    // Accept from query param (for simple DELETE) or JSON body.
-    let makerPubkey: string | undefined;
+    // Require a Schnorr signature proving the caller owns the maker's private key.
+    let signature: string | undefined;
     try {
       const body = await c.req.json();
-      makerPubkey = body?.makerXOnlyPubkey;
+      signature = body?.signature;
     } catch {
       // No JSON body — check query param
     }
-    if (!makerPubkey) {
-      makerPubkey = c.req.query("makerXOnlyPubkey");
+    if (!signature) {
+      signature = c.req.query("signature");
     }
-    if (!makerPubkey || makerPubkey !== offer.makerXOnlyPubkey) {
-      return c.json({ error: "unauthorized: makerXOnlyPubkey does not match" }, 403);
+    if (!signature) {
+      return c.json({ error: "missing signature — sign sha256('cancel:{outpoint}') with maker key" }, 400);
+    }
+
+    // Verify the Schnorr signature against the stored maker pubkey
+    try {
+      const message = sha256(new TextEncoder().encode(`cancel:${outpoint}`));
+      const sigBytes = Uint8Array.from(Buffer.from(signature, 'hex'));
+      const pubkeyBytes = Uint8Array.from(Buffer.from(offer.makerXOnlyPubkey, 'hex'));
+      const valid = schnorr.verify(sigBytes, message, pubkeyBytes);
+      if (!valid) {
+        return c.json({ error: "unauthorized: invalid signature" }, 403);
+      }
+    } catch {
+      return c.json({ error: "unauthorized: malformed signature" }, 403);
     }
 
     markOfferCancelled(outpoint);

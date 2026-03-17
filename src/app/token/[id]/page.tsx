@@ -239,6 +239,21 @@ export default function TokenPage() {
       } else {
         await cancelSwapOffer(arkWallet, offer);
       }
+      // Notify indexer with a signed cancel message so it marks the offer cancelled immediately
+      try {
+        const { sha256 } = await import("@noble/hashes/sha256");
+        const { hex } = await import("@scure/base");
+        const message = sha256(new TextEncoder().encode(`cancel:${offer.offerOutpoint}`));
+        const sigBytes = await arkWallet.identity.signMessage(message, "schnorr");
+        await fetch(`${INDEXER_URL}/offers/${encodeURIComponent(offer.offerOutpoint)}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signature: hex.encode(sigBytes) }),
+        });
+      } catch (e) {
+        // Non-critical: indexer will eventually detect the spent VTXO
+        console.warn("[cancel] Indexer notification failed:", e);
+      }
       refetchOffers();
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : "Cancel failed");
