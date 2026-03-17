@@ -9,6 +9,8 @@
     "build": "bun build src/index.ts --target=bun --outfile=dist/indexer.js"
   },
   "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
     "hono": "^4.6.0"
   },
   "devDependencies": {
