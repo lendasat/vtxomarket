@@ -11,15 +11,33 @@ const LENDASWAP_API_URL = (
 
 const LENDASWAP_API_KEY = process.env.LENDASWAP_API_KEY || "";
 
+// Only forward these safe headers to the upstream API
+const FORWARDED_HEADERS = ["content-type", "accept", "accept-language"];
+
 async function proxyRequest(request: Request, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
+
+  // Block path traversal attempts
+  if (path.some(segment => segment === ".." || segment === "." || segment === "")) {
+    return new Response("Invalid path", { status: 400 });
+  }
+
   const targetPath = path.join("/");
+
+  // Only allow alphanumeric paths with hyphens, underscores, and dots
+  if (!/^[\w\-./]+$/.test(targetPath)) {
+    return new Response("Invalid path characters", { status: 400 });
+  }
+
   const url = new URL(request.url);
   const targetUrl = `${LENDASWAP_API_URL}/${targetPath}${url.search}`;
 
-  const headers = new Headers(request.headers);
-  // Remove host header (will be set by fetch to the target)
-  headers.delete("host");
+  // Build a clean header set — never forward cookies, auth, or other sensitive headers
+  const headers = new Headers();
+  for (const name of FORWARDED_HEADERS) {
+    const val = request.headers.get(name);
+    if (val) headers.set(name, val);
+  }
   // Inject API key server-side
   if (LENDASWAP_API_KEY) {
     headers.set("x-api-key", LENDASWAP_API_KEY);

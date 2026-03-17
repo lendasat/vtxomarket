@@ -47,7 +47,7 @@ const bytesToHex = scureHex.encode;
 export interface SwapScriptParams {
   makerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey (from ArkAddress.decode().pkScript)
   makerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
-  satAmount: number;
+  satAmount: number | bigint;
   cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
@@ -57,7 +57,7 @@ export interface BuySwapScriptParams {
   buyerPkScript: Uint8Array;     // 34-byte P2TR scriptPubKey — buyer (maker) receives tokens here
   buyerXOnlyPubkey: Uint8Array;  // 32-byte x-only pubkey for cancel leaf + cancel forfeit
   assetTxidBytes: Uint8Array;    // 32-byte asset ID (txid bytes for OP_INSPECTOUTASSETLOOKUP)
-  tokenAmount: number;           // required token amount
+  tokenAmount: number | bigint;  // required token amount
   cancelSeconds: number;          // CSV sequence value (raw, from ASP unilateralExitDelay)
   introspectorPubkey: Uint8Array; // 32-byte x-only pubkey from introspector /v1/info
   aspPubkey: Uint8Array;          // 32-byte x-only ASP signer pubkey
@@ -156,7 +156,7 @@ export async function computeIntrospectorTweakedPubkey(
  *   - scriptType: 1 for P2TR (segwit v1)
  *   - scriptBody: 32-byte witness program (without 0x5120 prefix)
  */
-export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number): Uint8Array {
+export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number | bigint): Uint8Array {
   const satAmountLE64 = encodeLE64(satAmount);
 
   // Extract the 32-byte witness program from the P2TR pkScript (OP_1 <32-byte-key>).
@@ -202,7 +202,7 @@ export function buildArkadeScript(makerPkScript: Uint8Array, satAmount: number):
 export function buildBuyArkadeScript(
   buyerPkScript: Uint8Array,
   assetTxidBytes: Uint8Array,
-  tokenAmount: number
+  tokenAmount: number | bigint
 ): Uint8Array {
   const tokenAmountLE64 = encodeLE64(tokenAmount);
 

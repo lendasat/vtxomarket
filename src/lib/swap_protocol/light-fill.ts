@@ -22,8 +22,8 @@
  */
 
 import { hex as scureHex } from "@scure/base";
-import { decodeSwapScript } from "./script";
-import { getIntrospectorInfo } from "./introspector-client";
+import { decodeSwapScript, buildArkadeScript, buildBuyArkadeScript } from "./script";
+import { getIntrospectorInfo, INTROSPECTOR_URL } from "./introspector-client";
 import type { SwapOffer, BuyOffer } from "./offers";
 
 const hexToBytes = scureHex.decode;
@@ -146,6 +146,23 @@ export async function lightFillSwapOffer(
   const { base64 } = await import("@scure/base");
   const { buildOffchainTx } = sdk;
 
+  // ── 0. Pre-fill freshness check — verify offer is still open ────────────
+  // Reduces race condition window where two takers fill the same offer.
+  const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
+  try {
+    const checkResp = await fetch(`${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`);
+    if (checkResp.ok) {
+      const { offer: liveOffer } = await checkResp.json();
+      if (liveOffer && liveOffer.status !== "open") {
+        throw new Error(`Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`);
+      }
+    }
+  } catch (e) {
+    // If the error is our own status check, rethrow. Otherwise ignore (indexer might be down).
+    if (e instanceof Error && e.message.includes("no longer open")) throw e;
+    log({ type: "pre_fill_check_skipped", reason: String(e) });
+  }
+
   // ── 1. Decode swap script and prepare inputs ────────────────────────────
 
   const introspectorInfo = await getIntrospectorInfo();
@@ -153,6 +170,23 @@ export async function lightFillSwapOffer(
   if (introspectorPubkey.length === 33) introspectorPubkey = introspectorPubkey.slice(1);
 
   const arkadeScriptBytes = hexToBytes(offer.arkadeScriptHex);
+
+  // ── 1a. Verify arkade script matches offer params ───────────────────────
+  // Reconstruct the expected arkade script from the offer's declared satAmount
+  // and makerPkScript, then compare to what the maker provided. This prevents
+  // a malicious maker from submitting a weaker arkade script that the
+  // introspector would validate under different conditions.
+  const expectedArkadeScript = buildArkadeScript(
+    hexToBytes(offer.makerPkScript),
+    offer.satAmount,
+  );
+  if (bytesToHex(expectedArkadeScript) !== bytesToHex(arkadeScriptBytes)) {
+    throw new Error(
+      "Sell offer arkade script does not match declared satAmount/makerPkScript. " +
+      "The maker may have submitted a manipulated script. Aborting fill."
+    );
+  }
+
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     arkadeScriptBytes,
@@ -336,7 +370,7 @@ export async function lightFillSwapOffer(
   //   - Co-signs ark tx input 0 AND checkpoint[0] input 0
   //   - Skips inputs without arkade script (taker's funding inputs)
 
-  const introspectorUrl = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
+  const introspectorUrl = INTROSPECTOR_URL;
   const checkpointPsbts = offchainTx.checkpoints.map(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (c: any) => base64.encode(c.toPSBT())
@@ -456,6 +490,21 @@ export async function lightFillBuyOffer(
   const { base64 } = await import("@scure/base");
   const { buildOffchainTx } = sdk;
 
+  // ── 0. Pre-fill freshness check — verify offer is still open ────────────
+  const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
+  try {
+    const checkResp = await fetch(`${indexerUrl}/offers/${encodeURIComponent(offer.offerOutpoint)}`);
+    if (checkResp.ok) {
+      const { offer: liveOffer } = await checkResp.json();
+      if (liveOffer && liveOffer.status !== "open") {
+        throw new Error(`Offer is no longer open (status: ${liveOffer.status}). Another taker may have filled it.`);
+      }
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("no longer open")) throw e;
+    log({ type: "pre_fill_check_skipped", reason: String(e) });
+  }
+
   // ── 1. Decode swap script and prepare inputs ────────────────────────────
 
   const introspectorInfo = await getIntrospectorInfo();
@@ -463,6 +512,24 @@ export async function lightFillBuyOffer(
   if (introspectorPubkey.length === 33) introspectorPubkey = introspectorPubkey.slice(1);
 
   const arkadeScriptBytes = hexToBytes(offer.arkadeScriptHex);
+
+  // ── 1a. Verify buy arkade script matches offer params ───────────────────
+  // Reconstruct the expected arkade script from the declared makerPkScript,
+  // assetId, and tokenAmount. Abort if the maker submitted a manipulated script.
+  const assetIdObj = sdk.asset.AssetId.fromString(offer.assetId);
+  const assetTxidBytes: Uint8Array = typeof assetIdObj.txid === "string" ? hexToBytes(assetIdObj.txid) : assetIdObj.txid;
+  const expectedBuyArkadeScript = buildBuyArkadeScript(
+    hexToBytes(offer.makerPkScript),
+    assetTxidBytes,
+    offer.tokenAmount,
+  );
+  if (bytesToHex(expectedBuyArkadeScript) !== bytesToHex(arkadeScriptBytes)) {
+    throw new Error(
+      "Buy offer arkade script does not match declared tokenAmount/makerPkScript/assetId. " +
+      "The maker may have submitted a manipulated script. Aborting fill."
+    );
+  }
+
   const vtxoScript = await decodeSwapScript(
     hexToBytes(offer.swapScriptHex),
     arkadeScriptBytes,
@@ -654,7 +721,7 @@ export async function lightFillBuyOffer(
 
   // ── 8. Send to introspector ────────────────────────────────────────────
 
-  const introspectorUrl = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073";
+  const introspectorUrl = INTROSPECTOR_URL;
   const checkpointPsbts = offchainTx.checkpoints.map(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (c: any) => base64.encode(c.toPSBT())

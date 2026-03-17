@@ -11,10 +11,38 @@
  */
 
 import { Hono } from "hono";
+import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+
+// ── Simple sliding-window rate limiter ────────────────────────────────────────
+const rateLimitMap = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || "60", 10); // requests per window
+
+function rateLimiter() {
+  return async (c: Context, next: Next) => {
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const now = Date.now();
+    const timestamps = rateLimitMap.get(ip) || [];
+    // Evict old entries
+    const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= RATE_LIMIT_MAX) {
+      return c.json({ error: "rate limit exceeded" }, 429);
+    }
+    recent.push(now);
+    rateLimitMap.set(ip, recent);
+    // Periodic cleanup of stale IPs (every 1000 requests)
+    if (rateLimitMap.size > 10000) {
+      for (const [key, ts] of rateLimitMap) {
+        if (ts.every(t => now - t >= RATE_LIMIT_WINDOW_MS)) rateLimitMap.delete(key);
+      }
+    }
+    await next();
+  };
+}
 import { config } from "./config";
 import {
   getAllAssets,
@@ -47,7 +75,13 @@ export function buildApp(): Hono {
   const app = new Hono();
 
   // ── Middleware ─────────────────────────────────────────────────────────────
-  app.use("*", cors());
+  const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000").split(",").map(s => s.trim());
+  app.use("*", cors({
+    origin: (origin) => allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type"],
+  }));
+  app.use("*", rateLimiter());
   if (config.logLevel === "debug") {
     app.use("*", logger());
   }

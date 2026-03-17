@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { safeUrl } from "@/lib/safe-url";
 import { QRCodeSVG } from "qrcode.react";
 import { useAppStore } from "@/lib/store";
 import { useTokens } from "@/hooks/useTokens";
@@ -454,7 +455,7 @@ export default function WalletPage() {
                     {/* Token icon */}
                     <div className="h-9 w-9 shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/50 tracking-wider">
                       {token.image ? (
-                        <img src={token.image} alt={token.name} className="h-full w-full rounded-xl object-cover" />
+                        <img src={safeUrl(token.image) ?? ""} alt={token.name} className="h-full w-full rounded-xl object-cover" />
                       ) : (
                         token.ticker.slice(0, 2)
                       )}

@@ -100,8 +100,8 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   const offerOutpoint = `${arkTxId}:0`;
   const vtxoSatsValue = Number(wallet.dustAmount ?? 330);
 
-  // Offers stay open until manually cancelled; use far-future expiry (year 2100)
-  const expiresAt = 4102444800;
+  // Offers expire after 7 days (within indexer's 30-day max)
+  const expiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 
   return {
     offerOutpoint,
@@ -344,8 +344,8 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
 
   const offerOutpoint = `${arkTxId}:0`;
 
-  // Offers stay open until manually cancelled; use far-future expiry (year 2100)
-  const expiresAt = 4102444800;
+  // Offers expire after 7 days (within indexer's 30-day max)
+  const expiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 
   return {
     offerOutpoint,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { safeUrl } from "@/lib/safe-url";
 import Link from "next/link";
 import { TokenCard } from "@/components/token-card";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -116,7 +117,7 @@ export default function Home() {
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold bg-white/[0.06] border border-white/[0.08] text-muted-foreground/50">
                           {t.image ? (
-                            <img src={t.image} alt={t.name} className="h-full w-full rounded-xl object-cover" />
+                            <img src={safeUrl(t.image) ?? ""} alt={t.name} className="h-full w-full rounded-xl object-cover" />
                           ) : (
                             t.ticker.slice(0, 2)
                           )}
@@ -209,7 +210,7 @@ export default function Home() {
                 >
                   <div className="h-9 w-9 shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/50">
                     {t.image ? (
-                      <img src={t.image} alt={t.name} className="h-full w-full rounded-lg object-cover" />
+                      <img src={safeUrl(t.image) ?? ""} alt={t.name} className="h-full w-full rounded-lg object-cover" />
                     ) : (
                       t.ticker.slice(0, 2)
                     )}

@@ -15,17 +15,9 @@ import { useOffers } from "@/hooks/useOffers";
 import { formatTokenAmount, parseTokenInput, formatSats, formatPrice } from "@/lib/format";
 import type { Token } from "@/lib/store";
 
-const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
+import { safeUrl } from "@/lib/safe-url";
 
-/** Only allow http/https URLs to prevent javascript: XSS */
-function safeHref(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return url;
-  } catch { /* invalid URL */ }
-  return undefined;
-}
+const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 
 type InfoTab = "buy-offers" | "sell-offers" | "thread" | "trades" | "manage";
 
@@ -400,7 +392,7 @@ export default function TokenPage() {
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <div className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-xl bg-white/[0.06] border border-white/[0.06] flex items-center justify-center text-[10px] font-bold text-muted-foreground/60 tracking-wider">
             {token.image ? (
-              <img src={token.image} alt={token.name} className="h-full w-full rounded-xl object-cover" />
+              <img src={safeUrl(token.image) ?? ""} alt={token.name} className="h-full w-full rounded-xl object-cover" />
             ) : (
               token.ticker.slice(0, 2)
             )}
@@ -851,18 +843,18 @@ export default function TokenPage() {
               <>
                 <div className="h-px bg-white/[0.06]" />
                 <div className="flex flex-wrap gap-2">
-                  {safeHref(token.website) && (
-                    <a href={safeHref(token.website)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.website) && (
+                    <a href={safeUrl(token.website)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       Website
                     </a>
                   )}
-                  {safeHref(token.twitter) && (
-                    <a href={safeHref(token.twitter)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.twitter) && (
+                    <a href={safeUrl(token.twitter)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       X/Twitter
                     </a>
                   )}
-                  {safeHref(token.telegram) && (
-                    <a href={safeHref(token.telegram)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
+                  {safeUrl(token.telegram) && (
+                    <a href={safeUrl(token.telegram)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground/50 hover:text-foreground/70 transition-colors underline">
                       Telegram
                     </a>
                   )}
