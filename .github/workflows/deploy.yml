@@ -42,8 +42,8 @@ jobs:
           NEXT_PUBLIC_ARK_SERVER_URL: ${{ vars.NEXT_PUBLIC_ARK_SERVER_URL || 'https://mutinynet.arkade.sh' }}
           NEXT_PUBLIC_ESPLORA_URL: ${{ vars.NEXT_PUBLIC_ESPLORA_URL || 'https://mutinynet.com/api' }}
           NEXT_PUBLIC_BOLTZ_URL: ${{ vars.NEXT_PUBLIC_BOLTZ_URL || 'https://api.boltz.mutinynet.arkade.sh' }}
-          NEXT_PUBLIC_INDEXER_URL: ${{ vars.NEXT_PUBLIC_INDEXER_URL || 'https://indexer.vtxo.market' }}
-          NEXT_PUBLIC_INTROSPECTOR_URL: ${{ vars.NEXT_PUBLIC_INTROSPECTOR_URL || 'https://introspector.vtxo.market' }}
+          NEXT_PUBLIC_INDEXER_URL: ${{ vars.NEXT_PUBLIC_INDEXER_URL || 'https://vtxofun-indexer.lendasat.com' }}
+          NEXT_PUBLIC_INTROSPECTOR_URL: ${{ vars.NEXT_PUBLIC_INTROSPECTOR_URL || 'https://vtxofun-introspector.lendasat.com' }}
           NEXT_PUBLIC_LENDASWAP_API_URL: ${{ vars.NEXT_PUBLIC_LENDASWAP_API_URL || 'https://api.lendaswap.com/' }}
           NEXT_PUBLIC_LENDASWAP_API_KEY: ${{ secrets.NEXT_PUBLIC_LENDASWAP_API_KEY }}
 
@@ -52,7 +52,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy .next/ --project-name=vtxomarket
+          command: pages deploy out/ --project-name=vtxomarket
 
   # ─── Indexer → Docker image (GHCR) ───────────────────────────────
   # Pull and run with:
