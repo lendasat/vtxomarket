@@ -355,8 +355,46 @@ export function StablecoinReceive() {
 
         {!isProcessing ? (
           <>
+            {/* Send from connected wallet */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">
+                  Send from wallet
+                </span>
+                <EvmConnectButton />
+              </div>
+              {evmConnected && walletClient && !evmTxHash && (
+                <button
+                  onClick={handleEvmSend}
+                  disabled={evmSending}
+                  className="w-full h-10 rounded-xl bg-blue-500/[0.15] border border-blue-500/[0.2] text-sm font-semibold text-blue-400 transition-all hover:bg-blue-500/[0.25] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {evmSending ? (
+                    <>
+                      <div className="h-3.5 w-3.5 border-2 border-blue-400/30 border-t-blue-400/80 rounded-full animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    `Send ${depositDisplay} from wallet`
+                  )}
+                </button>
+              )}
+              {evmSendError && (
+                <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-2">
+                  <p className="text-[11px] text-red-400/80">{evmSendError}</p>
+                </div>
+              )}
+              {evmTxHash && (
+                <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-2">
+                  <p className="text-[11px] text-emerald-400/80">
+                    Sent! Tx: {evmTxHash.slice(0, 10)}...{evmTxHash.slice(-8)}
+                  </p>
+                </div>
+              )}
+            </div>
+
             <p className="text-[10px] text-muted-foreground/40 uppercase tracking-[0.15em]">
-              Send {depositDisplay} on {chainLabel} to
+              Or send {depositDisplay} on {chainLabel} to
             </p>
 
             {/* QR code */}
@@ -423,44 +461,6 @@ export function StablecoinReceive() {
                 <p className="text-[11px] text-red-400/80">{fundError}</p>
               </div>
             )}
-
-            {/* Send from connected wallet (alternative to manual deposit) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">
-                  Or send from wallet
-                </span>
-                <EvmConnectButton />
-              </div>
-              {evmConnected && walletClient && !evmTxHash && (
-                <button
-                  onClick={handleEvmSend}
-                  disabled={evmSending}
-                  className="w-full h-10 rounded-xl bg-blue-500/[0.15] border border-blue-500/[0.2] text-sm font-semibold text-blue-400 transition-all hover:bg-blue-500/[0.25] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {evmSending ? (
-                    <>
-                      <div className="h-3.5 w-3.5 border-2 border-blue-400/30 border-t-blue-400/80 rounded-full animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    `Send ${depositDisplay} from wallet`
-                  )}
-                </button>
-              )}
-              {evmSendError && (
-                <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-2">
-                  <p className="text-[11px] text-red-400/80">{evmSendError}</p>
-                </div>
-              )}
-              {evmTxHash && (
-                <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-2">
-                  <p className="text-[11px] text-emerald-400/80">
-                    Sent! Tx: {evmTxHash.slice(0, 10)}...{evmTxHash.slice(-8)}
-                  </p>
-                </div>
-              )}
-            </div>
           </>
         ) : (
           /* Swap in progress — minimal indicator */
