@@ -47,12 +47,14 @@ jobs:
           NEXT_PUBLIC_LENDASWAP_API_URL: ${{ vars.NEXT_PUBLIC_LENDASWAP_API_URL || 'https://api.lendaswap.com/' }}
           NEXT_PUBLIC_LENDASWAP_API_KEY: ${{ secrets.NEXT_PUBLIC_LENDASWAP_API_KEY }}
 
+      - name: Verify build output
+        run: ls -la out/ | head -20
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy out/ --project-name=vtxomarket
+        run: npx wrangler pages deploy out/ --project-name=vtxomarket
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   # ─── Indexer → Docker image (GHCR) ───────────────────────────────
   # Pull and run with:
