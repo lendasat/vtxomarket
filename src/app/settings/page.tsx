@@ -127,8 +127,17 @@ export default function SettingsPage() {
   };
 
   const handleLogout = async () => {
+    // Clear ServiceWorkerWallet IndexedDB state
+    const arkWallet = useAppStore.getState().arkWallet;
+    if (arkWallet) {
+      const { clearArkWallet } = await import("@/lib/ark-wallet");
+      await clearArkWallet(arkWallet);
+    }
     await deleteAllWalletData();
     sessionStorage.clear();
+    // Clear cached wallet display data
+    const { clearWalletCache } = await import("@/lib/wallet-cache");
+    clearWalletCache();
     window.location.reload();
   };
 

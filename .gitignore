@@ -20,6 +20,9 @@
 # production
 /build
 
+# service worker build artifact (rebuilt by npm run build:worker)
+public/wallet-service-worker.mjs
+
 # misc
 .DS_Store
 *.pem

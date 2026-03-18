@@ -74,8 +74,11 @@ import { hex as scureHex } from "@scure/base";
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
 
-const WALLET_CONNECT_TIMEOUT = 30_000;
-const WALLET_MAX_RETRIES = 2;
+// -- ServiceWorkerWallet setup (aligned with lendasat/wallet) --
+
+const SERVICE_WORKER_PATH = "/wallet-service-worker.mjs";
+const SW_SETUP_TIMEOUT_MS = 5_000;
+const MAX_RETRIES = 5;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -93,40 +96,83 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-export async function initArkWallet(privateKeyHex: string): Promise<ArkWallet> {
-  const { SingleKey, Wallet, RestArkProvider } = await getSDK();
+export async function initArkWallet(privateKeyHex: string, retryCount = 0): Promise<ArkWallet> {
+  const { SingleKey, ServiceWorkerWallet, IndexedDBWalletRepository, IndexedDBContractRepository } =
+    await getSDK();
   console.log("[ark] SDK loaded, connecting to:", ARK_SERVER_URL);
+
   const identity = SingleKey.fromHex(privateKeyHex);
+  const walletRepository = new IndexedDBWalletRepository();
+  const contractRepository = new IndexedDBContractRepository();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const arkProvider: any = new RestArkProvider(ARK_SERVER_URL);
+  try {
+    console.log(`[ark] ServiceWorkerWallet.setup attempt ${retryCount + 1}/${MAX_RETRIES + 1}...`);
+    const wallet = await ServiceWorkerWallet.setup({
+      serviceWorkerPath: SERVICE_WORKER_PATH,
+      identity,
+      arkServerUrl: ARK_SERVER_URL,
+      esploraUrl: ESPLORA_URL,
+      storage: { walletRepository, contractRepository },
+      serviceWorkerActivationTimeoutMs: SW_SETUP_TIMEOUT_MS,
+      messageBusTimeoutMs: SW_SETUP_TIMEOUT_MS,
+    });
 
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= WALLET_MAX_RETRIES; attempt++) {
-    try {
-      console.log(`[ark] Wallet.create attempt ${attempt}/${WALLET_MAX_RETRIES}...`);
-      const wallet = await withTimeout(
-        Wallet.create({
-          identity,
-          arkProvider,
-          arkServerUrl: ARK_SERVER_URL,
-          esploraUrl: ESPLORA_URL,
-        }),
-        WALLET_CONNECT_TIMEOUT,
-        "Wallet.create"
+    console.log("[ark] ServiceWorkerWallet ready");
+    return wallet;
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    const isTimeout =
+      err.message.includes("timed out") ||
+      err.message.includes("Service worker activation timed out") ||
+      err.message.includes("MessageBus timed out");
+
+    if (isTimeout && retryCount < MAX_RETRIES) {
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+      const delay = Math.pow(2, retryCount) * 1000;
+      console.warn(
+        `[ark] Setup timed out, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})...`
       );
-      console.log("[ark] Wallet created successfully");
-      return wallet;
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      console.warn(`[ark] Attempt ${attempt} failed:`, lastError.message);
-      if (attempt < WALLET_MAX_RETRIES) {
-        console.log("[ark] Retrying in 2s...");
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+      await new Promise((r) => setTimeout(r, delay));
+      return initArkWallet(privateKeyHex, retryCount + 1);
     }
+
+    throw err;
   }
-  throw lastError ?? new Error("Ark wallet connection failed");
+}
+
+/**
+ * Force the service worker to re-sync wallet state from the network.
+ * Call before reading balance/VTXOs when the user explicitly refreshes.
+ */
+export async function reloadWalletState(wallet: ArkWallet): Promise<void> {
+  if (typeof wallet.reload === "function") {
+    await wallet.reload();
+  }
+}
+
+/**
+ * Check if the service worker wallet is still initialized.
+ * Browsers can kill idle service workers — this detects that.
+ */
+export async function getWalletStatus(wallet: ArkWallet): Promise<boolean> {
+  if (typeof wallet.getStatus !== "function") return true;
+  const { walletInitialized } = await wallet.getStatus();
+  return walletInitialized;
+}
+
+/**
+ * Clear the ServiceWorkerWallet state (for logout).
+ * Wipes both in-memory SW state and IndexedDB repositories.
+ */
+export async function clearArkWallet(wallet: ArkWallet): Promise<void> {
+  try {
+    await wallet.clear();
+    if (wallet.walletRepository?.clear) await wallet.walletRepository.clear();
+    if (wallet.contractRepository?.clear) await wallet.contractRepository.clear();
+    console.log("[ark] Wallet state cleared");
+  } catch (e) {
+    console.warn("[ark] Wallet clear failed:", e);
+  }
 }
 
 export interface BalanceInfo {
@@ -183,7 +229,7 @@ async function collaborativeExit(
 ): Promise<string> {
   const { Ramps } = await getSDK();
   const ramps = new Ramps(wallet);
-  const info = await wallet.arkProvider.getInfo();
+  const info = await getAspInfo();
 
   console.log("[ark] Collaborative exit: %d sats to %s", amountSats, address.slice(0, 12));
 
@@ -260,9 +306,9 @@ export async function sendPayment(
   return txid;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getDustAmount(wallet: any): number {
-  return Number(wallet.dustAmount ?? 0);
+export async function getDustAmount(): Promise<number> {
+  const info = await getAspInfo();
+  return Number(info?.dust ?? info?.utxoMinAmount ?? 330);
 }
 
 // -- Token issuance --
@@ -282,16 +328,9 @@ export interface IssueTokenResult {
 }
 
 /**
- * Issue a new token on Ark using the official SDK protocol.
+ * Issue a new token on Ark using the SDK's assetManager.
  *
- * The Ark server requires ALL outputs to have amount >= dustAmount (including
- * OP_RETURN). The SDK's Packet.txOut() returns amount=0 which the server
- * rejects. We monkey-patch buildAndSubmitOffchainTx to lift the packet output
- * to dustAmount and deduct it from the main output, then delegate to
- * wallet.assetManager.issue() which handles coin selection and passthrough
- * groups correctly.
- *
- * Official reissuable token flow (two separate calls from create/page.tsx):
+ * Reissuable token flow (two separate calls from create/page.tsx):
  *   Step 1: issueToken(wallet, { amount: 1 })
  *           → creates the control asset (1 unit, no metadata)
  *   Step 2: issueToken(wallet, { amount: N, name, ticker, ..., controlAssetId: step1.assetId })
@@ -303,105 +342,41 @@ export async function issueToken(wallet: any, params: IssueTokenParams): Promise
   const { amount, name, ticker, decimals, icon, controlAssetId } = params;
   if (amount <= 0) throw new Error("Amount must be greater than 0");
 
-  const dustAmt = BigInt(Number(wallet.dustAmount));
-
-  // Monkey-patch buildAndSubmitOffchainTx to fix the packet output amount.
-  // The SDK builds outputs as [mainOutput(fullSats), packetOutput(0sats)].
-  // The Ark server rejects amount=0 on OP_RETURN outputs, so we move dustAmt
-  // from the main output to the packet output.
-  const origBuildAndSubmit = wallet.buildAndSubmitOffchainTx.bind(wallet);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  wallet.buildAndSubmitOffchainTx = async (inputs: any[], outputs: any[]) => {
-    // Find the OP_RETURN (packet) output — it has a script starting with 0x6a
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const packetIdx = outputs.findIndex((o: any) => o.script?.[0] === 0x6a || o.amount === 0n);
-    if (packetIdx >= 0 && outputs[packetIdx].amount === 0n) {
-      // Find the first non-OP_RETURN output (BTC change) to deduct from
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mainIdx = outputs.findIndex((_: any, i: number) => i !== packetIdx);
-      if (mainIdx >= 0 && outputs[mainIdx].amount >= dustAmt * 2n) {
-        outputs = outputs.map((o, i) => {
-          if (i === packetIdx) return { ...o, amount: dustAmt };
-          if (i === mainIdx) return { ...o, amount: o.amount - dustAmt };
-          return o;
-        });
-        console.log(
-          "[ark] issueToken: patched packet output to %d, main=%d",
-          Number(dustAmt),
-          Number(outputs[mainIdx].amount)
-        );
-      }
-    }
-    return origBuildAndSubmit(inputs, outputs);
-  };
+  const metadata: Record<string, any> | undefined =
+    name && ticker
+      ? {
+          name,
+          ticker,
+          ...(decimals !== undefined && { decimals }),
+          ...(icon && { icon }),
+        }
+      : undefined;
 
-  try {
-    // Build metadata object for the SDK (it expects a plain object, not Metadata[])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const metadata: Record<string, any> | undefined =
-      name && ticker
-        ? {
-            name,
-            ticker,
-            ...(decimals !== undefined && { decimals }),
-            ...(icon && { icon }),
-          }
-        : undefined;
+  console.log(
+    "[ark] issueToken: amount=%d, controlAssetId=%s, metadata=%o",
+    amount,
+    controlAssetId,
+    metadata
+  );
 
-    console.log(
-      "[ark] issueToken: amount=%d, controlAssetId=%s, metadata=%o",
-      amount,
-      controlAssetId,
-      metadata
-    );
+  const result = await wallet.assetManager.issue({
+    amount,
+    ...(controlAssetId && { controlAssetId }),
+    ...(metadata && { metadata }),
+  });
 
-    const result = await wallet.assetManager.issue({
-      amount,
-      ...(controlAssetId && { controlAssetId }),
-      ...(metadata && { metadata }),
-    });
-
-    console.log("[ark] issueToken: success! txid=%s, assetId=%s", result.arkTxId, result.assetId);
-    return { arkTxId: result.arkTxId, assetId: result.assetId };
-  } finally {
-    wallet.buildAndSubmitOffchainTx = origBuildAndSubmit;
-  }
+  console.log("[ark] issueToken: success! txid=%s, assetId=%s", result.arkTxId, result.assetId);
+  return { arkTxId: result.arkTxId, assetId: result.assetId };
 }
 
 /**
  * Reissue (mint more) tokens for a reissuable asset.
  * Requires the caller to hold the control asset VTXO.
- *
- * Applies the same OP_RETURN amount monkey-patch as issueToken — the Ark server
- * rejects amount=0 on the packet output that assetManager.reissue() produces.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function reissueToken(wallet: any, assetId: string, amount: number): Promise<string> {
-  const dustAmt = BigInt(Number(wallet.dustAmount));
-  const origBuildAndSubmit = wallet.buildAndSubmitOffchainTx.bind(wallet);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  wallet.buildAndSubmitOffchainTx = async (inputs: any[], outputs: any[]) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const packetIdx = outputs.findIndex((o: any) => o.script?.[0] === 0x6a || o.amount === 0n);
-    if (packetIdx >= 0 && outputs[packetIdx].amount === 0n) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mainIdx = outputs.findIndex((_: any, i: number) => i !== packetIdx);
-      if (mainIdx >= 0 && outputs[mainIdx].amount >= dustAmt * 2n) {
-        outputs = outputs.map((o, i) => {
-          if (i === packetIdx) return { ...o, amount: dustAmt };
-          if (i === mainIdx) return { ...o, amount: o.amount - dustAmt };
-          return o;
-        });
-        console.log("[ark] reissueToken: patched packet output to %d", Number(dustAmt));
-      }
-    }
-    return origBuildAndSubmit(inputs, outputs);
-  };
-  try {
-    return await wallet.assetManager.reissue({ assetId, amount });
-  } finally {
-    wallet.buildAndSubmitOffchainTx = origBuildAndSubmit;
-  }
+  return await wallet.assetManager.reissue({ assetId, amount });
 }
 
 // -- Transaction history --
@@ -477,13 +452,44 @@ export async function getVtxoDetails(wallet: any): Promise<VtxoInfo[]> {
   return results;
 }
 
+// -- Boarding UTXO filtering (aligned with lendasat/wallet) --
+
+/**
+ * Get confirmed boarding UTXOs that have NOT expired.
+ * Expired boarding UTXOs cannot be cosigned by the ASP, so including them
+ * in a settle round would cause failures.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getConfirmedAndNotExpiredUtxos(wallet: any): Promise<any[]> {
+  const { VtxoScript, hasBoardingTxExpired } = await getSDK();
+  const allUtxos = await wallet.getBoardingUtxos();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return allUtxos.filter((utxo: any) => {
+    if (!utxo.status?.confirmed) return false;
+    try {
+      const vtxoScript = VtxoScript.decode(utxo.tapTree);
+      const exitPaths = vtxoScript.exitPaths();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let earliest: any = undefined;
+      for (const path of exitPaths) {
+        const tl = path.params?.timelock;
+        if (!tl) continue;
+        if (!earliest || tl.value < earliest.value) earliest = tl;
+      }
+      return earliest ? !hasBoardingTxExpired(utxo, earliest) : true;
+    } catch {
+      // If we can't decode the tapTree, include it and let the ASP decide
+      return true;
+    }
+  });
+}
+
 // Minimum sats required to attempt boarding settlement (dust + fee headroom)
 const MIN_SETTLE_SATS = 1_000;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function settleVtxos(wallet: any): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+  const boardingUtxos = await getConfirmedAndNotExpiredUtxos(wallet);
   if (boardingUtxos.length === 0) throw new Error("No confirmed UTXOs to settle");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const total = boardingUtxos.reduce((sum: number, u: any) => sum + u.value, 0);
@@ -499,7 +505,7 @@ export async function settleVtxos(wallet: any): Promise<string> {
   // Estimator (CEL expressions) and filters out UTXOs where fee >= value.
   const { Ramps } = await getSDK();
   const ramps = new Ramps(wallet);
-  const info = await wallet.arkProvider.getInfo();
+  const info = await getAspInfo();
 
   const txid = await withTimeout(
     ramps.onboard(
@@ -533,9 +539,8 @@ const SETTLE_TIMEOUT = 60_000; // 60s max wait for a round
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function settleAll(wallet: any): Promise<string> {
-  // Collect confirmed boarding UTXOs
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+  // Collect confirmed, non-expired boarding UTXOs
+  const boardingUtxos = await getConfirmedAndNotExpiredUtxos(wallet);
 
   // Collect preconfirmed VTXOs only (NOT settled ones — those have long expiry)
   const vtxos = await wallet.getVtxos({ withRecoverable: false });
@@ -657,7 +662,65 @@ export async function getAssets(wallet: any): Promise<AssetInfo[]> {
   }));
 }
 
-/** Get details for a specific asset (balance from getBalance, metadata from indexer) */
+// -- Asset metadata cache (24h TTL, persisted to localStorage) --
+
+const ASSET_META_KEY = "vtxo-asset-metadata";
+const ASSET_META_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+interface CachedAssetMeta {
+  name?: string;
+  ticker?: string;
+  cachedAt: number;
+}
+
+function loadAssetMetaCache(): Map<string, CachedAssetMeta> {
+  try {
+    const raw = localStorage.getItem(ASSET_META_KEY);
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw)));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveAssetMetaCache(cache: Map<string, CachedAssetMeta>): void {
+  try {
+    localStorage.setItem(ASSET_META_KEY, JSON.stringify(Object.fromEntries(cache)));
+  } catch {
+    // Quota exceeded — ignore
+  }
+}
+
+const _assetMetaCache = loadAssetMetaCache();
+
+/**
+ * Get cached asset metadata, or fetch + cache it from the wallet's assetManager.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getCachedAssetMeta(
+  wallet: any,
+  assetId: string
+): Promise<{ name?: string; ticker?: string }> {
+  const cached = _assetMetaCache.get(assetId);
+  if (cached && Date.now() - cached.cachedAt < ASSET_META_TTL) {
+    return { name: cached.name, ticker: cached.ticker };
+  }
+  try {
+    const details = await wallet.assetManager.getAssetDetails(assetId);
+    const entry: CachedAssetMeta = {
+      name: details?.metadata?.name,
+      ticker: details?.metadata?.ticker,
+      cachedAt: Date.now(),
+    };
+    _assetMetaCache.set(assetId, entry);
+    saveAssetMetaCache(_assetMetaCache);
+    return { name: entry.name, ticker: entry.ticker };
+  } catch {
+    return {};
+  }
+}
+
+/** Get details for a specific asset (balance from getBalance, metadata from cache/indexer) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAssetDetails(wallet: any, assetId: string): Promise<AssetDetails | null> {
   try {
@@ -667,16 +730,7 @@ export async function getAssetDetails(wallet: any, assetId: string): Promise<Ass
     const held = balance.assets?.find((a: any) => a.assetId === assetId);
     if (!held) return null;
 
-    // Try to get metadata from the indexer
-    let name: string | undefined;
-    let ticker: string | undefined;
-    try {
-      const details = await wallet.assetManager.getAssetDetails(assetId);
-      name = details?.metadata?.name;
-      ticker = details?.metadata?.ticker;
-    } catch {
-      // Indexer metadata is optional
-    }
+    const { name, ticker } = await getCachedAssetMeta(wallet, assetId);
 
     return {
       assetId,
@@ -771,7 +825,7 @@ export async function computeRenewalThreshold(wallet: any): Promise<number> {
 export async function getVtxosNeedingRenewal(wallet: any, thresholdMs?: number): Promise<any[]> {
   const threshold = thresholdMs ?? DEFAULT_RENEWAL_THRESHOLD_MS;
   const vtxos = await wallet.getVtxos({ withRecoverable: true });
-  const dustAmount = Number(wallet.dustAmount ?? 0);
+  const dustAmount = await getDustAmount();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return vtxos.filter((vtxo: any) => {
@@ -799,9 +853,8 @@ export async function renewVtxos(wallet: any, thresholdMs?: number): Promise<str
   const threshold = thresholdMs ?? DEFAULT_RENEWAL_THRESHOLD_MS;
   const expiringVtxos = await getVtxosNeedingRenewal(wallet, threshold);
 
-  // Also grab confirmed boarding UTXOs to consolidate in the same round
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const boardingUtxos = (await wallet.getBoardingUtxos()).filter((u: any) => u.status.confirmed);
+  // Also grab confirmed, non-expired boarding UTXOs to consolidate in the same round
+  const boardingUtxos = await getConfirmedAndNotExpiredUtxos(wallet);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inputs: any[] = [...expiringVtxos, ...boardingUtxos];
@@ -809,7 +862,7 @@ export async function renewVtxos(wallet: any, thresholdMs?: number): Promise<str
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const totalAmount = inputs.reduce((sum: number, input: any) => sum + input.value, 0);
-  const dustAmount = Number(wallet.dustAmount ?? 0);
+  const dustAmount = await getDustAmount();
 
   if (totalAmount < dustAmount) {
     console.log("[ark] Renewal skipped: total %d sats below dust %d", totalAmount, dustAmount);

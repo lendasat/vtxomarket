@@ -117,6 +117,7 @@ export default function WalletPage() {
   const addresses = useAppStore((s) => s.addresses);
   const walletReady = useAppStore((s) => s.walletReady);
   const walletError = useAppStore((s) => s.walletError);
+  const hasCachedData = useAppStore((s) => s.hasCachedData);
   const arkWallet = useAppStore((s) => s.arkWallet);
   const setBalance = useAppStore((s) => s.setBalance);
   const setAddresses = useAppStore((s) => s.setAddresses);
@@ -201,6 +202,15 @@ export default function WalletPage() {
     ]);
     setBalance(bal);
     setAddresses(addrs);
+    // Persist immediately so closing the tab after a send doesn't show stale data
+    const { saveWalletCache } = await import("@/lib/wallet-cache");
+    const s = useAppStore.getState();
+    saveWalletCache({
+      balance: bal,
+      addresses: addrs,
+      heldAssets: s.heldAssets,
+      profile: s.profile,
+    });
   }, [arkWallet, setBalance, setAddresses]);
 
   // Auto-recover swept/recoverable VTXOs when detected
@@ -344,12 +354,20 @@ export default function WalletPage() {
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40 font-medium">
             Spendable Balance
           </p>
-          {walletReady ? (
+          {walletReady || hasCachedData ? (
             <>
-              <p className="mt-3 text-5xl sm:text-6xl font-bold tabular-nums tracking-tight">
+              <p
+                className={`mt-3 text-5xl sm:text-6xl font-bold tabular-nums tracking-tight ${hasCachedData && !walletReady ? "text-muted-foreground/50" : ""}`}
+              >
                 {totalSats.toLocaleString()}
               </p>
               <p className="mt-1 text-sm text-muted-foreground/40">sats</p>
+              {hasCachedData && !walletReady && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
+                  <p className="text-xs text-muted-foreground/40">Syncing...</p>
+                </div>
+              )}
             </>
           ) : (
             <>
