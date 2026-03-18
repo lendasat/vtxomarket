@@ -667,6 +667,36 @@ export function useLendaswap() {
     []
   );
 
+  // ── Lightweight USD estimate for send (sats → stablecoin, no side effects) ──
+
+  const getSendEstimate = useCallback(
+    async (params: {
+      coin: StablecoinKey;
+      chain: EvmChainKey;
+      amountSats: number;
+    }): Promise<string | null> => {
+      try {
+        const client = await getLendaswapClient();
+        const tokenAddress = getTokenAddress(params.coin, params.chain);
+        const chainId = getChainId(params.chain);
+
+        const quoteResp = await client.getQuote({
+          sourceChain: "Arkade",
+          sourceToken: "btc",
+          targetChain: String(chainId),
+          targetToken: tokenAddress,
+          sourceAmount: params.amountSats,
+        });
+
+        return fromSmallestUnit(quoteResp.target_amount, params.coin);
+      } catch (err) {
+        console.warn("[lendaswap] Send estimate failed:", err instanceof Error ? err.message : err);
+        return null;
+      }
+    },
+    []
+  );
+
   // ── Reset (back to idle) ──────────────────────────────────────────────
 
   const reset = useCallback(() => {
@@ -698,6 +728,8 @@ export function useLendaswap() {
     getQuoteAndCreateReceive,
     /** Lightweight sats estimate for a given stablecoin amount (no side effects) */
     getReceiveEstimate,
+    /** Lightweight USD estimate for a given sats amount (no side effects) */
+    getSendEstimate,
     /** Fund a gasless EVM swap (call after tokens arrive at deposit address) */
     fundGasless,
     /** Attempt to refund a swap */
