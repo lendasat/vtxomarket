@@ -62,6 +62,8 @@ export function StablecoinReceive() {
   const [evmSendError, setEvmSendError] = useState<string | null>(null);
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
+  const walletClientRef = useRef(walletClient);
+  walletClientRef.current = walletClient;
   const { switchChainAsync } = useSwitchChain();
 
   const usdVal = parseFloat(amount);
@@ -154,11 +156,11 @@ export function StablecoinReceive() {
     }
   }, [hasSufficientDeposit, funded, isFunding, swap?.id, handleFundGasless]);
 
-  // Debounced sats estimate as user types
+  // Debounced sats estimate as user types (only when no active swap)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!isValidAmount || !ready) {
-      setSatsEstimate(null);
+    if (!isValidAmount || !ready || swap?.evmDepositAddress) {
+      if (!swap?.evmDepositAddress) setSatsEstimate(null);
       return;
     }
     setEstimating(true);
@@ -170,7 +172,7 @@ export function StablecoinReceive() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [amount, coin, chain, ready, isValidAmount, getReceiveEstimate]);
+  }, [amount, coin, chain, ready, isValidAmount, getReceiveEstimate, swap?.evmDepositAddress]);
 
   const isLoading = step === "quoting" || (step === "awaiting_deposit" && !swap?.evmDepositAddress);
   const hasAddress = swap?.evmDepositAddress;
@@ -218,13 +220,27 @@ export function StablecoinReceive() {
 
   // Send stablecoins from connected wallet to the deposit address
   const handleEvmSend = useCallback(async () => {
-    if (!walletClient || !swap?.evmDepositAddress || !swap?.evmDepositAmount || !evmAddress) return;
+    if (!swap?.evmDepositAddress || !swap?.evmDepositAmount || !evmAddress) return;
     setEvmSending(true);
     setEvmSendError(null);
     try {
       const requiredChainId = getChainId(chain);
-      // Switch chain if needed
+      // Switch chain first — this prompts the wallet and makes walletClient available
       await switchChainAsync({ chainId: requiredChainId });
+
+      // Wait for walletClient to become available after chain switch (up to 3s)
+      let client = walletClientRef.current;
+      if (!client) {
+        for (let i = 0; i < 15; i++) {
+          await new Promise((r) => setTimeout(r, 200));
+          client = walletClientRef.current;
+          if (client) break;
+        }
+      }
+      if (!client) {
+        setEvmSendError("Wallet not ready — please try again.");
+        return;
+      }
 
       const tokenAddr = getTokenAddress(coin, chain) as `0x${string}`;
       const depositAddr = swap.evmDepositAddress as `0x${string}`;
@@ -250,7 +266,7 @@ export function StablecoinReceive() {
         return;
       }
 
-      const txHash = await walletClient.writeContract({
+      const txHash = await client.writeContract({
         chain: viemChain,
         address: tokenAddr,
         abi: erc20Abi,
@@ -271,7 +287,7 @@ export function StablecoinReceive() {
     } finally {
       setEvmSending(false);
     }
-  }, [walletClient, swap, chain, coin, switchChainAsync, evmAddress]);
+  }, [swap, chain, coin, switchChainAsync, evmAddress]);
 
   // ── Success ─────────────────────────────────────────────────────────
 
@@ -355,73 +371,84 @@ export function StablecoinReceive() {
 
         {!isProcessing ? (
           <>
-            {/* Send from connected wallet */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em]">
-                  Send from wallet
-                </span>
-                <EvmConnectButton />
-              </div>
-              {evmConnected && walletClient && !evmTxHash && (
+            {/* Primary: pay from connected wallet */}
+            {evmConnected && !evmTxHash ? (
+              <div className="space-y-3">
                 <button
                   onClick={handleEvmSend}
                   disabled={evmSending}
-                  className="w-full h-10 rounded-xl bg-blue-500/[0.15] border border-blue-500/[0.2] text-sm font-semibold text-blue-400 transition-all hover:bg-blue-500/[0.25] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full h-12 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {evmSending ? (
                     <>
-                      <div className="h-3.5 w-3.5 border-2 border-blue-400/30 border-t-blue-400/80 rounded-full animate-spin" />
-                      Sending...
+                      <div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white/80 rounded-full animate-spin" />
+                      Sending {depositDisplay}...
                     </>
                   ) : (
-                    `Send ${depositDisplay} from wallet`
+                    `Pay ${depositDisplay} from wallet`
                   )}
                 </button>
-              )}
-              {evmSendError && (
-                <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-2">
-                  <p className="text-[11px] text-red-400/80">{evmSendError}</p>
-                </div>
-              )}
-              {evmTxHash && (
-                <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-2">
-                  <p className="text-[11px] text-emerald-400/80">
-                    Sent! Tx: {evmTxHash.slice(0, 10)}...{evmTxHash.slice(-8)}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <p className="text-[10px] text-muted-foreground/40 uppercase tracking-[0.15em]">
-              Or send {depositDisplay} on {chainLabel} to
-            </p>
-
-            {/* QR code */}
-            <div className="flex justify-center py-2">
-              <div className="rounded-xl bg-white p-3">
-                <QRCodeSVG
-                  value={depositAddr}
-                  size={160}
-                  bgColor="#ffffff"
-                  fgColor="#111827"
-                  level="M"
-                />
+                {evmSendError && (
+                  <div className="rounded-xl bg-red-500/[0.08] border border-red-500/[0.12] px-4 py-2">
+                    <p className="text-[11px] text-red-400/80">{evmSendError}</p>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : !evmTxHash ? (
+              <EvmConnectButton />
+            ) : null}
 
-            {/* Address — tap to copy */}
-            <button
-              onClick={() => copyToClipboard(depositAddr)}
-              className="w-full flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-white/[0.05] border border-white/[0.07] hover:bg-white/[0.09] transition-all"
-            >
-              <code className="text-xs text-muted-foreground/60 break-all">
-                {truncateAddr(depositAddr)}
-              </code>
-              <span className="shrink-0 text-xs font-medium text-muted-foreground/50">
-                {copied ? "Copied!" : "Copy"}
-              </span>
-            </button>
+            {/* Sent confirmation */}
+            {evmTxHash && (
+              <div className="rounded-xl bg-emerald-500/[0.08] border border-emerald-500/[0.12] px-4 py-2">
+                <p className="text-[11px] text-emerald-400/80">
+                  Sent! Tx: {evmTxHash.slice(0, 10)}...{evmTxHash.slice(-8)}
+                </p>
+              </div>
+            )}
+
+            {/* Manual deposit (collapsed when wallet is connected) */}
+            <details className={evmConnected ? "group" : "group open"}>
+              <summary className="text-[10px] text-muted-foreground/30 uppercase tracking-[0.15em] cursor-pointer select-none list-none flex items-center gap-1.5">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="h-3 w-3 text-muted-foreground/20 transition-transform group-open:rotate-90"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                {evmConnected ? "Or send manually" : `Send ${depositDisplay} on ${chainLabel} to`}
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="flex justify-center py-2">
+                  <div className="rounded-xl bg-white p-3">
+                    <QRCodeSVG
+                      value={depositAddr}
+                      size={160}
+                      bgColor="#ffffff"
+                      fgColor="#111827"
+                      level="M"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(depositAddr)}
+                  className="w-full flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-white/[0.05] border border-white/[0.07] hover:bg-white/[0.09] transition-all"
+                >
+                  <code className="text-xs text-muted-foreground/60 break-all">
+                    {truncateAddr(depositAddr)}
+                  </code>
+                  <span className="shrink-0 text-xs font-medium text-muted-foreground/50">
+                    {copied ? "Copied!" : "Copy"}
+                  </span>
+                </button>
+              </div>
+            </details>
 
             {/* Deposit & funding status */}
             {isFunding || funded ? (
