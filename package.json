@@ -17,6 +17,7 @@
     "@kukks/bitcoin-descriptors": "^3.1.0",
     "@lendasat/lendaswap-sdk-pure": "^0.2.2",
     "@nostr-dev-kit/ndk": "^3.0.0",
+    "@opennextjs/cloudflare": "^1.17.1",
     "@reown/appkit": "^1.8.19",
     "@reown/appkit-adapter-wagmi": "^1.8.19",
     "@scure/base": "^2.0.0",

@@ -59,6 +59,9 @@ firebase-debug.log
 # vercel
 .vercel
 
+# opennext / cloudflare build artifacts
+/.open-next/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
