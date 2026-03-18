@@ -26,7 +26,10 @@ export function useWallet() {
       s.setHeldAssets(cached.heldAssets);
       if (cached.profile) s.setProfile(cached.profile);
       s.setHasCachedData(true);
-      console.log("[wallet] Hydrated from cache (age: %ds)", Math.round((Date.now() - cached.savedAt) / 1000));
+      console.log(
+        "[wallet] Hydrated from cache (age: %ds)",
+        Math.round((Date.now() - cached.savedAt) / 1000)
+      );
     }
 
     async function init() {

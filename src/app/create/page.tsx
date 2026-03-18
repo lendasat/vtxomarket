@@ -32,7 +32,10 @@ export default function CreatePage() {
     getDustAmount()
       .then((d) => setDustAmount(d))
       .catch((err) =>
-        console.warn("[create] Failed to get dust amount:", err instanceof Error ? err.message : err)
+        console.warn(
+          "[create] Failed to get dust amount:",
+          err instanceof Error ? err.message : err
+        )
       );
   }, [arkWallet]);
 

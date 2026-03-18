@@ -205,7 +205,12 @@ export default function WalletPage() {
     // Persist immediately so closing the tab after a send doesn't show stale data
     const { saveWalletCache } = await import("@/lib/wallet-cache");
     const s = useAppStore.getState();
-    saveWalletCache({ balance: bal, addresses: addrs, heldAssets: s.heldAssets, profile: s.profile });
+    saveWalletCache({
+      balance: bal,
+      addresses: addrs,
+      heldAssets: s.heldAssets,
+      profile: s.profile,
+    });
   }, [arkWallet, setBalance, setAddresses]);
 
   // Auto-recover swept/recoverable VTXOs when detected
@@ -351,7 +356,9 @@ export default function WalletPage() {
           </p>
           {walletReady || hasCachedData ? (
             <>
-              <p className={`mt-3 text-5xl sm:text-6xl font-bold tabular-nums tracking-tight ${hasCachedData && !walletReady ? "text-muted-foreground/50" : ""}`}>
+              <p
+                className={`mt-3 text-5xl sm:text-6xl font-bold tabular-nums tracking-tight ${hasCachedData && !walletReady ? "text-muted-foreground/50" : ""}`}
+              >
                 {totalSats.toLocaleString()}
               </p>
               <p className="mt-1 text-sm text-muted-foreground/40">sats</p>

@@ -96,16 +96,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-export async function initArkWallet(
-  privateKeyHex: string,
-  retryCount = 0
-): Promise<ArkWallet> {
-  const {
-    SingleKey,
-    ServiceWorkerWallet,
-    IndexedDBWalletRepository,
-    IndexedDBContractRepository,
-  } = await getSDK();
+export async function initArkWallet(privateKeyHex: string, retryCount = 0): Promise<ArkWallet> {
+  const { SingleKey, ServiceWorkerWallet, IndexedDBWalletRepository, IndexedDBContractRepository } =
+    await getSDK();
   console.log("[ark] SDK loaded, connecting to:", ARK_SERVER_URL);
 
   const identity = SingleKey.fromHex(privateKeyHex);
@@ -704,7 +697,10 @@ const _assetMetaCache = loadAssetMetaCache();
  * Get cached asset metadata, or fetch + cache it from the wallet's assetManager.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getCachedAssetMeta(wallet: any, assetId: string): Promise<{ name?: string; ticker?: string }> {
+async function getCachedAssetMeta(
+  wallet: any,
+  assetId: string
+): Promise<{ name?: string; ticker?: string }> {
   const cached = _assetMetaCache.get(assetId);
   if (cached && Date.now() - cached.cachedAt < ASSET_META_TTL) {
     return { name: cached.name, ticker: cached.ticker };
