@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "@/lib/store";
 import { getMnemonic, getNostrKeyOverride } from "@/lib/wallet-storage";
 import { mnemonicToArkPrivateKeyHex, mnemonicToNostrPrivateKeyHex } from "@/lib/wallet-crypto";
+import { loadWalletCache, saveWalletCache } from "@/lib/wallet-cache";
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -15,6 +16,18 @@ export function useWallet() {
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
+
+    // Hydrate from cache immediately (synchronous) so the UI has data on first render
+    const cached = loadWalletCache();
+    if (cached) {
+      const s = useAppStore.getState();
+      s.setBalance(cached.balance);
+      s.setAddresses(cached.addresses);
+      s.setHeldAssets(cached.heldAssets);
+      if (cached.profile) s.setProfile(cached.profile);
+      s.setHasCachedData(true);
+      console.log("[wallet] Hydrated from cache (age: %ds)", Math.round((Date.now() - cached.savedAt) / 1000));
+    }
 
     async function init() {
       // 1. Mnemonic: load from storage (saved by AuthGate)
@@ -87,11 +100,13 @@ export function useWallet() {
         const arkWallet = await initArkWallet(arkKeyHex);
         useAppStore.getState().setArkWallet(arkWallet);
         useAppStore.getState().setWalletReady(true);
+        useAppStore.getState().setHasCachedData(false);
         console.log("[wallet] Ark wallet ready");
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Ark wallet init failed";
         console.error("[wallet] Ark wallet init failed:", msg);
         useAppStore.getState().setWalletError(msg);
+        useAppStore.getState().setHasCachedData(false);
       }
     }
 
@@ -121,20 +136,37 @@ export function useWallet() {
         getAssets,
         renewVtxos,
         computeRenewalThreshold,
+        reloadWalletState,
       } = await import("@/lib/ark-wallet");
+
+      // Force the service worker to re-sync from the network before reading state
+      try {
+        await reloadWalletState(w);
+      } catch {
+        // Non-fatal — continue with potentially stale data
+      }
+
       const [bal, addrs] = await Promise.all([getBalance(w), getReceivingAddresses(w)]);
       useAppStore.getState().setBalance(bal);
       useAppStore.getState().setAddresses(addrs);
 
       // Fetch held assets
+      let latestAssets = useAppStore.getState().heldAssets;
       try {
         const assets = await getAssets(w);
-        useAppStore
-          .getState()
-          .setHeldAssets(assets.map((a) => ({ assetId: a.assetId, amount: a.amount })));
+        latestAssets = assets.map((a) => ({ assetId: a.assetId, amount: a.amount }));
+        useAppStore.getState().setHeldAssets(latestAssets);
       } catch (e) {
         console.warn("[wallet] Asset fetch failed:", e instanceof Error ? e.message : e);
       }
+
+      // Persist snapshot to localStorage for instant hydration on next load
+      saveWalletCache({
+        balance: bal,
+        addresses: addrs,
+        heldAssets: latestAssets,
+        profile: useAppStore.getState().profile,
+      });
 
       // Finalize any pending checkpoint signatures (non-blocking)
       try {
@@ -241,6 +273,56 @@ export function useWallet() {
       console.error("[wallet] Refresh failed:", e);
     }
   }, []);
+
+  // Poll service worker status — detect if the browser killed the idle SW
+  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (!store.walletReady) return;
+    if (statusPollRef.current) clearInterval(statusPollRef.current);
+
+    statusPollRef.current = setInterval(async () => {
+      const w = useAppStore.getState().arkWallet;
+      if (!w) return;
+      try {
+        const { getWalletStatus } = await import("@/lib/ark-wallet");
+        const initialized = await getWalletStatus(w);
+        if (!initialized) {
+          console.warn("[wallet] Service worker lost wallet state — marking not ready");
+          useAppStore.getState().setWalletReady(false);
+          useAppStore.getState().setWalletError("Wallet disconnected — please refresh");
+        }
+      } catch {
+        // getStatus call itself failed — SW may be dead
+      }
+    }, 5_000);
+
+    return () => {
+      if (statusPollRef.current) clearInterval(statusPollRef.current);
+    };
+  }, [store.walletReady]);
+
+  // Listen for service worker VTXO_UPDATE / UTXO_UPDATE messages (real-time balance updates)
+  const swListenerRef = useRef(false);
+  useEffect(() => {
+    if (!store.walletReady || swListenerRef.current) return;
+    if (typeof navigator === "undefined" || !navigator.serviceWorker) return;
+
+    swListenerRef.current = true;
+    const handler = (event: MessageEvent) => {
+      const type = event.data?.type;
+      if (type === "VTXO_UPDATE" || type === "UTXO_UPDATE") {
+        console.log("[wallet] SW event: %s — reloading", type);
+        refreshData();
+        // Reload again after delay to let the indexer catch up
+        setTimeout(() => refreshData(), 5000);
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handler);
+      swListenerRef.current = false;
+    };
+  }, [store.walletReady, refreshData]);
 
   useEffect(() => {
     if (store.walletReady) {

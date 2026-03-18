@@ -29,11 +29,11 @@ export default function CreatePage() {
 
   useEffect(() => {
     if (!arkWallet) return;
-    try {
-      setDustAmount(getDustAmount(arkWallet));
-    } catch (err) {
-      console.warn("[create] Failed to get dust amount:", err instanceof Error ? err.message : err);
-    }
+    getDustAmount()
+      .then((d) => setDustAmount(d))
+      .catch((err) =>
+        console.warn("[create] Failed to get dust amount:", err instanceof Error ? err.message : err)
+      );
   }, [arkWallet]);
 
   const [name, setName] = useState("");

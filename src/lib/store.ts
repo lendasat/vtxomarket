@@ -40,6 +40,7 @@ interface AppState {
   // Wallet
   walletReady: boolean;
   walletError: string | null;
+  hasCachedData: boolean; // true when showing stale localStorage data before live connect
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   arkWallet: any;
   balance: BalanceInfo | null;
@@ -63,6 +64,7 @@ interface AppState {
   setNostrReady: (ready: boolean) => void;
   setWalletReady: (ready: boolean) => void;
   setWalletError: (error: string | null) => void;
+  setHasCachedData: (cached: boolean) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setArkWallet: (wallet: any) => void;
   setBalance: (balance: BalanceInfo | null) => void;
@@ -83,6 +85,7 @@ export const useAppStore = create<AppState>((set) => ({
   nostrReady: false,
   walletReady: false,
   walletError: null,
+  hasCachedData: false,
   arkWallet: null,
   balance: null,
   addresses: null,
@@ -97,6 +100,7 @@ export const useAppStore = create<AppState>((set) => ({
   setNostrReady: (nostrReady) => set({ nostrReady }),
   setWalletReady: (walletReady) => set({ walletReady }),
   setWalletError: (walletError) => set({ walletError }),
+  setHasCachedData: (hasCachedData) => set({ hasCachedData }),
   setArkWallet: (arkWallet) => set({ arkWallet }),
   setBalance: (balance) => set({ balance }),
   setAddresses: (addresses) => set({ addresses }),
