@@ -10,9 +10,9 @@
  * load it at runtime, matching the pattern used in ark-wallet.ts.
  */
 
-// Proxy all Lendaswap API calls through the server-side API route (/api/lendaswap/*)
-// which injects the API key header — the key never reaches the client bundle.
-const LENDASWAP_API_URL = "/api/lendaswap";
+const LENDASWAP_API_URL = (
+  process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com"
+).replace(/\/+$/, "");
 const ARKADE_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 

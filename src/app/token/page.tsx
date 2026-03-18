@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -43,9 +43,9 @@ function shortPubkey(pk: string): string {
 }
 
 export default function TokenPage() {
-  const params = useParams();
+  const pathname = usePathname();
   const router = useRouter();
-  const ticker = (params.id as string)?.toUpperCase();
+  const ticker = pathname.split("/token/")[1]?.toUpperCase();
 
   const { tokens, loading: tokensLoading } = useTokens();
   const upsertToken = useAppStore((s) => s.upsertToken);
