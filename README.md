@@ -1,25 +1,64 @@
+<div align="center">
+
 # vtxo.market
 
-A permissionless, non-custodial token marketplace on Bitcoin. Tokens are issued as [Arkade](https://arkade.sh) assets (VTXOs on the Ark protocol) and traded via non-interactive atomic swaps that settle on Bitcoin.
+**A permissionless, non-custodial token marketplace on Bitcoin.**
+
+Tokens are issued as [Arkade](https://arkade.sh) assets (VTXOs on the Ark protocol) and traded via non-interactive atomic swaps that settle on Bitcoin.
 
 No custody. No platform fees. Self-custodied wallets from a 12-word seed phrase.
 
-## How it works
+[![CI](https://github.com/lendasat/vtxomarket/actions/workflows/ci.yml/badge.svg)](https://github.com/lendasat/vtxomarket/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-- **Tokens** are issued as Arkade Assets (off-chain Bitcoin VTXOs with asset extensions)
-- **Trading** uses non-interactive script-based swaps with the [Arkade Introspector](https://github.com/ArkLabsHQ/introspector) as a co-signer
-- **Settlement** is atomic — maker receives sats, taker receives tokens, or nothing happens
-- **Cancellation** is always possible — cooperatively via ASP, or unilaterally on-chain after CSV timelock
+<br />
+
+<img src="public/vtxo_market_landing.png" alt="vtxo.market marketplace" width="800" />
+
+</div>
+
+---
+
+## Features
+
+- **Issue tokens** on Bitcoin as Arkade Assets — no smart contract deployment needed
+- **Trade atomically** — maker receives sats, taker receives tokens, or nothing happens
+- **Non-interactive swaps** — no coordination required between maker and taker
+- **Cancel anytime** — cooperatively via ASP, or unilaterally on-chain after CSV timelock
+- **Self-custodied** — 12-word seed phrase, keys never leave your browser
+- **Lightning support** — send and receive via [Boltz](https://boltz.exchange) atomic swaps
+- **Stablecoin swaps** — BTC-to-stablecoin via [LendaSwap](https://lendaswap.com)
+- **Social layer** — token threads and trade receipts via [Nostr](https://nostr.com)
+
+## Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌───────────────┐
+│   Frontend   │────▶│   Indexer    │────▶│  Ark Server   │
+│  (Next.js)   │     │  (Bun/Hono)  │     │    (arkd)     │
+│   :3000      │     │   :3001      │     └───────────────┘
+│              │     └──────────────┘
+│              │     ┌──────────────┐
+│              │────▶│ Introspector │
+│              │     │   :7073      │
+└──────────────┘     └──────────────┘
+```
+
+| Service | Role |
+|---|---|
+| **Frontend** | Next.js app — marketplace UI, wallet, trading |
+| **Indexer** | Tracks asset metadata, VTXO state, and swap offers (Bun + SQLite + Hono) |
+| **[Introspector](https://github.com/ArkLabsHQ/introspector)** | Validates Arkade Script conditions and co-signs swap PSBTs |
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full swap protocol design, security properties, and opcode-level analysis.
 
-## Prerequisites
+## Quick start
+
+### Prerequisites
 
 - [Node.js](https://nodejs.org/) v20+
 - [Bun](https://bun.sh/) v1.1+ (for the indexer)
 - [Docker](https://www.docker.com/) (for the Introspector)
-
-## Quick start
 
 ### 1. Clone and install
 
@@ -30,9 +69,26 @@ npm install
 cp .env.example .env
 ```
 
-### 2. Start the Asset Indexer
+### 2. Start backend services
 
-The indexer tracks Arkade asset metadata, VTXO state, and swap offers in a local SQLite database. It subscribes to the Ark server's SSE stream and exposes a REST API on port 3001.
+The easiest way is with Docker Compose:
+
+```bash
+cp .env.indexer.example .env.indexer
+cp .env.introspector.example .env.introspector
+
+# Generate a secret key for the Introspector
+echo "INTROSPECTOR_SECRET_KEY=$(openssl rand -hex 32)" >> .env.introspector
+
+docker compose up -d
+```
+
+Or start them individually:
+
+<details>
+<summary>Manual setup</summary>
+
+**Indexer:**
 
 ```bash
 cd indexer
@@ -41,54 +97,26 @@ bun install
 bun run src/index.ts
 ```
 
-The indexer will connect to the Ark server (mutinynet by default) and start indexing assets.
-
-### 3. Set up external dependencies
-
-#### Arkade TypeScript SDK
-
-The frontend depends on [`@arkade-os/sdk`](https://github.com/arkade-os/wallet). It's installed via npm — no extra setup needed. If you want to hack on the SDK locally, you can clone it into the project root:
+**Introspector:**
 
 ```bash
-git clone https://github.com/arkade-os/wallet.git arkade-ts-sdk
-```
-
-The `arkade-ts-sdk/` directory is gitignored and won't interfere with the project.
-
-#### Introspector
-
-The [Introspector](https://github.com/ArkLabsHQ/introspector) is required for swap fills (not needed for token issuance, sending, or offer cancellation). It validates Arkade Script introspection conditions and co-signs PSBTs.
-
-```bash
-# Clone the Introspector repo (gitignored — clone into project root or elsewhere)
 git clone https://github.com/ArkLabsHQ/introspector.git
-
-# Run with Docker
 cd introspector
 docker build -t introspector .
 docker run -d --name introspector \
   -p 7073:7073 \
   -e INTROSPECTOR_SECRET_KEY=$(openssl rand -hex 32) \
+  -e INTROSPECTOR_NO_TLS=true \
   introspector
 ```
 
-Verify it's running:
+Verify: `curl http://localhost:7073/v1/info` should return `{"signerPubkey": "..."}`.
+
+</details>
+
+### 3. Start the frontend
 
 ```bash
-curl http://localhost:7073/v1/info
-# Should return: {"signerPubkey": "..."}
-```
-
-The `signerPubkey` is the Introspector's base public key. It gets tweaked per-swap-script to cryptographically bind it to specific swap conditions.
-
-#### LendaSwap (stablecoin swaps)
-
-The wallet includes BTC-to-stablecoin swaps powered by the [`@lendasat/lendaswap-sdk-pure`](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) TypeScript SDK. The `src/lendaswap_integration/` folder contains a full reference wallet implementation (UI components, hooks, and SDK client) that can be used as a starting point for integrating LendaSwap into your own project. You'll need a LendaSwap API key — set `NEXT_PUBLIC_LENDASWAP_API_KEY` in your `.env`.
-
-### 4. Start the frontend
-
-```bash
-# From the project root
 npm run dev
 ```
 
@@ -105,45 +133,36 @@ Copy `.env.example` to `.env` and configure:
 | `NEXT_PUBLIC_BOLTZ_URL` | `https://api.boltz.mutinynet.arkade.sh` | Boltz API for Lightning swaps |
 | `NEXT_PUBLIC_INDEXER_URL` | `http://localhost:3001` | Asset indexer URL |
 | `NEXT_PUBLIC_INTROSPECTOR_URL` | `http://localhost:7073` | Introspector URL |
-| `NEXT_PUBLIC_LENDASWAP_API_URL` | `https://api.lendaswap.com/` | LendaSwap API (stablecoin swaps) |
+| `NEXT_PUBLIC_LENDASWAP_API_URL` | `https://api.lendaswap.com/` | LendaSwap API |
 | `NEXT_PUBLIC_LENDASWAP_API_KEY` | | LendaSwap API key |
 
-For mainnet, uncomment the mainnet URLs in `.env.example`.
+For mainnet, use `https://arkade.computer`, `https://mempool.space/api`, and `https://api.ark.boltz.exchange`.
 
 ## Project structure
 
 ```
-vtxo.market/
+vtxomarket/
 ├── src/
-│   ├── app/                    # Next.js pages
-│   │   ├── page.tsx            # Marketplace home
-│   │   ├── create/             # Token issuance
-│   │   ├── token/[id]/         # Token detail (thread, trades, order book)
-│   │   ├── wallet/             # Holdings, send/receive, Lightning, stablecoins
-│   │   ├── lab/                # Swap script lab (dev tool)
-│   │   └── settings/           # Profile, keys
+│   ├── app/                       # Next.js pages
+│   │   ├── page.tsx               # Marketplace home
+│   │   ├── create/                # Token issuance
+│   │   ├── token/[id]/            # Token detail, order book, thread
+│   │   ├── wallet/                # Holdings, send/receive, Lightning, stablecoins
+│   │   └── settings/              # Profile, keys
 │   ├── lib/
-│   │   ├── ark-wallet.ts       # Arkade SDK wrapper
-│   │   ├── swap_protocol/      # Non-interactive swap implementation
-│   │   │   ├── light-fill.ts   # Fill offers (submitTx/finalizeTx)
-│   │   │   ├── offers.ts       # Create + cancel offers
-│   │   │   ├── script.ts       # 3-leaf taproot tree + arkade script
-│   │   │   ├── introspector-client.ts
-│   │   │   └── psbt-combiner.ts
-│   │   ├── nostr-market.ts     # Nostr events (comments, trade receipts)
-│   │   └── store.ts            # Zustand state
-│   ├── hooks/                  # React hooks (useWallet, useOffers, useTokens, etc.)
-│   └── lendaswap_integration/  # LendaSwap reference wallet (components, hooks, SDK client)
-├── indexer/                    # Asset indexer (Bun + SQLite + Hono)
-│   ├── src/
-│   │   ├── index.ts            # Entry point
-│   │   ├── stream.ts           # SSE consumer (arkd /v1/txs)
-│   │   ├── indexer.ts          # Core indexing logic
-│   │   ├── db.ts               # SQLite schema + queries
-│   │   ├── api.ts              # REST API (Hono)
-│   │   └── ark-client.ts       # arkd HTTP client
-│   └── .env.example
-├── ARCHITECTURE.md             # Detailed swap protocol documentation
+│   │   ├── ark-wallet.ts          # Arkade SDK wrapper
+│   │   ├── swap_protocol/         # Non-interactive swap implementation
+│   │   │   ├── light-fill.ts      # Taker fill flow (submitTx/finalizeTx)
+│   │   │   ├── offers.ts          # Create + cancel offers
+│   │   │   ├── script.ts          # 3-leaf taproot tree + arkade script
+│   │   │   └── psbt-combiner.ts   # BIP-174 multi-party signature merging
+│   │   ├── nostr-market.ts        # Nostr events (comments, trade receipts)
+│   │   └── lightning.ts           # Boltz Lightning swaps
+│   ├── hooks/                     # React hooks (useWallet, useOffers, useTokens, ...)
+│   └── lendaswap_integration/     # LendaSwap reference wallet implementation
+├── indexer/                       # Asset indexer (Bun + SQLite + Hono)
+├── docker-compose.yml             # Run indexer + introspector
+├── ARCHITECTURE.md                # Swap protocol deep-dive
 └── .env.example
 ```
 
@@ -151,25 +170,35 @@ vtxo.market/
 
 | Layer | Technology |
 |---|---|
-| Settlement | Bitcoin (via [Ark](https://ark-protocol.org)) |
+| Settlement | Bitcoin via [Ark protocol](https://ark-protocol.org) |
 | Offchain execution | [@arkade-os/sdk](https://github.com/arkade-os/wallet) |
 | Swap co-signing | [Arkade Introspector](https://github.com/ArkLabsHQ/introspector) |
 | Social layer | [Nostr](https://nostr.com) (NDK) |
-| Indexer | Bun + SQLite + Hono |
-| Frontend | Next.js 16 + Tailwind v4 |
-| State | Zustand |
+| Indexer | [Bun](https://bun.sh) + SQLite + [Hono](https://hono.dev) |
+| Frontend | [Next.js 16](https://nextjs.org) + [Tailwind CSS v4](https://tailwindcss.com) |
 | Lightning | [Boltz](https://boltz.exchange) atomic swaps |
-| Stablecoin swaps | [@lendasat/lendaswap-sdk-pure](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) |
+| Stablecoin swaps | [LendaSwap SDK](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) |
 
 ## Network support
 
-- **Mutinynet** (default) — Bitcoin testnet with 30s blocks. Free faucet at [faucet.mutinynet.com](https://faucet.mutinynet.com).
-- **Mainnet** — Change the env vars to mainnet URLs.
+| Network | Block time | Notes |
+|---|---|---|
+| **Mutinynet** (default) | ~30s | Free faucet at [faucet.mutinynet.com](https://faucet.mutinynet.com) |
+| **Mainnet** | ~10min | Change env vars to mainnet URLs |
 
 ## Contributing
 
 Contributions welcome. Please read [ARCHITECTURE.md](./ARCHITECTURE.md) before diving into the swap protocol code.
 
+```bash
+# Format code before submitting
+npm run format
+
+# Check formatting + lint
+npm run format:check
+npm run lint
+```
+
 ## License
 
-MIT
+[MIT](./LICENSE)
