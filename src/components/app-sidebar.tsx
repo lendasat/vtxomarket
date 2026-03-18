@@ -2,7 +2,6 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { FlaskConical } from "lucide-react";
 
 const navItems = [
   {
@@ -52,29 +51,6 @@ const navItems = [
     ),
   },
   {
-    href: "/dev",
-    label: "Dev",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        className="h-[18px] w-[18px]"
-      >
-        <path
-          fillRule="evenodd"
-          d="M6.28 5.22a.75.75 0 0 1 0 1.06L2.56 10l3.72 3.72a.75.75 0 0 1-1.06 1.06L.97 10.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Zm7.44 0a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L17.44 10l-3.72-3.72a.75.75 0 0 1 0-1.06ZM11.377 2.011a.75.75 0 0 1 .612.867l-2.5 14.5a.75.75 0 0 1-1.478-.255l2.5-14.5a.75.75 0 0 1 .866-.612Z"
-          clipRule="evenodd"
-        />
-      </svg>
-    ),
-  },
-  {
-    href: "/lab",
-    label: "Lab",
-    icon: <FlaskConical className="h-[18px] w-[18px]" strokeWidth={2} />,
-  },
-  {
     href: "/settings",
     label: "Settings",
     icon: (
@@ -116,7 +92,7 @@ export function AppSidebar() {
 
         {/* Nav icons */}
         <nav className="flex flex-col items-center gap-1.5 flex-1">
-          {navItems.slice(0, 5).map((item) => {
+          {navItems.slice(0, 3).map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -146,7 +122,7 @@ export function AppSidebar() {
               : "text-muted-foreground/50 hover:text-muted-foreground/80 hover:bg-white/[0.05]"
           }`}
         >
-          {navItems[5].icon}
+          {navItems[3].icon}
           <span className="absolute left-full ml-2 px-2 py-1 rounded-md bg-card border border-border/40 text-xs font-medium text-foreground whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity shadow-lg">
             Settings
           </span>
