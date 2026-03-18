@@ -57,9 +57,14 @@ async function proxyRequest(request: Request, context: { params: Promise<{ path:
 
   const resp = await fetch(targetUrl, init);
 
-  // Forward the response back, stripping hop-by-hop headers
+  // Forward the response back, stripping hop-by-hop and encoding headers.
+  // Node's fetch() auto-decompresses gzip/br but keeps the content-encoding
+  // header — if we forward it, the browser tries to decompress again and fails
+  // with ERR_CONTENT_DECODING_FAILED.
   const respHeaders = new Headers(resp.headers);
   respHeaders.delete("transfer-encoding");
+  respHeaders.delete("content-encoding");
+  respHeaders.delete("content-length"); // length is wrong after decompression
 
   return new Response(resp.body, {
     status: resp.status,
