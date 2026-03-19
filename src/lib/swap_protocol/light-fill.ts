@@ -518,9 +518,10 @@ export async function lightFillBuyOffer(
   // ── 1a. Verify buy arkade script matches offer params ───────────────────
   // Reconstruct the expected arkade script from the declared makerPkScript,
   // assetId, and tokenAmount. Abort if the maker submitted a manipulated script.
-  const assetIdObj = sdk.asset.AssetId.fromString(offer.assetId);
-  const assetTxidBytes: Uint8Array =
-    typeof assetIdObj.txid === "string" ? hexToBytes(assetIdObj.txid) : assetIdObj.txid;
+  // Use the same txid extraction as createBuyOffer: manual hex parse + reverse.
+  const assetIdHex = offer.assetId.replace(":", "");
+  const assetTxidDisplay = hexToBytes(assetIdHex.slice(0, 64));
+  const assetTxidBytes = new Uint8Array(assetTxidDisplay).reverse();
   const expectedBuyArkadeScript = buildBuyArkadeScript(
     hexToBytes(offer.makerPkScript),
     assetTxidBytes,
