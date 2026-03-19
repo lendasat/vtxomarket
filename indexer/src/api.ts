@@ -78,10 +78,19 @@ export function buildApp(): Hono {
   const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
     .split(",")
     .map((s) => s.trim());
+
+  function isAllowedOrigin(origin: string): boolean {
+    return allowedOrigins.some((allowed) =>
+      allowed.startsWith("*.")
+        ? origin.endsWith(allowed.slice(1)) || origin === `https://${allowed.slice(2)}`
+        : allowed === origin
+    );
+  }
+
   app.use(
     "*",
     cors({
-      origin: (origin) => (allowedOrigins.includes(origin) ? origin : allowedOrigins[0]),
+      origin: (origin) => (isAllowedOrigin(origin) ? origin : allowedOrigins[0]),
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type"],
     })
