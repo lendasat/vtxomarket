@@ -302,10 +302,13 @@ export async function buildSwapScript(params: SwapScriptParams): Promise<SwapScr
   ]);
 
   // ── Leaf 1: Cancel exit (CSV — relative timelock + maker CHECKSIG) ──
-  // cancelSeconds is the raw BIP68 sequence value from the ASP's unilateralExitDelay.
+  // cancelSeconds is seconds from ASP's unilateralExitDelay.
+  // Must be BIP68 time-encoded: set bit 22 (type flag), value = ceil(seconds/512).
+  const BIP68_TIME_FLAG = 0x400000;
+  const bip68Value = BIP68_TIME_FLAG | Math.ceil(cancelSeconds / 512);
   const { ScriptNum } = btc;
   const MinimalScriptNum = ScriptNum(undefined, true);
-  const sequenceBytes = MinimalScriptNum.encode(BigInt(cancelSeconds));
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(bip68Value));
   const cancelLeafBytes = btc.Script.encode([
     sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
     "CHECKSEQUENCEVERIFY",
@@ -425,10 +428,12 @@ export async function buildBuySwapScript(params: BuySwapScriptParams): Promise<S
   ]);
 
   // Leaf 1: Cancel exit (CSV — relative timelock + buyer CHECKSIG)
-  // cancelSeconds is the raw BIP68 sequence value from the ASP's unilateralExitDelay.
+  // BIP68 time-encoded: set bit 22 (type flag), value = ceil(seconds/512).
+  const BIP68_TIME_FLAG = 0x400000;
+  const bip68Value = BIP68_TIME_FLAG | Math.ceil(cancelSeconds / 512);
   const { ScriptNum } = btc;
   const MinimalScriptNum = ScriptNum(undefined, true);
-  const sequenceBytes = MinimalScriptNum.encode(BigInt(cancelSeconds));
+  const sequenceBytes = MinimalScriptNum.encode(BigInt(bip68Value));
   const cancelLeafBytes = btc.Script.encode([
     sequenceBytes.length === 1 ? sequenceBytes[0] : sequenceBytes,
     "CHECKSEQUENCEVERIFY",
