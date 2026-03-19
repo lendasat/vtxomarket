@@ -242,6 +242,8 @@ export default function LabPage() {
   const [fcTokenAmount, setFcTokenAmount] = useState("");
   const [fcSatAmount, setFcSatAmount] = useState("");
   const [fcMakerAddress, setFcMakerAddress] = useState("");
+  const [fcMakerPkScript, setFcMakerPkScript] = useState("");
+  const [fcMakerXOnlyPubkey, setFcMakerXOnlyPubkey] = useState("");
   const [fcOfferType, setFcOfferType] = useState<"sell" | "buy">("sell");
 
   const addLog = useCallback((level: LogLine["level"], msg: string) => {
@@ -341,6 +343,8 @@ export default function LabPage() {
       setFcTokenAmount(String(offer.tokenAmount));
       setFcSatAmount(String(offer.satAmount));
       setFcMakerAddress(offer.makerArkAddress);
+      setFcMakerPkScript(offer.makerPkScript);
+      setFcMakerXOnlyPubkey(offer.makerXOnlyPubkey);
       setFcOfferType("sell");
     } catch (e) {
       addLog("error", String(e));
@@ -409,6 +413,8 @@ export default function LabPage() {
       setFcTokenAmount(String(offer.tokenAmount));
       setFcSatAmount(String(offer.satAmount));
       setFcMakerAddress(offer.makerArkAddress);
+      setFcMakerPkScript(offer.makerPkScript);
+      setFcMakerXOnlyPubkey(offer.makerXOnlyPubkey);
       setFcOfferType("buy");
     } catch (e) {
       addLog("error", String(e));
@@ -435,8 +441,8 @@ export default function LabPage() {
       satAmount: parseInt(fcSatAmount, 10) || 0,
       makerArkAddress: fcMakerAddress,
       vtxoSatsValue: 0,
-      makerPkScript: "",
-      makerXOnlyPubkey: "",
+      makerPkScript: fcMakerPkScript,
+      makerXOnlyPubkey: fcMakerXOnlyPubkey,
       expiresAt: 0,
     };
     setBusy(true);
@@ -475,8 +481,8 @@ export default function LabPage() {
       satAmount: parseInt(fcSatAmount, 10) || 0,
       vtxoSatsValue: parseInt(fcSatAmount, 10) || 0,
       makerArkAddress: fcMakerAddress,
-      makerPkScript: "",
-      makerXOnlyPubkey: "",
+      makerPkScript: fcMakerPkScript,
+      makerXOnlyPubkey: fcMakerXOnlyPubkey,
       expiresAt: 0,
     };
     setBusy(true);

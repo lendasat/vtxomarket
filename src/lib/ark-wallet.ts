@@ -28,15 +28,18 @@ export async function getAspInfo(): Promise<any> {
     return _cachedAspInfo;
   }
   try {
+    console.log("[asp-info] Fetching from %s/v1/info", ARK_SERVER_URL);
     const resp = await fetch(`${ARK_SERVER_URL}/v1/info`, {
       signal: AbortSignal.timeout(10_000),
     });
+    console.log("[asp-info] Response status: %d", resp.status);
     if (!resp.ok) return _cachedAspInfo;
     const info = await resp.json();
     _cachedAspInfo = info;
     _aspInfoFetchedAt = Date.now();
     return info;
-  } catch {
+  } catch (err) {
+    console.error("[asp-info] Fetch failed:", err);
     return _cachedAspInfo;
   }
 }

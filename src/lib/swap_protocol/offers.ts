@@ -59,13 +59,21 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
     );
   }
 
+  console.log("[swap] Step 1: Getting maker address...");
   const makerArkAddress = await wallet.getAddress();
+  console.log("[swap] Step 1 done: address=%s", makerArkAddress.slice(0, 20));
   const decodedAddr = ArkAddress.decode(makerArkAddress);
   const makerPkScript: Uint8Array = decodedAddr.pkScript;
   const makerXOnlyPubkey: Uint8Array = await wallet.identity.xOnlyPublicKey();
 
   // Get ASP and introspector public keys
+  console.log("[swap] Step 2: Getting ASP info...");
   const aspInfo = await getAspInfo();
+  console.log(
+    "[swap] Step 2 done: aspInfo=%o",
+    aspInfo ? { signerPubkey: aspInfo.signerPubkey?.slice(0, 12), network: aspInfo.network } : null
+  );
+  if (!aspInfo) throw new Error("[swap] Failed to fetch ASP info — is the Ark server reachable?");
   const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
   let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
   if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1);
@@ -74,7 +82,9 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   // The ASP rejects scripts with shorter exit delays.
   const cancelSeconds = Number(aspInfo.unilateralExitDelay);
 
+  console.log("[swap] Step 3: Getting introspector info...");
   const introspectorInfo = await getIntrospectorInfo();
+  console.log("[swap] Step 3 done: introspector=%s", introspectorInfo.signerPubkey?.slice(0, 12));
   let introspectorPubkey = hexToBytes(introspectorInfo.signerPubkey);
   if (introspectorPubkey.length === 33) introspectorPubkey = introspectorPubkey.slice(1);
 
