@@ -25,6 +25,7 @@ import { hex as scureHex } from "@scure/base";
 import { decodeSwapScript, buildArkadeScript, buildBuyArkadeScript } from "./script";
 import { getIntrospectorInfo, INTROSPECTOR_URL } from "./introspector-client";
 import type { SwapOffer, BuyOffer } from "./offers";
+import { getArkProvider } from "../ark-wallet";
 
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
@@ -434,10 +435,9 @@ export async function lightFillSwapOffer(
   // ── 10. Submit to ASP ──────────────────────────────────────────────────
 
   log({ type: "submitting_to_asp" });
-  const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
-    mergedArkTxB64,
-    mergedCheckpoints
-  );
+  const { arkTxid, signedCheckpointTxs } = await (
+    await getArkProvider()
+  ).submitTx(mergedArkTxB64, mergedCheckpoints);
 
   log({ type: "asp_accepted", arkTxid });
 
@@ -465,7 +465,7 @@ export async function lightFillSwapOffer(
   // ── 12. Finalize ───────────────────────────────────────────────────────
 
   log({ type: "finalizing" });
-  await wallet.arkProvider.finalizeTx(arkTxid, finalCheckpoints);
+  await (await getArkProvider()).finalizeTx(arkTxid, finalCheckpoints);
   log({ type: "complete", arkTxid });
 
   return arkTxid;
@@ -778,10 +778,9 @@ export async function lightFillBuyOffer(
   // ── 10. Submit to ASP ──────────────────────────────────────────────────
 
   log({ type: "submitting_to_asp" });
-  const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
-    mergedArkTxB64,
-    mergedCheckpoints
-  );
+  const { arkTxid, signedCheckpointTxs } = await (
+    await getArkProvider()
+  ).submitTx(mergedArkTxB64, mergedCheckpoints);
 
   log({ type: "asp_accepted", arkTxid });
 
@@ -803,7 +802,7 @@ export async function lightFillBuyOffer(
   // ── 12. Finalize ───────────────────────────────────────────────────────
 
   log({ type: "finalizing" });
-  await wallet.arkProvider.finalizeTx(arkTxid, finalCheckpoints);
+  await (await getArkProvider()).finalizeTx(arkTxid, finalCheckpoints);
   log({ type: "complete", arkTxid });
 
   return arkTxid;

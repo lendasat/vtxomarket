@@ -23,7 +23,7 @@ const ASP_INFO_TTL = 10 * 60 * 1000;
  * Cached for 10 minutes. Used by both fee display and Ramps operations.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getAspInfo(): Promise<any> {
+export async function getAspInfo(): Promise<any> {
   if (_cachedAspInfo && Date.now() - _aspInfoFetchedAt < ASP_INFO_TTL) {
     return _cachedAspInfo;
   }
@@ -49,6 +49,16 @@ export async function getAspOnchainFee(): Promise<number> {
   const info = await getAspInfo();
   const feeExpr = info?.fees?.intentFee?.onchainOutput;
   return feeExpr ? Math.ceil(parseFloat(feeExpr)) : FALLBACK_ONCHAIN_FEE;
+}
+
+/**
+ * Get a RestArkProvider instance for direct ASP API calls (submitTx, finalizeTx).
+ * ServiceWorkerWallet doesn't expose arkProvider, so swap protocol code uses this.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getArkProvider(): Promise<any> {
+  const { RestArkProvider } = await getSDK();
+  return new RestArkProvider(ARK_SERVER_URL);
 }
 
 // VTXO renewal: default 3 days before expiry (matches Arkade SDK default)

@@ -13,6 +13,7 @@
 import { hex as scureHex } from "@scure/base";
 import { buildSwapScript, buildBuySwapScript, decodeSwapScript } from "./script";
 import { getIntrospectorInfo } from "./introspector-client";
+import { getAspInfo, getArkProvider } from "../ark-wallet";
 
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
@@ -64,7 +65,7 @@ export async function createSwapOffer(wallet: any, params: SwapOfferParams): Pro
   const makerXOnlyPubkey: Uint8Array = await wallet.identity.xOnlyPublicKey();
 
   // Get ASP and introspector public keys
-  const aspInfo = await wallet.arkProvider.getInfo();
+  const aspInfo = await getAspInfo();
   const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
   let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
   if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1);
@@ -226,10 +227,9 @@ export async function cancelSwapOffer(
   );
 
   log({ type: "submitting_to_asp" });
-  const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
-    base64.encode(signedArkTx.toPSBT()),
-    checkpointPsbts
-  );
+  const { arkTxid, signedCheckpointTxs } = await (
+    await getArkProvider()
+  ).submitTx(base64.encode(signedArkTx.toPSBT()), checkpointPsbts);
   log({ type: "asp_accepted", arkTxid });
 
   // ── 7. Sign returned checkpoints ──────────────────────────────────────────
@@ -246,7 +246,7 @@ export async function cancelSwapOffer(
   // ── 8. Finalize ───────────────────────────────────────────────────────────
 
   log({ type: "finalizing" });
-  await wallet.arkProvider.finalizeTx(arkTxid, finalCheckpoints);
+  await (await getArkProvider()).finalizeTx(arkTxid, finalCheckpoints);
   log({ type: "complete", arkTxid });
 
   return arkTxid;
@@ -299,7 +299,7 @@ export async function createBuyOffer(wallet: any, params: BuyOfferParams): Promi
   const buyerXOnlyPubkey: Uint8Array = await wallet.identity.xOnlyPublicKey();
 
   // Get ASP and introspector public keys
-  const aspInfo = await wallet.arkProvider.getInfo();
+  const aspInfo = await getAspInfo();
   const aspPubkeyHex: string = aspInfo.signerPubkey ?? aspInfo.pubkey;
   let aspPubkeyBytes = hexToBytes(aspPubkeyHex);
   if (aspPubkeyBytes.length === 33) aspPubkeyBytes = aspPubkeyBytes.slice(1);
@@ -434,10 +434,9 @@ export async function cancelBuyOffer(
   );
 
   log({ type: "submitting_to_asp" });
-  const { arkTxid, signedCheckpointTxs } = await wallet.arkProvider.submitTx(
-    base64.encode(signedArkTx.toPSBT()),
-    checkpointPsbts
-  );
+  const { arkTxid, signedCheckpointTxs } = await (
+    await getArkProvider()
+  ).submitTx(base64.encode(signedArkTx.toPSBT()), checkpointPsbts);
   log({ type: "asp_accepted", arkTxid });
 
   const { Transaction } = await import("@scure/btc-signer");
@@ -450,7 +449,7 @@ export async function cancelBuyOffer(
   );
 
   log({ type: "finalizing" });
-  await wallet.arkProvider.finalizeTx(arkTxid, finalCheckpoints);
+  await (await getArkProvider()).finalizeTx(arkTxid, finalCheckpoints);
   log({ type: "complete", arkTxid });
 
   return arkTxid;
