@@ -487,7 +487,7 @@ export default function WalletPage() {
             </div>
 
             {/* ── Your Tokens ── */}
-            <div className="space-y-3">
+            <div className="space-y-3 pb-20 md:pb-0">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/40">
                   Your Tokens
