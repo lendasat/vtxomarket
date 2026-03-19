@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { safeUrl } from "@/lib/safe-url";
 import { QRCodeSVG } from "qrcode.react";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, isControlAsset } from "@/lib/store";
 import { useTokens } from "@/hooks/useTokens";
 import {
   getBalance,
@@ -129,9 +129,9 @@ export default function WalletPage() {
   const tokens = useAppStore((s) => s.tokens);
   const stablecoinTxs = useAppStore((s) => s.stablecoinTxs);
 
-  // Map held assets to token metadata
+  // Map held assets to token metadata (exclude control assets)
   const userTokens = heldAssets
-    .filter((a) => a.amount > 0)
+    .filter((a) => a.amount > 0 && !isControlAsset(a.assetId, tokens))
     .map((a) => {
       const token = tokens.find((t) => t.assetId === a.assetId);
       return {

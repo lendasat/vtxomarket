@@ -7,7 +7,7 @@ import { TokenCard } from "@/components/token-card";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useTokens } from "@/hooks/useTokens";
 import { useMarketSummary } from "@/hooks/useMarketSummary";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, isControlAsset } from "@/lib/store";
 import { formatTokenAmount } from "@/lib/format";
 
 type SortMode = "trending" | "new";
@@ -26,11 +26,11 @@ export default function Home() {
 
   const myTokens = useMemo(() => {
     if (!user?.pubkey) return [];
-    return tokens.filter((t) => t.creator === user.pubkey);
+    return tokens.filter((t) => t.creator === user.pubkey && !isControlAsset(t.assetId, tokens));
   }, [tokens, user?.pubkey]);
 
   const filtered = useMemo(() => {
-    let list = [...tokens];
+    let list = tokens.filter((t) => !isControlAsset(t.assetId, tokens));
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -55,7 +55,11 @@ export default function Home() {
   }, [tokens, sort, search]);
 
   const topMovers = useMemo(
-    () => [...tokens].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5),
+    () =>
+      tokens
+        .filter((t) => !isControlAsset(t.assetId, tokens))
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 5),
     [tokens]
   );
 
