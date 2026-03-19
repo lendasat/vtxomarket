@@ -58,6 +58,8 @@ export interface SubmitFinalizationResponse {
 }
 
 async function introspectorFetch<T>(path: string, body?: unknown): Promise<T> {
+  const url = `${INTROSPECTOR_URL}${path}`;
+  console.log("[introspector] %s %s", body ? "POST" : "GET", url);
   const opts: RequestInit = {
     signal: AbortSignal.timeout(30_000),
   };
@@ -67,12 +69,18 @@ async function introspectorFetch<T>(path: string, body?: unknown): Promise<T> {
     opts.headers = { "Content-Type": "application/json" };
     opts.body = JSON.stringify(body);
   }
-  const resp = await fetch(`${INTROSPECTOR_URL}${path}`, opts);
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Introspector ${path} failed (${resp.status}): ${text}`);
+  try {
+    const resp = await fetch(url, opts);
+    console.log("[introspector] %s %s → %d", body ? "POST" : "GET", path, resp.status);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`Introspector ${path} failed (${resp.status}): ${text}`);
+    }
+    return resp.json();
+  } catch (err) {
+    console.error("[introspector] %s %s FAILED:", body ? "POST" : "GET", url, err);
+    throw err;
   }
-  return resp.json();
 }
 
 /** Get introspector info (base signer pubkey). */
