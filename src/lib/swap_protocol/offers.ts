@@ -13,7 +13,7 @@
 import { hex as scureHex } from "@scure/base";
 import { buildSwapScript, buildBuySwapScript, decodeSwapScript } from "./script";
 import { getIntrospectorInfo } from "./introspector-client";
-import { getAspInfo, getArkProvider } from "../ark-wallet";
+import { getAspInfo, getArkProvider, getServerUnrollScript } from "../ark-wallet";
 
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
@@ -216,10 +216,7 @@ export async function cancelSwapOffer(
 
   // ── 4. Build offchain tx ──────────────────────────────────────────────────
 
-  const serverUnrollScript = wallet.serverUnrollScript;
-  if (!serverUnrollScript) {
-    throw new Error("wallet.serverUnrollScript not available — ensure wallet is initialized");
-  }
+  const serverUnrollScript = await getServerUnrollScript();
 
   const offchainTx = buildOffchainTx([cancelInput], outputs, serverUnrollScript);
   log({ type: "offchain_tx_built", inputs: 1, outputs: outputs.length });
@@ -427,10 +424,7 @@ export async function cancelBuyOffer(
   const outputs = [buyerOutput];
 
   // Build offchain tx
-  const serverUnrollScript = wallet.serverUnrollScript;
-  if (!serverUnrollScript) {
-    throw new Error("wallet.serverUnrollScript not available — ensure wallet is initialized");
-  }
+  const serverUnrollScript = await getServerUnrollScript();
 
   const offchainTx = buildOffchainTx([cancelInput], outputs, serverUnrollScript);
   log({ type: "offchain_tx_built", inputs: 1, outputs: outputs.length });

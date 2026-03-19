@@ -25,7 +25,7 @@ import { hex as scureHex } from "@scure/base";
 import { decodeSwapScript, buildArkadeScript, buildBuyArkadeScript } from "./script";
 import { getIntrospectorInfo, INTROSPECTOR_URL } from "./introspector-client";
 import type { SwapOffer, BuyOffer } from "./offers";
-import { getArkProvider } from "../ark-wallet";
+import { getArkProvider, getServerUnrollScript } from "../ark-wallet";
 
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
@@ -326,13 +326,7 @@ export async function lightFillSwapOffer(
 
   // ── 4. Build offchain tx (ark tx + checkpoints) ─────────────────────────
 
-  // Get serverUnrollScript from the wallet (it's set during Wallet.create from ASP info)
-  const serverUnrollScript = wallet.serverUnrollScript;
-  if (!serverUnrollScript) {
-    throw new Error(
-      "wallet.serverUnrollScript not available — ensure the wallet is fully initialized"
-    );
-  }
+  const serverUnrollScript = await getServerUnrollScript();
 
   // Format all inputs with tapLeafScript set to their forfeit/collaborative closure
   const allInputs = [swapInput, ...fundingInputs].map((input) => ({
@@ -691,12 +685,7 @@ export async function lightFillBuyOffer(
 
   // ── 4. Build offchain tx ───────────────────────────────────────────────
 
-  const serverUnrollScript = wallet.serverUnrollScript;
-  if (!serverUnrollScript) {
-    throw new Error(
-      "wallet.serverUnrollScript not available — ensure the wallet is fully initialized"
-    );
-  }
+  const serverUnrollScript = await getServerUnrollScript();
 
   const allInputs = [swapInput, ...tokenInputs].map((input) => ({
     ...input,

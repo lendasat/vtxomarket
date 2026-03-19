@@ -64,6 +64,22 @@ export async function getArkProvider(): Promise<any> {
   return new RestArkProvider(ARK_SERVER_URL);
 }
 
+/**
+ * Get the serverUnrollScript (checkpoint tapscript) from ASP info.
+ * ServiceWorkerWallet doesn't expose this property, so we reconstruct it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getServerUnrollScript(): Promise<any> {
+  const { decodeTapscript } = await getSDK();
+  const info = await getAspInfo();
+  if (!info?.checkpointTapscript) {
+    throw new Error("ASP info missing checkpointTapscript");
+  }
+  const { hex: scHex } = await import("@scure/base");
+  const scriptBytes = scHex.decode(info.checkpointTapscript);
+  return decodeTapscript(scriptBytes);
+}
+
 // VTXO renewal: default 3 days before expiry (matches Arkade SDK default)
 const DEFAULT_RENEWAL_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
 
