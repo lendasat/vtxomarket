@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { hex as scureHex } from "@scure/base";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, isControlAsset } from "@/lib/store";
 
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 import { useTokens } from "@/hooks/useTokens";
@@ -180,9 +180,9 @@ export default function LabPage() {
   useTokens();
   const tokens = useAppStore((s) => s.tokens);
 
-  // Map held assets to token metadata for the dropdown
+  // Map held assets to token metadata for the dropdown (exclude control assets)
   const userTokens = heldAssets
-    .filter((a) => a.amount > 0)
+    .filter((a) => a.amount > 0 && !isControlAsset(a.assetId, tokens))
     .map((a) => {
       const token = tokens.find((t) => t.assetId === a.assetId);
       return {
@@ -912,6 +912,7 @@ export default function LabPage() {
                       {cbDropdownOpen && (
                         <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto rounded-lg bg-zinc-900 border border-white/[0.1] shadow-xl">
                           {tokens
+                            .filter((t) => !isControlAsset(t.assetId, tokens))
                             .filter((t) => {
                               if (!cbSearch.trim()) return true;
                               const q = cbSearch.toLowerCase();
@@ -941,15 +942,17 @@ export default function LabPage() {
                                 </span>
                               </button>
                             ))}
-                          {tokens.filter((t) => {
-                            if (!cbSearch.trim()) return true;
-                            const q = cbSearch.toLowerCase();
-                            return (
-                              t.name.toLowerCase().includes(q) ||
-                              t.ticker.toLowerCase().includes(q) ||
-                              t.assetId.toLowerCase().includes(q)
-                            );
-                          }).length === 0 && (
+                          {tokens
+                            .filter((t) => !isControlAsset(t.assetId, tokens))
+                            .filter((t) => {
+                              if (!cbSearch.trim()) return true;
+                              const q = cbSearch.toLowerCase();
+                              return (
+                                t.name.toLowerCase().includes(q) ||
+                                t.ticker.toLowerCase().includes(q) ||
+                                t.assetId.toLowerCase().includes(q)
+                              );
+                            }).length === 0 && (
                             <div className="px-3 py-3 text-xs text-muted-foreground/50 text-center">
                               No assets found
                             </div>
