@@ -780,39 +780,44 @@ export default function WalletPage() {
                                   ? `Amount (${userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"})`
                                   : "Amount (sats)"}
                               </label>
-                              <input
-                                type="number"
-                                value={sendAmount}
-                                onChange={(e) => setSendAmount(e.target.value)}
-                                placeholder="0"
-                                className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
-                              />
-                              {sendAssetId && tab === "arkade" ? (
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={sendAmount}
+                                  onChange={(e) => setSendAmount(e.target.value)}
+                                  placeholder="0"
+                                  className="w-full h-11 px-4 pr-16 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
+                                />
                                 <button
                                   type="button"
-                                  className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-white/[0.08] border border-white/[0.1] text-[10px] font-semibold text-muted-foreground/60 hover:bg-white/[0.14] hover:text-foreground/80 transition-all"
                                   onClick={() => {
-                                    const t = userTokens.find((t) => t.assetId === sendAssetId);
-                                    setSendAmount(String(t?.amount ?? 0));
+                                    if (sendAssetId && tab === "arkade") {
+                                      const t = userTokens.find((t) => t.assetId === sendAssetId);
+                                      if (t) setSendAmount(formatTokenAmount(t.amount, t.decimals));
+                                    } else if (balance) {
+                                      setSendAmount(String(balance.available));
+                                    }
                                   }}
                                 >
-                                  Max:{" "}
+                                  Max
+                                </button>
+                              </div>
+                              {sendAssetId && tab === "arkade" ? (
+                                <p className="text-[10px] text-muted-foreground/30 tabular-nums">
+                                  Available:{" "}
                                   {formatTokenAmount(
                                     userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0,
                                     userTokens.find((t) => t.assetId === sendAssetId)?.decimals
                                   )}{" "}
                                   {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ??
                                     "tokens"}
-                                </button>
+                                </p>
                               ) : (
                                 balance && (
-                                  <button
-                                    type="button"
-                                    className="text-[11px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-                                    onClick={() => setSendAmount(String(balance.available))}
-                                  >
-                                    Max: {balance.available.toLocaleString()} sats
-                                  </button>
+                                  <p className="text-[10px] text-muted-foreground/30 tabular-nums">
+                                    Available: {balance.available.toLocaleString()} sats
+                                  </p>
                                 )
                               )}
                             </div>
@@ -915,8 +920,10 @@ function SendAssetPicker({
           </>
         ) : (
           <>
-            <div className="h-7 w-7 shrink-0 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-amber-400">₿</span>
+            <div className="h-7 w-7 shrink-0 rounded-full bg-[#f7931a] flex items-center justify-center">
+              <svg viewBox="0 0 64 64" className="h-4 w-4" fill="white">
+                <path d="M46.3 27.5c.6-4.2-2.6-6.5-7-8l1.4-5.7-3.5-.9-1.4 5.5c-.9-.2-1.9-.4-2.8-.7l1.4-5.5-3.5-.9-1.4 5.7c-.8-.2-1.5-.3-2.2-.5l-4.8-1.2-.9 3.7s2.6.6 2.5.6c1.4.4 1.7 1.3 1.6 2l-1.6 6.5c.1 0 .2.1.4.1l-.4-.1-2.3 9.1c-.2.4-.6 1.1-1.6.8 0 0-2.5-.6-2.5-.6l-1.7 4 4.5 1.1c.8.2 1.7.4 2.5.6l-1.4 5.8 3.5.9 1.4-5.7c1 .3 1.9.5 2.8.7l-1.4 5.7 3.5.9 1.4-5.7c6 1.1 10.4.7 12.3-4.7 1.5-4.4-.1-6.9-3.2-8.5 2.3-.5 4-2.1 4.5-5.2zM38.7 38c-1.1 4.4-8.4 2-10.8 1.4l1.9-7.7c2.4.6 10 1.8 8.9 6.3zm1.1-10.6c-1 4-7.1 2-9 1.5l1.7-7c2 .5 8.4 1.4 7.3 5.5z" />
+              </svg>
             </div>
             <span className="flex-1 text-left font-medium">Bitcoin</span>
             <span className="text-[10px] text-muted-foreground/40 font-mono">BTC</span>
@@ -944,8 +951,10 @@ function SendAssetPicker({
             }}
             className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-white/[0.06] ${!sendAssetId ? "bg-white/[0.04]" : ""}`}
           >
-            <div className="h-7 w-7 shrink-0 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-amber-400">₿</span>
+            <div className="h-7 w-7 shrink-0 rounded-full bg-[#f7931a] flex items-center justify-center">
+              <svg viewBox="0 0 64 64" className="h-4 w-4" fill="white">
+                <path d="M46.3 27.5c.6-4.2-2.6-6.5-7-8l1.4-5.7-3.5-.9-1.4 5.5c-.9-.2-1.9-.4-2.8-.7l1.4-5.5-3.5-.9-1.4 5.7c-.8-.2-1.5-.3-2.2-.5l-4.8-1.2-.9 3.7s2.6.6 2.5.6c1.4.4 1.7 1.3 1.6 2l-1.6 6.5c.1 0 .2.1.4.1l-.4-.1-2.3 9.1c-.2.4-.6 1.1-1.6.8 0 0-2.5-.6-2.5-.6l-1.7 4 4.5 1.1c.8.2 1.7.4 2.5.6l-1.4 5.8 3.5.9 1.4-5.7c1 .3 1.9.5 2.8.7l-1.4 5.7 3.5.9 1.4-5.7c6 1.1 10.4.7 12.3-4.7 1.5-4.4-.1-6.9-3.2-8.5 2.3-.5 4-2.1 4.5-5.2zM38.7 38c-1.1 4.4-8.4 2-10.8 1.4l1.9-7.7c2.4.6 10 1.8 8.9 6.3zm1.1-10.6c-1 4-7.1 2-9 1.5l1.7-7c2 .5 8.4 1.4 7.3 5.5z" />
+              </svg>
             </div>
             <span className="flex-1 text-left font-medium">Bitcoin</span>
             <span className="text-[10px] text-muted-foreground/40 font-mono">BTC</span>
