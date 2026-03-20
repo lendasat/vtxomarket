@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { hex as scureHex } from "@scure/base";
 import { useAppStore, isControlAsset } from "@/lib/store";
+import { safeUrl } from "@/lib/safe-url";
+import { formatTokenAmount } from "@/lib/format";
 
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
 import { useTokens } from "@/hooks/useTokens";
@@ -190,6 +192,8 @@ export default function LabPage() {
         amount: a.amount,
         name: token?.name ?? "Unknown",
         ticker: token?.ticker ?? "???",
+        image: token?.image,
+        decimals: token?.decimals,
       };
     });
 
@@ -813,20 +817,11 @@ export default function LabPage() {
                     <div className="col-span-2">
                       <label className="text-xs text-muted-foreground mb-1 block">Asset</label>
                       {userTokens.length > 0 ? (
-                        <select
+                        <LabAssetPicker
+                          tokens={userTokens}
                           value={coAssetId}
-                          onChange={(e) => setCoAssetId(e.target.value)}
-                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-white/20 appearance-none"
-                        >
-                          <option value="" className="bg-zinc-900">
-                            Select a token…
-                          </option>
-                          {userTokens.map((t) => (
-                            <option key={t.assetId} value={t.assetId} className="bg-zinc-900">
-                              {t.ticker} — {t.name} ({t.amount.toLocaleString()} held)
-                            </option>
-                          ))}
-                        </select>
+                          onChange={setCoAssetId}
+                        />
                       ) : (
                         <input
                           value={coAssetId}
@@ -1190,6 +1185,112 @@ export default function LabPage() {
 
       {/* Bottom padding for mobile nav */}
       <div className="h-24 md:h-4" />
+    </div>
+  );
+}
+
+function LabAssetPicker({
+  tokens: tokenList,
+  value,
+  onChange,
+}: {
+  tokens: {
+    assetId: string;
+    amount: number;
+    name: string;
+    ticker: string;
+    image?: string;
+    decimals?: number;
+  }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = tokenList.find((t) => t.assetId === value);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2.5 h-10 px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm transition-all hover:bg-white/[0.07] focus:border-white/[0.14]"
+      >
+        {selected ? (
+          <>
+            <div className="h-6 w-6 shrink-0 rounded-md bg-white/[0.06] border border-white/[0.06] flex items-center justify-center overflow-hidden">
+              {selected.image ? (
+                <img
+                  src={safeUrl(selected.image) ?? ""}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-[8px] font-bold text-muted-foreground/40">
+                  {selected.ticker.slice(0, 2)}
+                </span>
+              )}
+            </div>
+            <span className="flex-1 text-left truncate font-medium">{selected.ticker}</span>
+            <span className="text-[10px] text-muted-foreground/30 tabular-nums">
+              {formatTokenAmount(selected.amount, selected.decimals)} held
+            </span>
+          </>
+        ) : (
+          <span className="flex-1 text-left text-muted-foreground/40">Select a token...</span>
+        )}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto rounded-lg bg-zinc-900 border border-white/[0.1] shadow-xl">
+          {tokenList.map((t) => (
+            <button
+              key={t.assetId}
+              onClick={() => {
+                onChange(t.assetId);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors hover:bg-white/[0.06] ${value === t.assetId ? "bg-white/[0.04]" : ""}`}
+            >
+              <div className="h-6 w-6 shrink-0 rounded-md bg-white/[0.06] border border-white/[0.06] flex items-center justify-center overflow-hidden">
+                {t.image ? (
+                  <img src={safeUrl(t.image) ?? ""} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[8px] font-bold text-muted-foreground/40">
+                    {t.ticker.slice(0, 2)}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="font-medium">{t.ticker}</span>
+                <span className="text-muted-foreground/40 ml-1.5 text-[11px]">{t.name}</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                {formatTokenAmount(t.amount, t.decimals)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
