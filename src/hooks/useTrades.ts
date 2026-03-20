@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const INDEXER_URL = process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001";
-const POLL_INTERVAL = 30_000;
+const POLL_INTERVAL = 10_000;
 
 export interface Trade {
   offerOutpoint: string;
