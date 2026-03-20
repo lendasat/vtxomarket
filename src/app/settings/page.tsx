@@ -410,22 +410,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Version Info + Advanced (Nostr/Ark keys) */}
-      <VersionInfo
-        user={user}
-        walletReady={walletReady}
-        nostrPrivKeyHex={nostrPrivKeyHex}
-        arkPrivKeyHex={arkPrivKeyHex}
-        hasNsecOverride={hasNsecOverride}
-        revealedNostrKey={revealedNostrKey}
-        revealedArkKey={revealedArkKey}
-        setRevealedNostrKey={setRevealedNostrKey}
-        setRevealedArkKey={setRevealedArkKey}
-        copied={copied}
-        handleCopy={handleCopy}
-        truncate={truncate}
-      />
-
       {/* About */}
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
         <div className="p-5 space-y-3">
@@ -520,6 +504,22 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
+      {/* Advanced / System Info — at bottom */}
+      <VersionInfo
+        user={user}
+        walletReady={walletReady}
+        nostrPrivKeyHex={nostrPrivKeyHex}
+        arkPrivKeyHex={arkPrivKeyHex}
+        hasNsecOverride={hasNsecOverride}
+        revealedNostrKey={revealedNostrKey}
+        revealedArkKey={revealedArkKey}
+        setRevealedNostrKey={setRevealedNostrKey}
+        setRevealedArkKey={setRevealedArkKey}
+        copied={copied}
+        handleCopy={handleCopy}
+        truncate={truncate}
+      />
 
       {/* Logout confirmation overlay */}
       {showLogoutConfirm && (
@@ -642,79 +642,87 @@ function VersionInfo({
     return `${Math.floor(s / 86400)}d`;
   };
 
-  if (!expanded) {
-    return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full text-center py-2 text-[10px] text-muted-foreground/25 hover:text-muted-foreground/40 transition-colors"
-      >
-        v{frontendSha.slice(0, 8)}
-      </button>
-    );
-  }
-
   return (
     <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
-      <div className="p-5 space-y-3">
-        <button
-          onClick={() => setExpanded(false)}
-          className="text-sm font-semibold hover:text-muted-foreground/70 transition-colors"
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between p-5"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">Advanced</span>
+          <code className="text-[10px] font-mono text-muted-foreground/30">
+            v{frontendSha.slice(0, 8)}
+          </code>
+        </div>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-4 w-4 text-muted-foreground/40 transition-transform ${expanded ? "rotate-180" : ""}`}
         >
-          System Info
-        </button>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[11px] text-muted-foreground/50">Frontend</span>
-            <code className="text-[11px] font-mono text-muted-foreground/70">
-              {frontendSha.slice(0, 8)}
-            </code>
-          </div>
-          <div className="h-px bg-white/[0.04]" />
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[11px] text-muted-foreground/50">Indexer</span>
-            <div className="flex items-center gap-2">
-              {indexerInfo ? (
-                <>
-                  <span className="text-[10px] text-muted-foreground/40">
-                    {indexerInfo.network} / {indexerInfo.assetCount} assets / up{" "}
-                    {formatUptime(indexerInfo.uptime || 0)}
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                </>
-              ) : (
-                <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-              )}
+          <path
+            fillRule="evenodd"
+            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-5 pb-5 space-y-3">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-[11px] text-muted-foreground/50">Frontend</span>
+              <code className="text-[11px] font-mono text-muted-foreground/70">
+                {frontendSha.slice(0, 8)}
+              </code>
             </div>
-          </div>
-          <div className="h-px bg-white/[0.04]" />
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[11px] text-muted-foreground/50">Introspector</span>
-            <div className="flex items-center gap-2">
-              {introspectorInfo ? (
-                <>
-                  <span className="text-[10px] text-muted-foreground/40">
-                    {introspectorInfo.version} / {introspectorInfo.signerPubkey?.slice(0, 8)}...
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                </>
-              ) : (
-                <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-              )}
+            <div className="h-px bg-white/[0.04]" />
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-[11px] text-muted-foreground/50">Indexer</span>
+              <div className="flex items-center gap-2">
+                {indexerInfo ? (
+                  <>
+                    <span className="text-[10px] text-muted-foreground/40">
+                      {indexerInfo.network} / {indexerInfo.assetCount} assets / up{" "}
+                      {formatUptime(indexerInfo.uptime || 0)}
+                    </span>
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  </>
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                )}
+              </div>
             </div>
-          </div>
-          <div className="h-px bg-white/[0.04]" />
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[11px] text-muted-foreground/50">Ark Server</span>
-            <code className="text-[10px] font-mono text-muted-foreground/40 truncate max-w-[200px]">
-              {arkServerUrl.replace("https://", "")}
-            </code>
-          </div>
-          <div className="h-px bg-white/[0.04]" />
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[11px] text-muted-foreground/50">Endpoints</span>
-            <code className="text-[10px] font-mono text-muted-foreground/30 truncate max-w-[200px]">
-              {indexerUrl.replace("https://", "").replace("http://", "")}
-            </code>
+            <div className="h-px bg-white/[0.04]" />
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-[11px] text-muted-foreground/50">Introspector</span>
+              <div className="flex items-center gap-2">
+                {introspectorInfo ? (
+                  <>
+                    <span className="text-[10px] text-muted-foreground/40">
+                      {introspectorInfo.version} / {introspectorInfo.signerPubkey?.slice(0, 8)}...
+                    </span>
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  </>
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                )}
+              </div>
+            </div>
+            <div className="h-px bg-white/[0.04]" />
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-[11px] text-muted-foreground/50">Ark Server</span>
+              <code className="text-[10px] font-mono text-muted-foreground/40 truncate max-w-[200px]">
+                {arkServerUrl.replace("https://", "")}
+              </code>
+            </div>
+            <div className="h-px bg-white/[0.04]" />
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-[11px] text-muted-foreground/50">Endpoints</span>
+              <code className="text-[10px] font-mono text-muted-foreground/30 truncate max-w-[200px]">
+                {indexerUrl.replace("https://", "").replace("http://", "")}
+              </code>
+            </div>
           </div>
 
           {/* Nostr Identity */}
@@ -792,7 +800,7 @@ function VersionInfo({
               ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
