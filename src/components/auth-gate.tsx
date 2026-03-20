@@ -59,8 +59,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function RiskWarning() {
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("vtxo-risk-accepted") === "1";
+    } catch {
+      return false;
+    }
+  });
   if (dismissed) return null;
+  const handleAccept = () => {
+    try {
+      localStorage.setItem("vtxo-risk-accepted", "1");
+    } catch {}
+    setDismissed(true);
+  };
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="mx-4 max-w-sm rounded-2xl bg-[oklch(0.15_0.004_260)] border border-white/[0.1] p-6 space-y-4 text-center">
@@ -90,7 +102,7 @@ function RiskWarning() {
           </p>
         </div>
         <button
-          onClick={() => setDismissed(true)}
+          onClick={handleAccept}
           className="w-full h-11 rounded-xl bg-amber-500/15 border border-amber-500/25 text-sm font-semibold text-amber-400 transition-all hover:bg-amber-500/25"
         >
           I understand the risks
