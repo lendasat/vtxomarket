@@ -477,7 +477,10 @@ export default function TokenPage() {
         <div className="space-y-4">
           {/* Price chart */}
           <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm p-4">
-            <TokenChart trades={trades} basePrice={trades.length > 0 ? trades[0].price : 0} />
+            <TokenChart
+              trades={trades}
+              basePrice={trades.length > 0 ? trades[trades.length - 1].price : 0}
+            />
           </div>
 
           {/* Buy / Sell offer buttons */}
