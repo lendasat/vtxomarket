@@ -1,1 +1,2 @@
-/token/:ticker /token.html 200
+/token/* /tokenview 200
+/token /tokenview 200

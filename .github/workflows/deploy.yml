@@ -38,7 +38,8 @@ jobs:
         run: |
           rm -rf src/app/token/\[id\]
           npm run build
-          rm -rf out/token/
+          mv out/token.html out/tokenview.html
+          rm -rf out/token/ out/token.txt
         env:
           STATIC_EXPORT: "true"
           NEXT_PUBLIC_ARK_SERVER_URL: ${{ vars.NEXT_PUBLIC_ARK_SERVER_URL || 'https://mutinynet.arkade.sh' }}
