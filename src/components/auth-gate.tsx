@@ -50,7 +50,54 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <RiskWarning />
+      {children}
+    </>
+  );
+}
+
+function RiskWarning() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="mx-4 max-w-sm rounded-2xl bg-[oklch(0.15_0.004_260)] border border-white/[0.1] p-6 space-y-4 text-center">
+        <div className="mx-auto h-12 w-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="h-6 w-6 text-amber-400"
+          >
+            <path
+              fillRule="evenodd"
+              d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-amber-400">Use at your own risk</h2>
+          <p className="text-sm text-muted-foreground/70 leading-relaxed">
+            This software is{" "}
+            <span className="text-foreground/90 font-medium">experimental and unaudited</span>. You
+            may lose all funds deposited here. There are no guarantees of any kind.
+          </p>
+          <p className="text-xs text-muted-foreground/40">
+            Not stable. Not tested. Not financial advice.
+          </p>
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="w-full h-11 rounded-xl bg-amber-500/15 border border-amber-500/25 text-sm font-semibold text-amber-400 transition-all hover:bg-amber-500/25"
+        >
+          I understand the risks
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** Shows the seed phrase after wallet creation and requires the user to confirm backup. */
