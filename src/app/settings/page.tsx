@@ -674,6 +674,7 @@ export default function SettingsPage() {
 }
 
 function VersionInfo() {
+  const [expanded, setExpanded] = useState(false);
   const [indexerInfo, setIndexerInfo] = useState<{
     network?: string;
     assetCount?: number;
@@ -686,10 +687,10 @@ function VersionInfo() {
 
   const frontendSha = process.env.NEXT_PUBLIC_GIT_SHA || "dev";
   const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "localhost:3001";
-  const introspectorUrl = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "localhost:7073";
   const arkServerUrl = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "";
 
   useEffect(() => {
+    if (!expanded) return;
     fetch(`${process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001"}/health`)
       .then((r) => r.json())
       .then(setIndexerInfo)
@@ -698,7 +699,7 @@ function VersionInfo() {
       .then((r) => r.json())
       .then(setIntrospectorInfo)
       .catch(() => {});
-  }, []);
+  }, [expanded]);
 
   const formatUptime = (s: number) => {
     if (s < 3600) return `${Math.floor(s / 60)}m`;
@@ -706,10 +707,26 @@ function VersionInfo() {
     return `${Math.floor(s / 86400)}d`;
   };
 
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full text-center py-2 text-[10px] text-muted-foreground/25 hover:text-muted-foreground/40 transition-colors"
+      >
+        v{frontendSha.slice(0, 8)}
+      </button>
+    );
+  }
+
   return (
     <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
       <div className="p-5 space-y-3">
-        <h2 className="text-sm font-semibold">System Info</h2>
+        <button
+          onClick={() => setExpanded(false)}
+          className="text-sm font-semibold hover:text-muted-foreground/70 transition-colors"
+        >
+          System Info
+        </button>
         <div className="space-y-2">
           <div className="flex items-center justify-between py-1.5">
             <span className="text-[11px] text-muted-foreground/50">Frontend</span>
