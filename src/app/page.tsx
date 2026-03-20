@@ -44,7 +44,16 @@ export default function Home() {
 
     switch (sort) {
       case "trending":
-        list.sort((a, b) => b.tradeCount - a.tradeCount);
+        // Score = open offers + recent trades. Tokens with active markets rank higher.
+        list.sort((a, b) => {
+          const aData = marketData.get(a.assetId);
+          const bData = marketData.get(b.assetId);
+          const aScore =
+            (aData?.openOfferCount ?? 0) * 2 + a.tradeCount + (aData?.lastTradeAt ? 1 : 0);
+          const bScore =
+            (bData?.openOfferCount ?? 0) * 2 + b.tradeCount + (bData?.lastTradeAt ? 1 : 0);
+          return bScore - aScore;
+        });
         break;
       case "new":
         list.sort((a, b) => b.createdAt - a.createdAt);
@@ -52,15 +61,21 @@ export default function Home() {
     }
 
     return list;
-  }, [tokens, sort, search]);
+  }, [tokens, sort, search, marketData]);
 
   const topMovers = useMemo(
     () =>
       tokens
         .filter((t) => !isControlAsset(t.assetId, tokens))
-        .sort((a, b) => b.createdAt - a.createdAt)
+        .sort((a, b) => {
+          const aData = marketData.get(a.assetId);
+          const bData = marketData.get(b.assetId);
+          const aScore = (aData?.openOfferCount ?? 0) * 2 + a.tradeCount;
+          const bScore = (bData?.openOfferCount ?? 0) * 2 + b.tradeCount;
+          return bScore - aScore;
+        })
         .slice(0, 5),
-    [tokens]
+    [tokens, marketData]
   );
 
   const heroTokens = topMovers.slice(0, 2);
