@@ -9,12 +9,9 @@ import { hex, bech32, base64 } from "@scure/base";
 
 // Arkade key derivation path — matches lendasat/wallet (m/44/1237/0' + /0/0)
 // for cross-compatibility: same mnemonic produces same Ark address in both apps.
+// In lendasat/wallet, the Ark key IS the Nostr/identity key — no separate path.
+// We follow the same convention: one key for everything.
 const ARK_DERIVATION_PATH = "m/44/1237/0'/0/0";
-
-// Nostr key derivation path — vtxomarket-specific (lendasat/wallet does not
-// derive Nostr keys from the mnemonic). Users importing a vtxomarket mnemonic
-// into lendasat/wallet will recover their Ark funds but not their Nostr identity.
-const NOSTR_DERIVATION_PATH = "m/44/0/0/0/0";
 
 export function generateMnemonic(): string {
   return bip39Generate(wordlist, 128); // 12 words
@@ -33,11 +30,8 @@ export function mnemonicToArkPrivateKeyHex(mnemonic: string): string {
 }
 
 export function mnemonicToNostrPrivateKeyHex(mnemonic: string): string {
-  const seed = mnemonicToSeedSync(mnemonic);
-  const master = HDKey.fromMasterSeed(seed);
-  const child = master.derive(NOSTR_DERIVATION_PATH);
-  if (!child.privateKey) throw new Error("Failed to derive Nostr private key");
-  return hex.encode(child.privateKey);
+  // Same key as Ark — matches lendasat/wallet where identity = ark key
+  return mnemonicToArkPrivateKeyHex(mnemonic);
 }
 
 export function decodeNsec(nsec: string): string {
