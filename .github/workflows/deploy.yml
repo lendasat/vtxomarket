@@ -42,6 +42,7 @@ jobs:
           rm -rf out/token/ out/token.txt
         env:
           STATIC_EXPORT: "true"
+          NEXT_PUBLIC_GIT_SHA: ${{ github.sha }}
           NEXT_PUBLIC_ARK_SERVER_URL: ${{ vars.NEXT_PUBLIC_ARK_SERVER_URL || 'https://mutinynet.arkade.sh' }}
           NEXT_PUBLIC_ESPLORA_URL: ${{ vars.NEXT_PUBLIC_ESPLORA_URL || 'https://mutinynet.com/api' }}
           NEXT_PUBLIC_BOLTZ_URL: ${{ vars.NEXT_PUBLIC_BOLTZ_URL || 'https://api.boltz.mutinynet.arkade.sh' }}

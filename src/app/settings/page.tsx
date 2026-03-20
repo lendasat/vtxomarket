@@ -514,6 +514,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Version Info */}
+      <VersionInfo />
+
       {/* About */}
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
         <div className="p-5 space-y-3">
@@ -666,6 +669,103 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function VersionInfo() {
+  const [indexerInfo, setIndexerInfo] = useState<{
+    network?: string;
+    assetCount?: number;
+    uptime?: number;
+  } | null>(null);
+  const [introspectorInfo, setIntrospectorInfo] = useState<{
+    version?: string;
+    signerPubkey?: string;
+  } | null>(null);
+
+  const frontendSha = process.env.NEXT_PUBLIC_GIT_SHA || "dev";
+  const indexerUrl = process.env.NEXT_PUBLIC_INDEXER_URL || "localhost:3001";
+  const introspectorUrl = process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "localhost:7073";
+  const arkServerUrl = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "";
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:3001"}/health`)
+      .then((r) => r.json())
+      .then(setIndexerInfo)
+      .catch(() => {});
+    fetch(`${process.env.NEXT_PUBLIC_INTROSPECTOR_URL || "http://localhost:7073"}/v1/info`)
+      .then((r) => r.json())
+      .then(setIntrospectorInfo)
+      .catch(() => {});
+  }, []);
+
+  const formatUptime = (s: number) => {
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    return `${Math.floor(s / 86400)}d`;
+  };
+
+  return (
+    <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
+      <div className="p-5 space-y-3">
+        <h2 className="text-sm font-semibold">System Info</h2>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-[11px] text-muted-foreground/50">Frontend</span>
+            <code className="text-[11px] font-mono text-muted-foreground/70">
+              {frontendSha.slice(0, 8)}
+            </code>
+          </div>
+          <div className="h-px bg-white/[0.04]" />
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-[11px] text-muted-foreground/50">Indexer</span>
+            <div className="flex items-center gap-2">
+              {indexerInfo ? (
+                <>
+                  <span className="text-[10px] text-muted-foreground/40">
+                    {indexerInfo.network} / {indexerInfo.assetCount} assets / up{" "}
+                    {formatUptime(indexerInfo.uptime || 0)}
+                  </span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </>
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+              )}
+            </div>
+          </div>
+          <div className="h-px bg-white/[0.04]" />
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-[11px] text-muted-foreground/50">Introspector</span>
+            <div className="flex items-center gap-2">
+              {introspectorInfo ? (
+                <>
+                  <span className="text-[10px] text-muted-foreground/40">
+                    {introspectorInfo.version} / {introspectorInfo.signerPubkey?.slice(0, 8)}...
+                  </span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </>
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+              )}
+            </div>
+          </div>
+          <div className="h-px bg-white/[0.04]" />
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-[11px] text-muted-foreground/50">Ark Server</span>
+            <code className="text-[10px] font-mono text-muted-foreground/40 truncate max-w-[200px]">
+              {arkServerUrl.replace("https://", "")}
+            </code>
+          </div>
+          <div className="h-px bg-white/[0.04]" />
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-[11px] text-muted-foreground/50">Endpoints</span>
+            <code className="text-[10px] font-mono text-muted-foreground/30 truncate max-w-[200px]">
+              {indexerUrl.replace("https://", "").replace("http://", "")}
+            </code>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
