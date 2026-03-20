@@ -501,8 +501,7 @@ export default function TokenPage() {
               </button>
               <button
                 onClick={() => setShowSellDialog(true)}
-                disabled={userHolding <= 0}
-                className="flex-1 group relative py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(248,113,113,0.08)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:shadow-none"
+                className="flex-1 group relative py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20 hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(248,113,113,0.08)]"
               >
                 <span className="flex items-center justify-center gap-2">
                   <svg
@@ -1304,7 +1303,7 @@ function OfferCancelButton({
   return (
     <button
       onClick={() => setConfirmAction({ type: "cancel", outpoint: offer.offerOutpoint })}
-      disabled={!walletReady || tradeInFlight}
+      disabled={tradeInFlight}
       className="w-20 py-1 rounded-lg bg-red-500/20 border border-red-500/30 text-[11px] font-semibold text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
     >
       Cancel
@@ -1368,7 +1367,7 @@ function OfferFillButton({
   return (
     <button
       onClick={() => setConfirmAction({ type, outpoint: offer.offerOutpoint })}
-      disabled={!walletReady || tradeInFlight || disabled}
+      disabled={tradeInFlight || disabled}
       className={`w-20 py-1 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${isBuy ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30" : "bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30"}`}
     >
       {label}
