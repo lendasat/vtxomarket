@@ -599,7 +599,8 @@ export default function TokenPage() {
                   {buyOffers.length > 0 && (
                     <div className="space-y-2">
                       {buyOffers.map((offer) => {
-                        const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
+                        const addressLoaded = userArkAddress !== "";
+                        const isOwn = addressLoaded && offer.makerArkAddress === userArkAddress;
                         return (
                           <div
                             key={offer.offerOutpoint}
@@ -654,7 +655,7 @@ export default function TokenPage() {
                                   handleFill={handleFillBuyOffer}
                                   walletReady={walletReady}
                                   tradeInFlight={tradeInFlight}
-                                  disabled={userHolding < offer.tokenAmount}
+                                  disabled={!addressLoaded || userHolding < offer.tokenAmount}
                                   label="Sell"
                                 />
                               )}
@@ -714,7 +715,8 @@ export default function TokenPage() {
                   {sellOffers.length > 0 && (
                     <div className="space-y-2">
                       {sellOffers.map((offer) => {
-                        const isOwn = userArkAddress && offer.makerArkAddress === userArkAddress;
+                        const addressLoaded = userArkAddress !== "";
+                        const isOwn = addressLoaded && offer.makerArkAddress === userArkAddress;
                         return (
                           <div
                             key={offer.offerOutpoint}
@@ -769,6 +771,7 @@ export default function TokenPage() {
                                   handleFill={handleFill}
                                   walletReady={walletReady}
                                   tradeInFlight={tradeInFlight}
+                                  disabled={!addressLoaded}
                                   label="Buy"
                                 />
                               )}
