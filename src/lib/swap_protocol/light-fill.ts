@@ -25,7 +25,7 @@ import { hex as scureHex } from "@scure/base";
 import { decodeSwapScript, buildArkadeScript, buildBuyArkadeScript } from "./script";
 import { getIntrospectorInfo, INTROSPECTOR_URL } from "./introspector-client";
 import type { SwapOffer, BuyOffer } from "./offers";
-import { getArkProvider, getServerUnrollScript } from "../ark-wallet";
+import { getArkProvider, getServerUnrollScript, verifyOfferVtxo } from "../ark-wallet";
 
 const hexToBytes = scureHex.decode;
 const bytesToHex = scureHex.encode;
@@ -323,6 +323,11 @@ export async function lightFillSwapOffer(
   const opReturnScript = buildCombinedOpReturn(packetBytes, introspectorPacketBytes);
 
   outputs.push({ script: opReturnScript, amount: BigInt(0) });
+
+  // ── 3b. Verify offer VTXO exists on ASP ─────────────────────────────────
+  // Prevents filling fake offers from a compromised indexer.
+  log({ type: "verifying_offer_vtxo" });
+  await verifyOfferVtxo(offer.offerOutpoint);
 
   // ── 4. Build offchain tx (ark tx + checkpoints) ─────────────────────────
 
@@ -683,6 +688,10 @@ export async function lightFillBuyOffer(
   const opReturnScript = buildCombinedOpReturn(packetBytes, introspectorPacketBytes);
 
   outputs.push({ script: opReturnScript, amount: BigInt(0) });
+
+  // ── 3b. Verify offer VTXO exists on ASP ─────────────────────────────────
+  log({ type: "verifying_offer_vtxo" });
+  await verifyOfferVtxo(offer.offerOutpoint);
 
   // ── 4. Build offchain tx ───────────────────────────────────────────────
 

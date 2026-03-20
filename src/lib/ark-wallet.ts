@@ -65,6 +65,35 @@ export async function getArkProvider(): Promise<any> {
 }
 
 /**
+ * Get a RestIndexerProvider for verifying VTXOs directly on the ASP.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getAspIndexerProvider(): Promise<any> {
+  const { RestIndexerProvider } = await getSDK();
+  return new RestIndexerProvider(ARK_SERVER_URL);
+}
+
+/**
+ * Verify that a swap offer's VTXO actually exists on the ASP.
+ * Returns the VTXO data if found, throws if not.
+ */
+export async function verifyOfferVtxo(outpoint: string): Promise<void> {
+  const [txid, voutStr] = outpoint.split(":");
+  const vout = parseInt(voutStr, 10);
+  const indexer = await getAspIndexerProvider();
+  const { vtxos } = await indexer.getVtxos({
+    outpoints: [{ txid, vout }],
+    spendableOnly: true,
+  });
+  if (!vtxos || vtxos.length === 0) {
+    throw new Error(
+      `Offer VTXO ${outpoint} not found on ASP or already spent. ` +
+        "The offer may be invalid, expired, or from a malicious indexer."
+    );
+  }
+}
+
+/**
  * Get the serverUnrollScript (checkpoint tapscript) from ASP info.
  * ServiceWorkerWallet doesn't expose this property, so we reconstruct it.
  */
