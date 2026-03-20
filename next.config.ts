@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  ...(process.env.NODE_ENV === "production" && { output: "export" }),
+  ...(process.env.STATIC_EXPORT === "true" && { output: "export" }),
   serverExternalPackages: ["@arkade-os/sdk", "@arkade-os/boltz-swap"],
 };
 
