@@ -754,33 +754,14 @@ export default function WalletPage() {
                         ) : (
                           <div className="space-y-4">
                             {tab === "arkade" && userTokens.length > 0 && (
-                              <div className="space-y-2">
-                                <label className="text-[11px] text-muted-foreground/50 font-medium">
-                                  Asset
-                                </label>
-                                <select
-                                  value={sendAssetId ?? ""}
-                                  onChange={(e) => {
-                                    setSendAssetId(e.target.value || null);
-                                    setSendAmount("");
-                                  }}
-                                  className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all appearance-none cursor-pointer"
-                                >
-                                  <option value="" className="bg-[#1a1a1a]">
-                                    Bitcoin (BTC)
-                                  </option>
-                                  {userTokens.map((t) => (
-                                    <option
-                                      key={t.assetId}
-                                      value={t.assetId}
-                                      className="bg-[#1a1a1a]"
-                                    >
-                                      {t.name} ({t.ticker}) —{" "}
-                                      {formatTokenAmount(t.amount, t.decimals)}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
+                              <SendAssetPicker
+                                userTokens={userTokens}
+                                sendAssetId={sendAssetId}
+                                setSendAssetId={(id) => {
+                                  setSendAssetId(id);
+                                  setSendAmount("");
+                                }}
+                              />
                             )}
                             <div className="space-y-2">
                               <label className="text-[11px] text-muted-foreground/50 font-medium">
@@ -875,6 +856,132 @@ export default function WalletPage() {
 type UnifiedTxItem =
   | { kind: "ark"; data: TxHistoryItem }
   | { kind: "stablecoin"; data: StablecoinTxItem };
+
+function SendAssetPicker({
+  userTokens,
+  sendAssetId,
+  setSendAssetId,
+}: {
+  userTokens: {
+    assetId: string;
+    amount: number;
+    decimals?: number;
+    name: string;
+    ticker: string;
+    image?: string;
+  }[];
+  sendAssetId: string | null;
+  setSendAssetId: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = sendAssetId ? userTokens.find((t) => t.assetId === sendAssetId) : null;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div className="space-y-2" ref={ref}>
+      <label className="text-[11px] text-muted-foreground/50 font-medium">Asset</label>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 h-12 px-3.5 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-foreground transition-all hover:bg-white/[0.07] focus:border-white/[0.14]"
+      >
+        {selected ? (
+          <>
+            <div className="h-7 w-7 shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] flex items-center justify-center overflow-hidden">
+              {selected.image ? (
+                <img
+                  src={safeUrl(selected.image) ?? ""}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-[9px] font-bold text-muted-foreground/40">
+                  {selected.ticker.slice(0, 2)}
+                </span>
+              )}
+            </div>
+            <span className="flex-1 text-left truncate font-medium">{selected.name}</span>
+            <span className="text-[10px] text-muted-foreground/40 font-mono">
+              ${selected.ticker}
+            </span>
+          </>
+        ) : (
+          <>
+            <div className="h-7 w-7 shrink-0 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <span className="text-[10px] font-bold text-amber-400">₿</span>
+            </div>
+            <span className="flex-1 text-left font-medium">Bitcoin</span>
+            <span className="text-[10px] text-muted-foreground/40 font-mono">BTC</span>
+          </>
+        )}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-4 w-4 text-muted-foreground/40 transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {open && (
+        <div className="rounded-xl bg-zinc-900 border border-white/[0.1] shadow-xl overflow-hidden">
+          <button
+            onClick={() => {
+              setSendAssetId(null);
+              setOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-white/[0.06] ${!sendAssetId ? "bg-white/[0.04]" : ""}`}
+          >
+            <div className="h-7 w-7 shrink-0 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+              <span className="text-[10px] font-bold text-amber-400">₿</span>
+            </div>
+            <span className="flex-1 text-left font-medium">Bitcoin</span>
+            <span className="text-[10px] text-muted-foreground/40 font-mono">BTC</span>
+          </button>
+          {userTokens.map((t) => (
+            <button
+              key={t.assetId}
+              onClick={() => {
+                setSendAssetId(t.assetId);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm transition-colors hover:bg-white/[0.06] ${sendAssetId === t.assetId ? "bg-white/[0.04]" : ""}`}
+            >
+              <div className="h-7 w-7 shrink-0 rounded-lg bg-white/[0.06] border border-white/[0.06] flex items-center justify-center overflow-hidden">
+                {t.image ? (
+                  <img src={safeUrl(t.image) ?? ""} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[9px] font-bold text-muted-foreground/40">
+                    {t.ticker.slice(0, 2)}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="font-medium truncate">{t.name}</p>
+                <p className="text-[10px] text-muted-foreground/40 tabular-nums">
+                  {formatTokenAmount(t.amount, t.decimals)} held
+                </p>
+              </div>
+              <span className="text-[10px] text-muted-foreground/40 font-mono">${t.ticker}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TransactionHistoryView({
   txHistory,
