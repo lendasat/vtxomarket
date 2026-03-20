@@ -43,25 +43,35 @@ export async function handleTxNotification(notification: TxNotification): Promis
     log.debug("indexer: marked VTXOs spent", { txid, count: spentOutpoints.length });
 
     // Detect offer state changes when their VTXOs are spent.
-    // Both commitmentTx and arkTx (light path via submitTx/finalizeTx) can fill offers.
-    // A fill produces new spendable VTXOs (maker payment + taker change).
-    // A cancel only returns funds to the maker (fewer outputs, same address).
+    // Fill detection heuristic:
+    //   - commitmentTx events are always fills (full-round settlement)
+    //   - arkTx (light path): a fill has multiple inputs (swap VTXO + taker funding)
+    //     AND multiple outputs (maker payment + taker change + OP_RETURN).
+    //     A cancel has only the swap VTXO as input and 1 output (back to maker).
     for (const spent of spentVtxos) {
       const outpoint = `${spent.outpoint.txid}:${spent.outpoint.vout}`;
       const offer = getOffer(outpoint);
       if (offer && offer.status === "open") {
-        // An offer is filled if new VTXOs are created (payment to maker + change to taker).
-        // A cancel typically produces only 1 output (back to maker).
-        const isFill = spendableVtxos.length >= 2 || notification.eventType === "commitmentTx";
+        const isFill =
+          notification.eventType === "commitmentTx" ||
+          (spentVtxos.length >= 2 && spendableVtxos.length >= 2);
         if (isFill) {
           markOfferFilled(offer.offerOutpoint, txid);
-          log.info("indexer: offer filled", { offerOutpoint: offer.offerOutpoint, txid, eventType: notification.eventType });
+          log.info("indexer: offer filled", {
+            offerOutpoint: offer.offerOutpoint,
+            txid,
+            eventType: notification.eventType,
+            inputs: spentVtxos.length,
+            outputs: spendableVtxos.length,
+          });
         } else {
           markOfferCancelled(offer.offerOutpoint);
           log.info("indexer: offer cancelled (VTXO spent)", {
             offerOutpoint: offer.offerOutpoint,
             txid,
             eventType: notification.eventType,
+            inputs: spentVtxos.length,
+            outputs: spendableVtxos.length,
           });
         }
       }
