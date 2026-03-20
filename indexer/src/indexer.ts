@@ -85,10 +85,25 @@ export async function handleTxNotification(notification: TxNotification): Promis
         const outpoint = `${vtxo.outpoint.txid}:${vtxo.outpoint.vout}`;
 
         for (const asset of vtxo.assets) {
-          // ── Ensure asset metadata exists ──────────────────────────────────
+          // ── Ensure asset metadata exists and supply is up-to-date ──────────
+          // Re-fetch metadata to capture supply changes from reissuance.
+          // The upsertAsset uses COALESCE so name/ticker won't be overwritten with null.
           if (!assetMetadataFetched.has(asset.assetId)) {
             await ensureAssetMetadata(asset.assetId, txid);
             assetMetadataFetched.add(asset.assetId);
+          } else {
+            // Asset already seen — just refresh supply from ASP metadata
+            const meta = await fetchAssetMetadata(asset.assetId);
+            if (meta?.supply) {
+              upsertAsset({
+                assetId: asset.assetId,
+                name: meta.name ?? null,
+                ticker: meta.ticker ?? null,
+                decimals: meta.decimals ?? 0,
+                supply: meta.supply,
+                firstSeenTxid: txid,
+              });
+            }
           }
 
           // ── Upsert VTXO ───────────────────────────────────────────────────
