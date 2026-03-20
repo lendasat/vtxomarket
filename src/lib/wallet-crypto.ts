@@ -7,10 +7,13 @@ import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { HDKey } from "@scure/bip32";
 import { hex, bech32, base64 } from "@scure/base";
 
-// Arkade key derivation path (same as arkade-king-game)
-const ARK_DERIVATION_PATH = "m/44'/1237'/0'/0/0";
+// Arkade key derivation path — matches lendasat/wallet (m/44/1237/0' + /0/0)
+// for cross-compatibility: same mnemonic produces same Ark address in both apps.
+const ARK_DERIVATION_PATH = "m/44/1237/0'/0/0";
 
-// Nostr key derivation path (same as lendamobile)
+// Nostr key derivation path — vtxomarket-specific (lendasat/wallet does not
+// derive Nostr keys from the mnemonic). Users importing a vtxomarket mnemonic
+// into lendasat/wallet will recover their Ark funds but not their Nostr identity.
 const NOSTR_DERIVATION_PATH = "m/44/0/0/0/0";
 
 export function generateMnemonic(): string {
