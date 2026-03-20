@@ -26,13 +26,13 @@ export interface Token {
 }
 
 /**
- * Returns true if the token looks like a control asset (reissuance token).
- * Control assets have no name, no ticker, and a supply of 1.
- * Also matches if another token explicitly references it via controlAssetId.
+ * Returns true if the token should be hidden from marketplace/wallet UI.
+ * Matches control assets (no name + no ticker + supply 1), tokens without
+ * a ticker, and tokens explicitly referenced as another token's controlAssetId.
  */
 export function isControlAsset(assetId: string, tokens: Token[]): boolean {
   const token = tokens.find((t) => t.assetId === assetId);
-  if (token && !token.name && !token.ticker && token.supply === 1) return true;
+  if (token && !token.ticker) return true;
   return tokens.some((t) => t.controlAssetId === assetId);
 }
 
