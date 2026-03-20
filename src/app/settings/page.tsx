@@ -611,6 +611,7 @@ function VersionInfo({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [indexerInfo, setIndexerInfo] = useState<{
+    version?: string;
     network?: string;
     assetCount?: number;
     uptime?: number;
@@ -683,6 +684,9 @@ function VersionInfo({
                 {indexerInfo ? (
                   <>
                     <span className="text-[10px] text-muted-foreground/40">
+                      {indexerInfo.version && indexerInfo.version !== "dev"
+                        ? indexerInfo.version.slice(0, 8) + " / "
+                        : ""}
                       {indexerInfo.network} / {indexerInfo.assetCount} assets / up{" "}
                       {formatUptime(indexerInfo.uptime || 0)}
                     </span>

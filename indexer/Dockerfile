@@ -1,5 +1,7 @@
 FROM oven/bun:1.1-alpine AS builder
 
+ARG GIT_SHA=dev
+
 WORKDIR /app
 
 COPY package.json bun.lockb* ./
@@ -7,6 +9,9 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 RUN bun build src/index.ts --target=bun --outfile=dist/indexer.js
+
+# Bake git SHA into the image as env default
+ENV INDEXER_VERSION=${GIT_SHA}
 
 FROM oven/bun:1.1-alpine
 

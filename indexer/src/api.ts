@@ -105,6 +105,7 @@ export function buildApp(): Hono {
     const stats = getStats();
     return c.json({
       status: "ok",
+      version: process.env.INDEXER_VERSION || "dev",
       network: config.network,
       arkServerUrl: config.arkServerUrl,
       ...stats,
