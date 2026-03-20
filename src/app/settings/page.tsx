@@ -410,112 +410,21 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Nostr Identity */}
-      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
-        <div className="p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Nostr Identity</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground/40 font-mono">
-                {hasNsecOverride ? "imported nsec" : "m/44/0/0/0/0"}
-              </p>
-            </div>
-            {user && (
-              <span className="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Connected
-              </span>
-            )}
-          </div>
-
-          {user?.npub ? (
-            <CopyableField
-              label="npub"
-              value={user.npub}
-              displayValue={truncate(user.npub)}
-              copied={copied === "npub"}
-              onCopy={() => handleCopy(user.npub, "npub")}
-            />
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
-              <p className="text-xs text-muted-foreground/50">Connecting to relays...</p>
-            </div>
-          )}
-
-          {nostrPrivKeyHex &&
-            (revealedNostrKey ? (
-              <>
-                <div className="h-px bg-white/[0.06]" />
-                <CopyableField
-                  label="Private Key (hex)"
-                  value={nostrPrivKeyHex}
-                  displayValue={truncate(nostrPrivKeyHex)}
-                  copied={copied === "nostr-key"}
-                  onCopy={() => handleCopy(nostrPrivKeyHex, "nostr-key")}
-                  sensitive
-                />
-              </>
-            ) : (
-              <button
-                onClick={() => setRevealedNostrKey(true)}
-                className="w-full h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[11px] font-medium text-muted-foreground/40 transition-all hover:bg-white/[0.08]"
-              >
-                Reveal Private Key
-              </button>
-            ))}
-        </div>
-      </div>
-
-      {/* Ark Wallet */}
-      <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
-        <div className="p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Ark Wallet</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground/40 font-mono">
-                m/44&apos;/1237&apos;/0&apos;/0/0
-              </p>
-            </div>
-            <span
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-full border ${
-                walletReady
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-white/[0.04] text-muted-foreground/50 border-white/[0.08]"
-              }`}
-            >
-              {walletReady ? "Connected" : "Offline"}
-            </span>
-          </div>
-
-          {arkPrivKeyHex &&
-            (revealedArkKey ? (
-              <CopyableField
-                label="Private Key (hex)"
-                value={arkPrivKeyHex}
-                displayValue={truncate(arkPrivKeyHex)}
-                copied={copied === "ark-key"}
-                onCopy={() => handleCopy(arkPrivKeyHex, "ark-key")}
-                sensitive
-              />
-            ) : (
-              <button
-                onClick={() => setRevealedArkKey(true)}
-                className="w-full h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[11px] font-medium text-muted-foreground/40 transition-all hover:bg-white/[0.08]"
-              >
-                Reveal Private Key
-              </button>
-            ))}
-
-          {!walletReady && (
-            <p className="text-[11px] text-muted-foreground/40 leading-relaxed">
-              Could not connect to Ark server. Wallet features are offline but your keys are safe.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Version Info */}
-      <VersionInfo />
+      {/* Version Info + Advanced (Nostr/Ark keys) */}
+      <VersionInfo
+        user={user}
+        walletReady={walletReady}
+        nostrPrivKeyHex={nostrPrivKeyHex}
+        arkPrivKeyHex={arkPrivKeyHex}
+        hasNsecOverride={hasNsecOverride}
+        revealedNostrKey={revealedNostrKey}
+        revealedArkKey={revealedArkKey}
+        setRevealedNostrKey={setRevealedNostrKey}
+        setRevealedArkKey={setRevealedArkKey}
+        copied={copied}
+        handleCopy={handleCopy}
+        truncate={truncate}
+      />
 
       {/* About */}
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm overflow-hidden">
@@ -673,7 +582,33 @@ export default function SettingsPage() {
   );
 }
 
-function VersionInfo() {
+function VersionInfo({
+  user,
+  walletReady,
+  nostrPrivKeyHex,
+  arkPrivKeyHex,
+  hasNsecOverride,
+  revealedNostrKey,
+  revealedArkKey,
+  setRevealedNostrKey,
+  setRevealedArkKey,
+  copied,
+  handleCopy,
+  truncate,
+}: {
+  user: any;
+  walletReady: boolean;
+  nostrPrivKeyHex: string;
+  arkPrivKeyHex: string;
+  hasNsecOverride: boolean;
+  revealedNostrKey: boolean;
+  revealedArkKey: boolean;
+  setRevealedNostrKey: (v: boolean) => void;
+  setRevealedArkKey: (v: boolean) => void;
+  copied: string | null;
+  handleCopy: (text: string, label: string) => void;
+  truncate: (s: string, chars?: number) => string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [indexerInfo, setIndexerInfo] = useState<{
     network?: string;
@@ -780,6 +715,81 @@ function VersionInfo() {
             <code className="text-[10px] font-mono text-muted-foreground/30 truncate max-w-[200px]">
               {indexerUrl.replace("https://", "").replace("http://", "")}
             </code>
+          </div>
+
+          {/* Nostr Identity */}
+          <div className="pt-2 space-y-3">
+            <div className="h-px bg-white/[0.06]" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] text-muted-foreground/50 font-medium">Nostr Identity</p>
+                <p className="text-[10px] text-muted-foreground/30 font-mono">
+                  {hasNsecOverride ? "imported nsec" : "m/44/0/0/0/0"}
+                </p>
+              </div>
+              {user && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+            </div>
+            {user?.npub && (
+              <CopyableField
+                label="npub"
+                value={user.npub}
+                displayValue={truncate(user.npub)}
+                copied={copied === "npub"}
+                onCopy={() => handleCopy(user.npub, "npub")}
+              />
+            )}
+            {nostrPrivKeyHex &&
+              (revealedNostrKey ? (
+                <CopyableField
+                  label="Private Key (hex)"
+                  value={nostrPrivKeyHex}
+                  displayValue={truncate(nostrPrivKeyHex)}
+                  copied={copied === "nostr-key"}
+                  onCopy={() => handleCopy(nostrPrivKeyHex, "nostr-key")}
+                  sensitive
+                />
+              ) : (
+                <button
+                  onClick={() => setRevealedNostrKey(true)}
+                  className="w-full h-8 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[10px] font-medium text-muted-foreground/30 transition-all hover:bg-white/[0.07]"
+                >
+                  Reveal Nostr Key
+                </button>
+              ))}
+          </div>
+
+          {/* Ark Wallet */}
+          <div className="pt-1 space-y-3">
+            <div className="h-px bg-white/[0.06]" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] text-muted-foreground/50 font-medium">Ark Wallet</p>
+                <p className="text-[10px] text-muted-foreground/30 font-mono">
+                  m/44&apos;/1237&apos;/0&apos;/0/0
+                </p>
+              </div>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${walletReady ? "bg-emerald-400" : "bg-red-400"}`}
+              />
+            </div>
+            {arkPrivKeyHex &&
+              (revealedArkKey ? (
+                <CopyableField
+                  label="Private Key (hex)"
+                  value={arkPrivKeyHex}
+                  displayValue={truncate(arkPrivKeyHex)}
+                  copied={copied === "ark-key"}
+                  onCopy={() => handleCopy(arkPrivKeyHex, "ark-key")}
+                  sensitive
+                />
+              ) : (
+                <button
+                  onClick={() => setRevealedArkKey(true)}
+                  className="w-full h-8 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[10px] font-medium text-muted-foreground/30 transition-all hover:bg-white/[0.07]"
+                >
+                  Reveal Ark Key
+                </button>
+              ))}
           </div>
         </div>
       </div>
