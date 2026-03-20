@@ -860,54 +860,77 @@ export default function TokenPage() {
               {infoTab === "trades" && (
                 <div>
                   {tradesLoading && trades.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">
-                      Loading trades...
-                    </p>
+                    <div className="flex items-center justify-center gap-2 py-8">
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/50" />
+                      <p className="text-xs text-muted-foreground/40">Loading trades...</p>
+                    </div>
                   )}
 
                   {!tradesLoading && trades.length === 0 && (
-                    <p className="text-xs text-muted-foreground/40 text-center py-4">
-                      No trades yet.
-                    </p>
+                    <div className="text-center py-8 space-y-2">
+                      <div className="mx-auto h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-4 w-4 text-muted-foreground/20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM6.75 9.25a.75.75 0 0 0 0 1.5h4.59l-2.1 1.95a.75.75 0 0 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 1 0-1.02 1.1l2.1 1.95H6.75Z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-muted-foreground/40">No trades yet</p>
+                    </div>
                   )}
 
-                  <div className="divide-y divide-white/[0.05]">
+                  <div className="space-y-1.5">
                     {trades.map((t) => {
-                      // offerType "sell" = someone sold tokens (taker bought) → show as buy
-                      // offerType "buy" = someone bought tokens (taker sold) → show as buy
                       const isBuy = t.offerType === "sell";
+                      const price = t.tokenAmount > 0 ? t.satAmount / t.tokenAmount : 0;
                       return (
                         <div
                           key={t.filledInTxid || t.offerOutpoint}
-                          className="flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors"
                         >
+                          {/* Side indicator */}
                           <div
-                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                              isBuy ? "bg-emerald-400" : "bg-amber-400"
+                            className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                              isBuy
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-400 border border-red-500/20"
                             }`}
-                          />
-                          <span className="shrink-0 text-[11px] font-mono text-muted-foreground/40">
-                            {shortPubkey(t.makerArkAddress)}
-                          </span>
-                          <span
-                            className={`shrink-0 text-[11px] font-medium ${isBuy ? "text-emerald-400/80" : "text-amber-400/80"}`}
                           >
-                            {isBuy ? "sold" : "bought"}
-                          </span>
-                          <span className="text-[11px] font-semibold tabular-nums">
-                            {formatTokenAmount(t.tokenAmount, token?.decimals)}
-                            <span className="text-muted-foreground/35 font-normal ml-0.5">
-                              ${token?.ticker}
-                            </span>
-                          </span>
-                          <div className="flex-1" />
-                          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/50">
-                            {formatSats(t.satAmount)}{" "}
-                            <span className="text-muted-foreground/30">sat</span>
-                          </span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground/25 tabular-nums">
-                            {timeAgo(t.timestamp)}
-                          </span>
+                            {isBuy ? "Buy" : "Sell"}
+                          </div>
+
+                          {/* Amount */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-semibold tabular-nums truncate">
+                              {formatTokenAmount(t.tokenAmount, token?.decimals)}
+                              <span className="text-muted-foreground/40 font-normal ml-1">
+                                ${token?.ticker}
+                              </span>
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/30 tabular-nums">
+                              @ {formatPrice(t.satAmount, t.tokenAmount, token?.decimals)}
+                            </p>
+                          </div>
+
+                          {/* Sats + time */}
+                          <div className="shrink-0 text-right">
+                            <p className="text-[12px] font-semibold tabular-nums">
+                              {formatSats(t.satAmount)}
+                              <span className="text-muted-foreground/30 font-normal ml-0.5 text-[10px]">
+                                sat
+                              </span>
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/25 tabular-nums">
+                              {timeAgo(t.timestamp)}
+                            </p>
+                          </div>
                         </div>
                       );
                     })}
