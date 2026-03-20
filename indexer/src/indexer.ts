@@ -43,20 +43,25 @@ export async function handleTxNotification(notification: TxNotification): Promis
     log.debug("indexer: marked VTXOs spent", { txid, count: spentOutpoints.length });
 
     // Detect offer state changes when their VTXOs are spent.
-    // commitmentTx = taker filled the offer; arkTx = maker cancelled (or other spend).
+    // Both commitmentTx and arkTx (light path via submitTx/finalizeTx) can fill offers.
+    // A fill produces new spendable VTXOs (maker payment + taker change).
+    // A cancel only returns funds to the maker (fewer outputs, same address).
     for (const spent of spentVtxos) {
       const outpoint = `${spent.outpoint.txid}:${spent.outpoint.vout}`;
       const offer = getOffer(outpoint);
       if (offer && offer.status === "open") {
-        if (notification.eventType === "commitmentTx") {
+        // An offer is filled if new VTXOs are created (payment to maker + change to taker).
+        // A cancel typically produces only 1 output (back to maker).
+        const isFill = spendableVtxos.length >= 2 || notification.eventType === "commitmentTx";
+        if (isFill) {
           markOfferFilled(offer.offerOutpoint, txid);
-          log.info("indexer: offer filled", { offerOutpoint: offer.offerOutpoint, txid });
+          log.info("indexer: offer filled", { offerOutpoint: offer.offerOutpoint, txid, eventType: notification.eventType });
         } else {
-          // arkTx spending an offer VTXO = maker cancelled via on-chain settle
           markOfferCancelled(offer.offerOutpoint);
-          log.info("indexer: offer cancelled (VTXO spent in arkTx)", {
+          log.info("indexer: offer cancelled (VTXO spent)", {
             offerOutpoint: offer.offerOutpoint,
             txid,
+            eventType: notification.eventType,
           });
         }
       }
