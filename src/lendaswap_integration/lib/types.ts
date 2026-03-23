@@ -68,6 +68,8 @@ export interface ActiveSwap {
   vhtlcAddress?: string;
   /** For SEND: amount in sats the user must send */
   satsRequired?: number;
+  /** For SEND: destination EVM address for gasless claim */
+  destinationEvmAddress?: string;
 
   /** For RECEIVE: SDK-derived EVM address where stablecoins should be sent */
   evmDepositAddress?: string;

@@ -59,6 +59,8 @@ export function useLendaswap() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
   const isClaimingRef = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -244,7 +246,7 @@ export function useLendaswap() {
             return;
           }
 
-          // Auto-claim when server has funded (both SEND and RECEIVE)
+          // Auto-claim when server has funded
           if (status === "serverfunded" && !isClaimingRef.current) {
             if (claimRetries >= MAX_CLAIM_RETRIES) {
               stopPolling();
@@ -259,26 +261,49 @@ export function useLendaswap() {
             updateState({ step: "claiming" });
             try {
               console.log(
-                `[lendaswap] Attempting claim for ${swapId.slice(0, 8)} (attempt ${claimRetries + 1})`
+                `[lendaswap] Attempting ${direction} claim for ${swapId.slice(0, 8)} (attempt ${claimRetries + 1})`
               );
-              const result = await client.claim(swapId);
-              console.log(`[lendaswap] Claim result:`, result);
-              if (result.success) {
-                setState((prev) => {
-                  if (!prev.swap) return prev;
-                  return {
-                    ...prev,
-                    swap: { ...prev.swap, claimTxHash: result.txHash },
-                  };
-                });
+
+              let claimTxHash: string | undefined;
+
+              if (direction === "send") {
+                // SEND (Arkade → EVM): gasless claim via server
+                const currentSwap = stateRef.current.swap;
+                const destAddr = currentSwap?.destinationEvmAddress;
+                if (!destAddr) {
+                  throw new Error("Missing destination EVM address for gasless claim");
+                }
+                console.log(`[lendaswap] Using claimViaGasless for send swap, dest=${destAddr}`);
+                const result = await client.claimViaGasless(swapId, destAddr, { slippage: 3.0 });
+                console.log(`[lendaswap] claimViaGasless result:`, result);
+                claimTxHash = result.txHash;
               } else {
-                claimRetries++;
-                console.warn(
-                  `[lendaswap] Claim returned success=false (attempt ${claimRetries}):`,
-                  result
-                );
-                updateState({ step: "processing" });
+                // RECEIVE (EVM → Arkade): claim BTC on Arkade
+                const addresses = useAppStore.getState().addresses;
+                if (addresses?.offchainAddr) {
+                  console.log(`[lendaswap] Using claimArkade for receive swap`);
+                  const result = await client.claimArkade(swapId, {
+                    destinationAddress: addresses.offchainAddr,
+                  });
+                  console.log(`[lendaswap] claimArkade result:`, result);
+                  if (!result.success) throw new Error(result.message);
+                  claimTxHash = result.txId;
+                } else {
+                  // Fallback to generic claim
+                  const result = await client.claim(swapId);
+                  console.log(`[lendaswap] claim result:`, result);
+                  if (!result.success) throw new Error(result.message);
+                  claimTxHash = result.txHash;
+                }
               }
+
+              setState((prev) => {
+                if (!prev.swap) return prev;
+                return {
+                  ...prev,
+                  swap: { ...prev.swap, claimTxHash },
+                };
+              });
             } catch (claimErr) {
               claimRetries++;
               console.warn(`[lendaswap] Auto-claim attempt ${claimRetries} failed:`, claimErr);
@@ -342,6 +367,7 @@ export function useLendaswap() {
           chain: params.chain,
           vhtlcAddress: resp.btc_vhtlc_address,
           satsRequired: satsToSend,
+          destinationEvmAddress: params.destinationEvmAddress,
           sourceDisplay: `${satsToSend.toLocaleString()} sats`,
           targetDisplay: `${fromSmallestUnit(resp.target_amount, params.coin)} ${params.coin}`,
           backendStatus: resp.status,
