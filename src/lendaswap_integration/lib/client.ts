@@ -13,6 +13,7 @@
 const LENDASWAP_API_URL = (
   process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com"
 ).replace(/\/+$/, "");
+const LENDASWAP_API_KEY = process.env.LENDASWAP_API_KEY || "";
 const ARKADE_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 
@@ -50,13 +51,18 @@ async function initClient() {
   // Dynamic import to avoid Turbopack static bundling issues
   const { Client, IdbWalletStorage, IdbSwapStorage } = await import("@lendasat/lendaswap-sdk-pure");
 
-  const client = await Client.builder()
+  let builder = Client.builder()
     .withBaseUrl(LENDASWAP_API_URL)
     .withArkadeServerUrl(ARKADE_SERVER_URL)
     .withEsploraUrl(ESPLORA_URL)
     .withSignerStorage(new IdbWalletStorage())
-    .withSwapStorage(new IdbSwapStorage())
-    .build();
+    .withSwapStorage(new IdbSwapStorage());
+
+  if (LENDASWAP_API_KEY) {
+    builder = builder.withApiKey(LENDASWAP_API_KEY);
+  }
+
+  const client = await builder.build();
 
   // Verify connectivity
   try {
