@@ -43,6 +43,13 @@ function getViemChain(chainKey: EvmChainKey) {
   }
 }
 
+/** Public RPC URLs that support CORS (viem defaults like eth.merkle.io block localhost) */
+const CORS_FRIENDLY_RPCS: Record<EvmChainKey, string> = {
+  ethereum: "https://ethereum-rpc.publicnode.com",
+  arbitrum: "https://arbitrum-one-rpc.publicnode.com",
+  polygon: "https://polygon-bor-rpc.publicnode.com",
+};
+
 export function StablecoinReceive() {
   const balance = useAppStore((s) => s.balance);
   const { ready, state, getQuoteAndCreateReceive, getReceiveEstimate, fundGasless, reset } =
@@ -86,7 +93,7 @@ export function StablecoinReceive() {
   const rpcClient = useMemo(() => {
     if (!swap?.evmDepositAddress) return null;
     const viemChain = getViemChain(chain);
-    return createPublicClient({ chain: viemChain, transport: http() });
+    return createPublicClient({ chain: viemChain, transport: http(CORS_FRIENDLY_RPCS[chain]) });
   }, [swap?.evmDepositAddress, chain]);
 
   useEffect(() => {
@@ -250,7 +257,10 @@ export function StablecoinReceive() {
 
       // Check wallet balance before attempting transfer
       const viemChain = getViemChain(chain);
-      const publicClient = createPublicClient({ chain: viemChain, transport: http() });
+      const publicClient = createPublicClient({
+        chain: viemChain,
+        transport: http(CORS_FRIENDLY_RPCS[chain]),
+      });
       const walletBalance = await publicClient.readContract({
         address: tokenAddr,
         abi: erc20Abi,

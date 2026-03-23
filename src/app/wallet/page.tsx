@@ -1195,45 +1195,65 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
   const isFailed = tx.status === "failed";
   const isAlreadyRefunded = ALREADY_REFUNDED_STATUSES.has(tx.backendStatus);
 
+  // Stuck receive swaps (EVM funded but server never completed)
+  const isStuckReceive =
+    !isSend && !isAlreadyRefunded && !isDone && LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus);
+
   const isRefundable =
-    isSend &&
     !isAlreadyRefunded &&
-    (COLLAB_REFUNDABLE_STATUSES.has(tx.backendStatus) ||
-      LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus));
+    (isSend
+      ? COLLAB_REFUNDABLE_STATUSES.has(tx.backendStatus) ||
+        LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus)
+      : isStuckReceive);
+
+  // Show how long ago the swap was created
+  const swapAgeMs = Date.now() - tx.createdAt;
+  const swapAgeMins = Math.floor(swapAgeMs / 60000);
+  const swapAgeStr =
+    swapAgeMins < 60
+      ? `${swapAgeMins}m ago`
+      : swapAgeMins < 1440
+        ? `${Math.floor(swapAgeMins / 60)}h ago`
+        : `${Math.floor(swapAgeMins / 1440)}d ago`;
 
   const statusBadge = isAlreadyRefunded
     ? { label: "Refunded", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]" }
-    : isRefundable
+    : isStuckReceive
       ? {
-          label: "Refundable",
+          label: `Stuck (${swapAgeStr})`,
           cls: "bg-orange-500/[0.06] text-orange-400/60 border-orange-500/[0.1]",
         }
-      : isFailed
-        ? { label: "Failed", cls: "bg-red-500/[0.06] text-red-400/60 border-red-500/[0.1]" }
-        : isDone
-          ? {
-              label: "Complete",
-              cls: "bg-emerald-500/[0.06] text-emerald-400/60 border-emerald-500/[0.1]",
-            }
-          : tx.status === "claiming"
+      : isRefundable
+        ? {
+            label: "Refundable",
+            cls: "bg-orange-500/[0.06] text-orange-400/60 border-orange-500/[0.1]",
+          }
+        : isFailed
+          ? { label: "Failed", cls: "bg-red-500/[0.06] text-red-400/60 border-red-500/[0.1]" }
+          : isDone
             ? {
-                label: "Claiming",
-                cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
-                pulse: true,
+                label: "Complete",
+                cls: "bg-emerald-500/[0.06] text-emerald-400/60 border-emerald-500/[0.1]",
               }
-            : tx.status === "processing"
+            : tx.status === "claiming"
               ? {
-                  label: "Processing",
+                  label: "Claiming",
                   cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
                   pulse: true,
                 }
-              : tx.status === "pending"
+              : tx.status === "processing"
                 ? {
-                    label: "Pending",
+                    label: "Processing",
                     cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
                     pulse: true,
                   }
-                : null;
+                : tx.status === "pending"
+                  ? {
+                      label: "Pending",
+                      cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
+                      pulse: true,
+                    }
+                  : null;
 
   const actionLabel = isAlreadyRefunded
     ? "Refunded"
@@ -1319,6 +1339,7 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
               ? [["Claim TX", `${tx.claimTxHash.slice(0, 8)}...${tx.claimTxHash.slice(-4)}`]]
               : []),
             ["Swap ID", `${tx.swapId.slice(0, 8)}...${tx.swapId.slice(-4)}`],
+            ...(!isDone && !isFailed ? [["Age", swapAgeStr]] : []),
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between gap-4">
               <span className="text-[10px] text-muted-foreground/30 shrink-0">{label}</span>
@@ -1362,7 +1383,11 @@ function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
               }}
               className="w-full h-8 rounded-lg bg-orange-500/[0.1] border border-orange-500/[0.15] text-[11px] font-semibold text-orange-400/80 transition-all hover:bg-orange-500/[0.15] disabled:opacity-40"
             >
-              {refunding ? "Refunding..." : "Refund to Arkade wallet"}
+              {refunding
+                ? "Refunding..."
+                : isSend
+                  ? "Refund to Arkade wallet"
+                  : "Refund EVM tokens"}
             </button>
           )}
           {refundResult && (
