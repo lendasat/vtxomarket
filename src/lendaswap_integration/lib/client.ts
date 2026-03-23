@@ -13,7 +13,7 @@
 const LENDASWAP_API_URL = (
   process.env.NEXT_PUBLIC_LENDASWAP_API_URL || "https://api.lendaswap.com"
 ).replace(/\/+$/, "");
-const LENDASWAP_API_KEY = process.env.LENDASWAP_API_KEY || "";
+const LENDASWAP_API_KEY = process.env.NEXT_PUBLIC_LENDASWAP_API_KEY || "";
 const ARKADE_SERVER_URL = process.env.NEXT_PUBLIC_ARK_SERVER_URL || "https://arkade.computer";
 const ESPLORA_URL = process.env.NEXT_PUBLIC_ESPLORA_URL || "https://mempool.space/api";
 
