@@ -235,17 +235,16 @@ export function StablecoinReceive() {
       // Switch chain first — this prompts the wallet and makes walletClient available
       await switchChainAsync({ chainId: requiredChainId });
 
-      // Wait for walletClient to become available after chain switch (up to 3s)
+      // Wait for walletClient on the correct chain after switch (up to 5s)
       let client = walletClientRef.current;
-      if (!client) {
-        for (let i = 0; i < 15; i++) {
-          await new Promise((r) => setTimeout(r, 200));
-          client = walletClientRef.current;
-          if (client) break;
-        }
+      for (let i = 0; i < 25; i++) {
+        client = walletClientRef.current;
+        if (client && client.chain?.id === requiredChainId) break;
+        await new Promise((r) => setTimeout(r, 200));
+        client = null;
       }
       if (!client) {
-        setEvmSendError("Wallet not ready — please try again.");
+        setEvmSendError("Wallet not ready on the correct chain — please try again.");
         return;
       }
 
