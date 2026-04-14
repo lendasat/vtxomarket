@@ -1,7 +1,6 @@
 /**
  * Wallet storage module — Dexie-based IndexedDB storage.
  *
- * Follows the same class-based pattern as lendaswap's IdbWalletStorage.
  * Provides persistent storage for mnemonic, keys, and password data.
  *
  * Schema history:

@@ -27,7 +27,6 @@ No custody. No platform fees. Self-custodied wallets from a 12-word seed phrase.
 - **Cancel anytime** — cooperatively via ASP, or unilaterally on-chain after CSV timelock
 - **Self-custodied** — 12-word seed phrase, keys never leave your browser
 - **Lightning support** — send and receive via [Boltz](https://boltz.exchange) atomic swaps
-- **Stablecoin swaps** — BTC-to-stablecoin via [LendaSwap](https://lendaswap.com)
 - **Social layer** — token threads and trade receipts via [Nostr](https://nostr.com)
 
 ## Architecture
@@ -133,9 +132,6 @@ Copy `.env.example` to `.env` and configure:
 | `NEXT_PUBLIC_BOLTZ_URL` | `https://api.boltz.mutinynet.arkade.sh` | Boltz API for Lightning swaps |
 | `NEXT_PUBLIC_INDEXER_URL` | `http://localhost:3001` | Asset indexer URL |
 | `NEXT_PUBLIC_INTROSPECTOR_URL` | `http://localhost:7073` | Introspector URL |
-| `NEXT_PUBLIC_LENDASWAP_API_URL` | `https://api.lendaswap.com/` | LendaSwap API |
-| `NEXT_PUBLIC_LENDASWAP_API_KEY` | | LendaSwap API key |
-
 For mainnet, use `https://arkade.computer`, `https://mempool.space/api`, and `https://api.ark.boltz.exchange`.
 
 ## Project structure
@@ -158,8 +154,7 @@ vtxomarket/
 │   │   │   └── psbt-combiner.ts   # BIP-174 multi-party signature merging
 │   │   ├── nostr-market.ts        # Nostr events (comments, trade receipts)
 │   │   └── lightning.ts           # Boltz Lightning swaps
-│   ├── hooks/                     # React hooks (useWallet, useOffers, useTokens, ...)
-│   └── lendaswap_integration/     # LendaSwap reference wallet implementation
+│   └── hooks/                     # React hooks (useWallet, useOffers, useTokens, ...)
 ├── indexer/                       # Asset indexer (Bun + SQLite + Hono)
 ├── docker-compose.yml             # Run indexer + introspector
 ├── ARCHITECTURE.md                # Swap protocol deep-dive
@@ -177,7 +172,6 @@ vtxomarket/
 | Indexer | [Bun](https://bun.sh) + SQLite + [Hono](https://hono.dev) |
 | Frontend | [Next.js 16](https://nextjs.org) + [Tailwind CSS v4](https://tailwindcss.com) |
 | Lightning | [Boltz](https://boltz.exchange) atomic swaps |
-| Stablecoin swaps | [LendaSwap SDK](https://www.npmjs.com/package/@lendasat/lendaswap-sdk-pure) |
 
 ## Network support
 

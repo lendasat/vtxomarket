@@ -48,8 +48,6 @@ jobs:
           NEXT_PUBLIC_BOLTZ_URL: ${{ vars.NEXT_PUBLIC_BOLTZ_URL || 'https://api.boltz.mutinynet.arkade.sh' }}
           NEXT_PUBLIC_INDEXER_URL: ${{ vars.NEXT_PUBLIC_INDEXER_URL || 'https://vtxofun-indexer.lendasat.com' }}
           NEXT_PUBLIC_INTROSPECTOR_URL: ${{ vars.NEXT_PUBLIC_INTROSPECTOR_URL || 'https://vtxofun-introspector.lendasat.com' }}
-          NEXT_PUBLIC_LENDASWAP_API_URL: ${{ vars.NEXT_PUBLIC_LENDASWAP_API_URL || 'https://api.lendaswap.com/' }}
-          NEXT_PUBLIC_LENDASWAP_API_KEY: ${{ secrets.NEXT_PUBLIC_LENDASWAP_API_KEY }}
 
       - name: Verify build output
         run: ls -la out/ | head -20

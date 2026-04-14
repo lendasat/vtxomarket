@@ -1,8 +1,6 @@
 import { create } from "zustand";
 import type { NDKUser, NDKUserProfile } from "@nostr-dev-kit/ndk";
 import type { BalanceInfo } from "./ark-wallet";
-import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
-
 export interface Token {
   id: string; // Nostr event id
   assetId: string; // Ark asset id
@@ -65,9 +63,6 @@ interface AppState {
   // Held assets
   heldAssets: HeldAsset[];
 
-  // Stablecoin swap transactions (survives navigation)
-  stablecoinTxs: StablecoinTxItem[];
-
   // Actions
   setUser: (user: NDKUser | null) => void;
   setProfile: (profile: NDKUserProfile | null) => void;
@@ -86,7 +81,6 @@ interface AppState {
   setTokensLoading: (loading: boolean) => void;
   setTokensLoaded: (loaded: boolean) => void;
   setHeldAssets: (assets: HeldAsset[]) => void;
-  upsertStablecoinTx: (tx: StablecoinTxItem) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -104,7 +98,6 @@ export const useAppStore = create<AppState>((set) => ({
   tokensLoading: false,
   tokensLoaded: false,
   heldAssets: [],
-  stablecoinTxs: [],
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   setConnected: (connected) => set({ connected }),
@@ -130,14 +123,4 @@ export const useAppStore = create<AppState>((set) => ({
   setTokensLoading: (tokensLoading) => set({ tokensLoading }),
   setTokensLoaded: (tokensLoaded) => set({ tokensLoaded }),
   setHeldAssets: (heldAssets) => set({ heldAssets }),
-  upsertStablecoinTx: (tx) =>
-    set((state) => {
-      const idx = state.stablecoinTxs.findIndex((t) => t.swapId === tx.swapId);
-      if (idx >= 0) {
-        const updated = [...state.stablecoinTxs];
-        updated[idx] = tx;
-        return { stablecoinTxs: updated };
-      }
-      return { stablecoinTxs: [tx, ...state.stablecoinTxs] };
-    }),
 }));

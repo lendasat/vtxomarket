@@ -28,15 +28,9 @@ import {
 } from "@/lib/lnurl";
 import { useLightning } from "@/hooks/useLightning";
 import { WalletDebug } from "@/components/wallet-debug";
-import {
-  StablecoinSend as LendaswapStablecoinSend,
-  StablecoinReceive as LendaswapStablecoinReceive,
-  useLendaswapHistory,
-} from "@/lendaswap_integration";
-import type { StablecoinTxItem } from "@/lendaswap_integration/lib/types";
 import { formatSats, formatTokenAmount, parseTokenInput } from "@/lib/format";
 
-type Tab = "onchain" | "lightning" | "arkade" | "stablecoin";
+type Tab = "onchain" | "lightning" | "arkade";
 type Mode = null | "send" | "receive" | "debug";
 type WalletView = "overview" | "history";
 
@@ -92,24 +86,6 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
       </svg>
     ),
   },
-  {
-    key: "stablecoin",
-    label: "Stablecoins",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 16 16"
-        fill="currentColor"
-        className="h-3 w-3"
-      >
-        <path
-          fillRule="evenodd"
-          d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0ZM8.75 4.37V4a.75.75 0 0 0-1.5 0v.37c-.906.27-1.75.96-1.75 2.13 0 1.42 1.2 2 2.5 2.36 1.07.3 1.25.6 1.25.89 0 .5-.48.88-1.25.88s-1.25-.38-1.25-.88a.75.75 0 0 0-1.5 0c0 1.17.844 1.86 1.75 2.13V12a.75.75 0 0 0 1.5 0v-.37c.906-.27 1.75-.96 1.75-2.13 0-1.42-1.2-2-2.5-2.36-1.07-.3-1.25-.6-1.25-.89 0-.5.48-.88 1.25-.88s1.25.38 1.25.88a.75.75 0 0 0 1.5 0c0-1.17-.844-1.86-1.75-2.13Z"
-          clipRule="evenodd"
-        />
-      </svg>
-    ),
-  },
 ];
 
 export default function WalletPage() {
@@ -124,10 +100,7 @@ export default function WalletPage() {
   const heldAssets = useAppStore((s) => s.heldAssets);
   // Load token metadata from Nostr (needed if user navigates here directly)
   useTokens();
-  // Load LendaSwap swap history into the store on mount (regardless of active tab)
-  useLendaswapHistory();
   const tokens = useAppStore((s) => s.tokens);
-  const stablecoinTxs = useAppStore((s) => s.stablecoinTxs);
 
   // Map held assets to token metadata (exclude control assets)
   const userTokens = heldAssets
@@ -443,7 +416,6 @@ export default function WalletPage() {
           /* ── Transaction History ── */
           <TransactionHistoryView
             txHistory={txHistory}
-            stablecoinTxs={stablecoinTxs}
             txLoading={txLoading}
             txError={txError}
             walletReady={walletReady}
@@ -662,9 +634,7 @@ export default function WalletPage() {
                 {/* ── RECEIVE ── */}
                 {mode === "receive" && (
                   <div>
-                    {tab === "stablecoin" ? (
-                      <LendaswapStablecoinReceive />
-                    ) : tab === "lightning" ? (
+                    {tab === "lightning" ? (
                       <LightningReceive
                         lnReady={lnReady}
                         lnInitError={lnInitError}
@@ -721,9 +691,7 @@ export default function WalletPage() {
                 {/* ── SEND ── */}
                 {mode === "send" && (
                   <div>
-                    {tab === "stablecoin" ? (
-                      <LendaswapStablecoinSend />
-                    ) : tab === "lightning" ? (
+                    {tab === "lightning" ? (
                       <LightningSend
                         lnReady={lnReady}
                         lnInitError={lnInitError}
@@ -858,9 +826,7 @@ export default function WalletPage() {
 
 // ===================== Transaction History =====================
 
-type UnifiedTxItem =
-  | { kind: "ark"; data: TxHistoryItem }
-  | { kind: "stablecoin"; data: StablecoinTxItem };
+type UnifiedTxItem = { kind: "ark"; data: TxHistoryItem };
 
 function SendAssetPicker({
   userTokens,
@@ -994,46 +960,27 @@ function SendAssetPicker({
 
 function TransactionHistoryView({
   txHistory,
-  stablecoinTxs,
   txLoading,
   txError,
   walletReady,
   onRefresh,
 }: {
   txHistory: TxHistoryItem[];
-  stablecoinTxs: StablecoinTxItem[];
   txLoading: boolean;
   txError?: string;
   walletReady: boolean;
   onRefresh: () => void;
 }) {
-  // Merge ark + stablecoin txs, sorted newest-first
   const unified: UnifiedTxItem[] = useMemo(() => {
     const ark: UnifiedTxItem[] = txHistory.map((tx) => ({ kind: "ark" as const, data: tx }));
-    const stable: UnifiedTxItem[] = stablecoinTxs.map((tx) => ({
-      kind: "stablecoin" as const,
-      data: tx,
-    }));
     const now = Date.now();
 
-    const toMs = (item: UnifiedTxItem): number => {
-      const raw = item.data.createdAt;
-      if (!raw || raw === 0) return now;
-      if (item.kind === "ark") {
-        // Ark txs: always unix seconds
-        return raw * 1000;
-      }
-      // Stablecoin txs: should be ms, but guard against seconds
-      // If value looks like seconds (< year 2001 in ms = ~10^12), convert
-      return raw < 1e12 ? raw * 1000 : raw;
-    };
-
-    return [...ark, ...stable].sort((a, b) => {
-      const aTime = toMs(a);
-      const bTime = toMs(b);
-      return (bTime || now) - (aTime || now);
+    return ark.sort((a, b) => {
+      const aTime = (a.data.createdAt || 0) * 1000 || now;
+      const bTime = (b.data.createdAt || 0) * 1000 || now;
+      return bTime - aTime;
     });
-  }, [txHistory, stablecoinTxs]);
+  }, [txHistory]);
 
   if (!walletReady) {
     return (
@@ -1096,16 +1043,12 @@ function TransactionHistoryView({
       </div>
 
       <div className="glass-card rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm divide-y divide-white/[0.06] overflow-hidden">
-        {unified.map((item, i) =>
-          item.kind === "ark" ? (
-            <TxRow
-              key={`${item.data.arkTxid || item.data.boardingTxid || item.data.commitmentTxid}-${i}`}
-              tx={item.data}
-            />
-          ) : (
-            <StablecoinTxRow key={item.data.swapId} tx={item.data} />
-          )
-        )}
+        {unified.map((item, i) => (
+          <TxRow
+            key={`${item.data.arkTxid || item.data.boardingTxid || item.data.commitmentTxid}-${i}`}
+            tx={item.data}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1158,247 +1101,6 @@ function TxRow({ tx }: { tx: TxHistoryItem }) {
         {tx.amount.toLocaleString()}
         <span className="text-[10px] text-muted-foreground/30 ml-1">sats</span>
       </span>
-    </div>
-  );
-}
-
-// Statuses where collaborative refund is available immediately (arkade_to_evm only)
-const COLLAB_REFUNDABLE_STATUSES = new Set([
-  "clientfundedserverrefunded",
-  "clientinvalidfunded",
-  "clientfundedtoolate",
-]);
-
-// Additional statuses that may be refundable (locktime-based, SDK checks internally)
-const LOCKTIME_REFUNDABLE_STATUSES = new Set([
-  "expired",
-  "clientfundingseen",
-  "clientfunded",
-  "serverfunded",
-]);
-
-// Statuses where the swap was already refunded
-const ALREADY_REFUNDED_STATUSES = new Set([
-  "clientrefunded",
-  "clientrefundedserverfunded",
-  "clientrefundedserverrefunded",
-]);
-
-function StablecoinTxRow({ tx }: { tx: StablecoinTxItem }) {
-  const [expanded, setExpanded] = useState(false);
-  const [refunding, setRefunding] = useState(false);
-  const [refundResult, setRefundResult] = useState<string | null>(null);
-  const isSend = tx.direction === "send";
-  const txDate = new Date(tx.createdAt);
-  const timeStr = isNaN(txDate.getTime()) ? "Unknown" : formatTxTime(txDate);
-  const isDone = tx.status === "complete";
-  const isFailed = tx.status === "failed";
-  const isAlreadyRefunded = ALREADY_REFUNDED_STATUSES.has(tx.backendStatus);
-
-  // Stuck receive swaps (EVM funded but server never completed)
-  const isStuckReceive =
-    !isSend && !isAlreadyRefunded && !isDone && LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus);
-
-  const isRefundable =
-    !isAlreadyRefunded &&
-    (isSend
-      ? COLLAB_REFUNDABLE_STATUSES.has(tx.backendStatus) ||
-        LOCKTIME_REFUNDABLE_STATUSES.has(tx.backendStatus)
-      : isStuckReceive);
-
-  // Show how long ago the swap was created
-  const swapAgeMs = Date.now() - tx.createdAt;
-  const swapAgeMins = Math.floor(swapAgeMs / 60000);
-  const swapAgeStr =
-    swapAgeMins < 60
-      ? `${swapAgeMins}m ago`
-      : swapAgeMins < 1440
-        ? `${Math.floor(swapAgeMins / 60)}h ago`
-        : `${Math.floor(swapAgeMins / 1440)}d ago`;
-
-  const statusBadge = isAlreadyRefunded
-    ? { label: "Refunded", cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]" }
-    : isStuckReceive
-      ? {
-          label: `Stuck (${swapAgeStr})`,
-          cls: "bg-orange-500/[0.06] text-orange-400/60 border-orange-500/[0.1]",
-        }
-      : isRefundable
-        ? {
-            label: "Refundable",
-            cls: "bg-orange-500/[0.06] text-orange-400/60 border-orange-500/[0.1]",
-          }
-        : isFailed
-          ? { label: "Failed", cls: "bg-red-500/[0.06] text-red-400/60 border-red-500/[0.1]" }
-          : isDone
-            ? {
-                label: "Complete",
-                cls: "bg-emerald-500/[0.06] text-emerald-400/60 border-emerald-500/[0.1]",
-              }
-            : tx.status === "claiming"
-              ? {
-                  label: "Claiming",
-                  cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
-                  pulse: true,
-                }
-              : tx.status === "processing"
-                ? {
-                    label: "Processing",
-                    cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
-                    pulse: true,
-                  }
-                : tx.status === "pending"
-                  ? {
-                      label: "Pending",
-                      cls: "bg-blue-500/[0.06] text-blue-400/60 border-blue-500/[0.1]",
-                      pulse: true,
-                    }
-                  : null;
-
-  const actionLabel = isAlreadyRefunded
-    ? "Refunded"
-    : isDone
-      ? isSend
-        ? "Sent"
-        : "Received"
-      : isFailed
-        ? isSend
-          ? "Send"
-          : "Receive"
-        : isSend
-          ? "Sending"
-          : "Receiving";
-
-  return (
-    <div>
-      <div
-        className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-white/[0.02] transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {/* Icon */}
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-            isSend
-              ? "bg-red-500/[0.08] text-red-400/70"
-              : "bg-emerald-500/[0.08] text-emerald-400/70"
-          }`}
-        >
-          {isSend ? <ArrowUpIcon className="size-4" /> : <ArrowDownIcon className="size-4" />}
-        </div>
-
-        {/* Label + meta */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{actionLabel}</p>
-          <p className="text-[11px] text-muted-foreground/35 mt-0.5 flex items-center gap-1.5 flex-wrap">
-            <span>{timeStr}</span>
-            <span className="text-white/[0.06]">&middot;</span>
-            <span className="text-[8px] font-semibold px-1 py-px rounded bg-purple-500/[0.08] text-purple-400/50 uppercase tracking-wider">
-              Swap
-            </span>
-            {statusBadge && (
-              <span
-                className={`inline-flex items-center gap-1 text-[8px] font-medium px-1 py-px rounded border ${statusBadge.cls}`}
-              >
-                {(statusBadge as { pulse?: boolean }).pulse && (
-                  <span className="h-1 w-1 rounded-full bg-blue-400 animate-pulse" />
-                )}
-                {statusBadge.label}
-              </span>
-            )}
-          </p>
-        </div>
-
-        {/* Amount */}
-        <div className="shrink-0 text-right">
-          <span
-            className={`text-sm font-semibold tabular-nums ${isSend ? "text-red-400/80" : "text-emerald-400/80"}`}
-          >
-            {isSend ? "-" : "+"}
-            {tx.stablecoinDisplay}
-          </span>
-        </div>
-      </div>
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="mx-4 mb-3 rounded-xl bg-white/[0.02] border border-white/[0.05] p-3 space-y-2">
-          {[
-            ["Status", (tx.backendStatus ?? "unknown").toUpperCase()],
-            ["Direction", isSend ? "BTC → Stablecoin" : "Stablecoin → BTC"],
-            ...(tx.satsAmount ? [["Sats", `${tx.satsAmount.toLocaleString()} sats`]] : []),
-            ...(tx.chain ? [["Chain", tx.chain.charAt(0).toUpperCase() + tx.chain.slice(1)]] : []),
-            ...(tx.destinationAddress
-              ? [
-                  [
-                    "To",
-                    `${tx.destinationAddress.slice(0, 8)}...${tx.destinationAddress.slice(-4)}`,
-                  ],
-                ]
-              : []),
-            ...(tx.claimTxHash
-              ? [["Claim TX", `${tx.claimTxHash.slice(0, 8)}...${tx.claimTxHash.slice(-4)}`]]
-              : []),
-            ["Swap ID", `${tx.swapId.slice(0, 8)}...${tx.swapId.slice(-4)}`],
-            ...(!isDone && !isFailed ? [["Age", swapAgeStr]] : []),
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4">
-              <span className="text-[10px] text-muted-foreground/30 shrink-0">{label}</span>
-              <span className="text-[10px] text-muted-foreground/50 font-mono text-right break-all">
-                {value}
-              </span>
-            </div>
-          ))}
-
-          {isRefundable && !refundResult && (
-            <button
-              disabled={refunding}
-              onClick={async (e) => {
-                e.stopPropagation();
-                setRefunding(true);
-                try {
-                  const { getLendaswapClient } = await import("@/lendaswap_integration/lib/client");
-                  const client = await getLendaswapClient();
-                  const addresses = useAppStore.getState().addresses;
-                  if (!addresses?.offchainAddr) {
-                    setRefundResult("No Arkade address available");
-                    return;
-                  }
-                  const result = await client.refundSwap(tx.swapId, {
-                    destinationAddress: addresses.offchainAddr,
-                  });
-                  if (result.success) {
-                    setRefundResult(
-                      result.txId
-                        ? `Refund successful! TX: ${result.txId.slice(0, 12)}...`
-                        : "Refund submitted"
-                    );
-                  } else {
-                    setRefundResult(result.message || "Refund failed");
-                  }
-                } catch (err) {
-                  setRefundResult(err instanceof Error ? err.message : "Refund failed");
-                } finally {
-                  setRefunding(false);
-                }
-              }}
-              className="w-full h-8 rounded-lg bg-orange-500/[0.1] border border-orange-500/[0.15] text-[11px] font-semibold text-orange-400/80 transition-all hover:bg-orange-500/[0.15] disabled:opacity-40"
-            >
-              {refunding
-                ? "Refunding..."
-                : isSend
-                  ? "Refund to Arkade wallet"
-                  : "Refund EVM tokens"}
-            </button>
-          )}
-          {refundResult && (
-            <p
-              className={`text-[10px] text-center ${refundResult.startsWith("Refund successful") ? "text-emerald-400/70" : "text-muted-foreground/50"}`}
-            >
-              {refundResult}
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
