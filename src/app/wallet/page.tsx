@@ -14,6 +14,7 @@ import {
   getTransactionHistory,
   getAspOnchainFee,
   renewVtxos,
+  isBtcAddress,
 } from "@/lib/ark-wallet";
 import type { TxHistoryItem } from "@/lib/ark-wallet";
 import { getInvoiceSatoshis } from "@/lib/lightning";
@@ -141,7 +142,6 @@ export default function WalletPage() {
   const [sendLoading, setSendLoading] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
   const [sendError, setSendError] = useState("");
-  const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
   const [sendAssetId, setSendAssetId] = useState<string | null>(null);
 
   // Lightning receive state
@@ -213,21 +213,6 @@ export default function WalletPage() {
       });
   }, [arkWallet, balance, setBalance]);
 
-  // Fetch ASP's onchain output fee (flat service fee, not mining fee)
-  useEffect(() => {
-    if (tab !== "onchain") {
-      setEstimatedFee(null);
-      return;
-    }
-    let cancelled = false;
-    getAspOnchainFee().then((fee) => {
-      if (!cancelled) setEstimatedFee(fee);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [tab]);
-
   const loadHistory = useCallback(async () => {
     if (!arkWallet) return;
     setTxLoading(true);
@@ -262,8 +247,9 @@ export default function WalletPage() {
 
   const handleSend = async () => {
     if (!arkWallet || !sendAddress || !sendAmount) return;
+    const isOnchain = isBtcAddress(sendAddress.trim());
     const selectedToken =
-      sendAssetId && tab === "arkade" ? userTokens.find((t) => t.assetId === sendAssetId) : null;
+      sendAssetId && !isOnchain ? userTokens.find((t) => t.assetId === sendAssetId) : null;
     const amt = selectedToken
       ? parseTokenInput(sendAmount, selectedToken.decimals)
       : parseInt(sendAmount, 10);
@@ -276,7 +262,7 @@ export default function WalletPage() {
     setSendResult(null);
     try {
       let txid: string;
-      if (sendAssetId && tab === "arkade") {
+      if (sendAssetId && !isOnchain) {
         txid = await sendAsset(arkWallet, sendAddress, sendAssetId, amt);
       } else {
         txid = await sendPayment(arkWallet, sendAddress, amt);
@@ -607,29 +593,31 @@ export default function WalletPage() {
             {/* Send / Receive content */}
             {mode !== "debug" && (
               <div className="px-5 pb-5 space-y-4">
-                {/* Tabs */}
-                <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
-                  {TABS.map(({ key, label, icon }) => {
-                    const active = tab === key;
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => {
-                          setTab(key);
-                          setCopied(false);
-                        }}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
-                          active
-                            ? "bg-white/[0.1] text-foreground shadow-sm"
-                            : "text-muted-foreground/50 hover:text-muted-foreground/70"
-                        }`}
-                      >
-                        {icon}
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* Tabs — only for receive */}
+                {mode === "receive" && (
+                  <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+                    {TABS.map(({ key, label, icon }) => {
+                      const active = tab === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setTab(key);
+                            setCopied(false);
+                          }}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                            active
+                              ? "bg-white/[0.1] text-foreground shadow-sm"
+                              : "text-muted-foreground/50 hover:text-muted-foreground/70"
+                          }`}
+                        >
+                          {icon}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* ── RECEIVE ── */}
                 {mode === "receive" && (
@@ -688,129 +676,42 @@ export default function WalletPage() {
                   </div>
                 )}
 
-                {/* ── SEND ── */}
+                {/* ── SEND (unified) ── */}
                 {mode === "send" && (
-                  <div>
-                    {tab === "lightning" ? (
-                      <LightningSend
-                        lnReady={lnReady}
-                        lnInitError={lnInitError}
-                        lnSendInvoice={lnSendInvoice}
-                        lnSendLoading={lnSendLoading}
-                        lnSendResult={lnSendResult}
-                        lnError={lnError}
-                        copied={copied}
-                        calcSendFee={calcSendFee}
-                        setLnSendInvoice={setLnSendInvoice}
-                        setLnError={setLnError}
-                        sendLightning={sendLightning}
-                        setLnSendResult={setLnSendResult}
-                        setLnSendLoading={setLnSendLoading}
-                        copyToClipboard={copyToClipboard}
-                        truncateAddr={truncateAddr}
-                        refreshBalance={refreshBalance}
-                      />
-                    ) : (
-                      <>
-                        {sendResult ? (
-                          <SuccessView
-                            txid={sendResult}
-                            copied={copied}
-                            copyToClipboard={copyToClipboard}
-                            truncateAddr={truncateAddr}
-                          />
-                        ) : (
-                          <div className="space-y-4">
-                            {tab === "arkade" && userTokens.length > 0 && (
-                              <SendAssetPicker
-                                userTokens={userTokens}
-                                sendAssetId={sendAssetId}
-                                setSendAssetId={(id) => {
-                                  setSendAssetId(id);
-                                  setSendAmount("");
-                                }}
-                              />
-                            )}
-                            <div className="space-y-2">
-                              <label className="text-[11px] text-muted-foreground/50 font-medium">
-                                {tab === "arkade" ? "Arkade Address" : "Bitcoin Address"}
-                              </label>
-                              <input
-                                value={sendAddress}
-                                onChange={(e) => setSendAddress(e.target.value)}
-                                placeholder="Paste address..."
-                                className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-[11px] text-muted-foreground/50 font-medium">
-                                {sendAssetId && tab === "arkade"
-                                  ? `Amount (${userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"})`
-                                  : "Amount (sats)"}
-                              </label>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  value={sendAmount}
-                                  onChange={(e) => setSendAmount(e.target.value)}
-                                  placeholder="0"
-                                  className="w-full h-11 px-4 pr-16 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
-                                />
-                                <button
-                                  type="button"
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-white/[0.08] border border-white/[0.1] text-[10px] font-semibold text-muted-foreground/60 hover:bg-white/[0.14] hover:text-foreground/80 transition-all"
-                                  onClick={() => {
-                                    if (sendAssetId && tab === "arkade") {
-                                      const t = userTokens.find((t) => t.assetId === sendAssetId);
-                                      if (t) setSendAmount(formatTokenAmount(t.amount, t.decimals));
-                                    } else if (balance) {
-                                      setSendAmount(String(balance.available));
-                                    }
-                                  }}
-                                >
-                                  Max
-                                </button>
-                              </div>
-                              {sendAssetId && tab === "arkade" ? (
-                                <p className="text-[10px] text-muted-foreground/30 tabular-nums">
-                                  Available:{" "}
-                                  {formatTokenAmount(
-                                    userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0,
-                                    userTokens.find((t) => t.assetId === sendAssetId)?.decimals
-                                  )}{" "}
-                                  {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ??
-                                    "tokens"}
-                                </p>
-                              ) : (
-                                balance && (
-                                  <p className="text-[10px] text-muted-foreground/30 tabular-nums">
-                                    Available: {balance.available.toLocaleString()} sats
-                                  </p>
-                                )
-                              )}
-                            </div>
-                            {tab === "onchain" &&
-                              sendAmount &&
-                              parseInt(sendAmount) > 0 &&
-                              estimatedFee !== null && (
-                                <p className="text-[11px] text-muted-foreground/40">
-                                  Network fee: {estimatedFee} sats &middot; Total:{" "}
-                                  {(parseInt(sendAmount) + estimatedFee).toLocaleString()} sats
-                                </p>
-                              )}
-                            {sendError && <p className="text-xs text-red-400/80">{sendError}</p>}
-                            <button
-                              disabled={sendLoading || !sendAddress || !sendAmount}
-                              onClick={handleSend}
-                              className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              {sendLoading ? "Sending..." : "Send"}
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <UnifiedSend
+                    walletReady={walletReady}
+                    balance={balance}
+                    userTokens={userTokens}
+                    sendAddress={sendAddress}
+                    setSendAddress={setSendAddress}
+                    sendAmount={sendAmount}
+                    setSendAmount={setSendAmount}
+                    sendAssetId={sendAssetId}
+                    setSendAssetId={(id) => {
+                      setSendAssetId(id);
+                      setSendAmount("");
+                    }}
+                    sendLoading={sendLoading}
+                    sendResult={sendResult}
+                    sendError={sendError}
+                    handleSend={handleSend}
+                    lnReady={lnReady}
+                    lnInitError={lnInitError}
+                    lnSendInvoice={lnSendInvoice}
+                    lnSendLoading={lnSendLoading}
+                    lnSendResult={lnSendResult}
+                    lnError={lnError}
+                    copied={copied}
+                    calcSendFee={calcSendFee}
+                    setLnSendInvoice={setLnSendInvoice}
+                    setLnError={setLnError}
+                    sendLightning={sendLightning}
+                    setLnSendResult={setLnSendResult}
+                    setLnSendLoading={setLnSendLoading}
+                    copyToClipboard={copyToClipboard}
+                    truncateAddr={truncateAddr}
+                    refreshBalance={refreshBalance}
+                  />
                 )}
 
                 {/* Safe area spacer */}
@@ -1380,7 +1281,32 @@ function LightningReceive({
   );
 }
 
-function LightningSend({
+type SendInputType = "empty" | "lightning" | "onchain" | "arkade";
+
+function detectSendInputType(input: string): SendInputType {
+  const v = input.trim();
+  if (!v) return "empty";
+  const lower = v.toLowerCase();
+  if (lower.startsWith("ln") || isLnurlOrLightningAddress(v)) return "lightning";
+  if (isBtcAddress(v)) return "onchain";
+  // Anything else is treated as an Arkade offchain address
+  if (v.length > 10) return "arkade";
+  return "empty";
+}
+
+function UnifiedSend({
+  balance,
+  userTokens,
+  sendAddress,
+  setSendAddress,
+  sendAmount,
+  setSendAmount,
+  sendAssetId,
+  setSendAssetId,
+  sendLoading,
+  sendResult,
+  sendError,
+  handleSend,
   lnReady,
   lnInitError,
   lnSendInvoice,
@@ -1398,6 +1324,26 @@ function LightningSend({
   truncateAddr,
   refreshBalance,
 }: {
+  walletReady: boolean;
+  balance: { available: number; onchain: number; onchainConfirmed: number; recoverable: number } | null;
+  userTokens: {
+    assetId: string;
+    amount: number;
+    decimals?: number;
+    name: string;
+    ticker: string;
+    image?: string;
+  }[];
+  sendAddress: string;
+  setSendAddress: (v: string) => void;
+  sendAmount: string;
+  setSendAmount: (v: string) => void;
+  sendAssetId: string | null;
+  setSendAssetId: (id: string | null) => void;
+  sendLoading: boolean;
+  sendResult: string | null;
+  sendError: string;
+  handleSend: () => Promise<void>;
   lnReady: boolean;
   lnInitError: string | null;
   lnSendInvoice: string;
@@ -1418,17 +1364,34 @@ function LightningSend({
   const [lnurlParams, setLnurlParams] = useState<LnurlPayParams | null>(null);
   const [lnurlLoading, setLnurlLoading] = useState(false);
   const [lnurlAmount, setLnurlAmount] = useState("");
+  const [estimatedOnchainFee, setEstimatedOnchainFee] = useState<number | null>(null);
 
-  const inputValue = lnSendInvoice.trim();
-  const isLnurlInput = isLnurlOrLightningAddress(inputValue);
-  const isBolt11 =
-    !isLnurlInput && inputValue.length > 10 && inputValue.toLowerCase().startsWith("ln");
+  // Unified input — used for all destination types
+  const [destination, setDestination] = useState("");
+  const inputType = detectSendInputType(destination);
 
+  // Sync destination to the right parent state depending on type
+  const handleDestinationChange = (val: string) => {
+    setDestination(val);
+    setLnError("");
+    setLnurlAmount("");
+    setLnurlParams(null);
+    if (detectSendInputType(val) === "lightning") {
+      setLnSendInvoice(val);
+      setSendAddress("");
+    } else {
+      setSendAddress(val);
+      setLnSendInvoice("");
+    }
+  };
+
+  // LNURL resolution
   const prevInputRef = useRef("");
   useEffect(() => {
-    if (prevInputRef.current === inputValue) return;
-    prevInputRef.current = inputValue;
-    if (!isLnurlInput) {
+    const v = destination.trim();
+    if (prevInputRef.current === v) return;
+    prevInputRef.current = v;
+    if (!isLnurlOrLightningAddress(v)) {
       setLnurlParams(null);
       return;
     }
@@ -1436,7 +1399,7 @@ function LightningSend({
     setLnurlLoading(true);
     setLnurlParams(null);
     setLnError("");
-    fetchPayParams(inputValue).then((params) => {
+    fetchPayParams(v).then((params) => {
       if (cancelled) return;
       setLnurlLoading(false);
       if (params) setLnurlParams(params);
@@ -1445,12 +1408,28 @@ function LightningSend({
     return () => {
       cancelled = true;
     };
-  }, [inputValue, isLnurlInput, setLnError]);
+  }, [destination, setLnError]);
 
-  if (lnSendResult) {
+  // Fetch onchain fee when detected as onchain
+  useEffect(() => {
+    if (inputType !== "onchain") {
+      setEstimatedOnchainFee(null);
+      return;
+    }
+    let cancelled = false;
+    getAspOnchainFee().then((fee) => {
+      if (!cancelled) setEstimatedOnchainFee(fee);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [inputType]);
+
+  // Success view (Lightning or Arkade/Onchain)
+  if (lnSendResult || sendResult) {
     return (
       <SuccessView
-        txid={lnSendResult}
+        txid={(lnSendResult || sendResult)!}
         copied={copied}
         copyToClipboard={copyToClipboard}
         truncateAddr={truncateAddr}
@@ -1458,37 +1437,15 @@ function LightningSend({
     );
   }
 
-  if (!lnReady) {
-    return (
-      <div className="text-center py-8 space-y-3">
-        {lnInitError ? (
-          <>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="h-6 w-6 text-amber-400/70 mx-auto"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <p className="text-xs text-amber-400/70 max-w-[260px] mx-auto">{lnInitError}</p>
-          </>
-        ) : (
-          <>
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
-            <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
-          </>
-        )}
-      </div>
-    );
-  }
+  const isBolt11 =
+    inputType === "lightning" &&
+    !isLnurlOrLightningAddress(destination.trim()) &&
+    destination.trim().length > 10;
 
-  const handleSend = async () => {
-    if (!inputValue) return;
+  // Lightning send handler
+  const handleLightningSend = async () => {
+    const v = destination.trim();
+    if (!v) return;
     setLnSendLoading(true);
     setLnError("");
     try {
@@ -1520,11 +1477,11 @@ function LightningSend({
         }
         invoice = result.pr;
       } else {
-        invoice = inputValue;
+        invoice = v;
       }
       const { txid } = await sendLightning(invoice);
       setLnSendResult(txid);
-      setLnSendInvoice("");
+      setDestination("");
       setLnurlAmount("");
       await refreshBalance();
     } catch (err) {
@@ -1534,44 +1491,76 @@ function LightningSend({
     }
   };
 
+  const typeBadge =
+    inputType === "lightning"
+      ? { label: "Lightning", cls: "bg-yellow-500/[0.08] text-yellow-400/70 border-yellow-500/[0.12]" }
+      : inputType === "onchain"
+        ? { label: "Onchain", cls: "bg-orange-500/[0.08] text-orange-400/70 border-orange-500/[0.12]" }
+        : inputType === "arkade"
+          ? { label: "Arkade", cls: "bg-emerald-500/[0.08] text-emerald-400/70 border-emerald-500/[0.12]" }
+          : null;
+
   return (
     <div className="space-y-4">
+      {/* Destination input */}
       <div className="space-y-2">
-        <label className="text-[11px] text-muted-foreground/50 font-medium">
-          Invoice, LNURL, or Lightning Address
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] text-muted-foreground/50 font-medium">Destination</label>
+          {typeBadge && (
+            <span
+              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${typeBadge.cls}`}
+            >
+              {typeBadge.label}
+            </span>
+          )}
+        </div>
         <input
-          value={lnSendInvoice}
-          onChange={(e) => {
-            setLnSendInvoice(e.target.value);
-            setLnError("");
-            setLnurlAmount("");
-          }}
-          placeholder="lnbc1..., lnurl1..., or user@domain.com"
+          value={destination}
+          onChange={(e) => handleDestinationChange(e.target.value)}
+          placeholder="Address, invoice, LNURL, or user@domain.com"
           className="w-full h-11 px-4 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
         />
       </div>
 
+      {/* ── Lightning: LNURL resolving ── */}
       {lnurlLoading && (
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent" />
           <p className="text-xs text-muted-foreground/40">
-            Resolving {isLightningAddress(inputValue) ? "Lightning Address" : "LNURL"}...
+            Resolving{" "}
+            {isLightningAddress(destination.trim()) ? "Lightning Address" : "LNURL"}...
           </p>
         </div>
       )}
 
+      {/* ── Lightning: not ready ── */}
+      {inputType === "lightning" && !lnReady && (
+        <div className="text-center py-4 space-y-2">
+          {lnInitError ? (
+            <p className="text-xs text-amber-400/70">{lnInitError}</p>
+          ) : (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-transparent mx-auto" />
+              <p className="text-xs text-muted-foreground/40">Connecting to Lightning...</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Lightning: LNURL params + amount ── */}
       {lnurlParams && (
         <div className="space-y-4">
           <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4 space-y-1.5">
             <p className="text-xs text-muted-foreground/50">
-              Pay to <span className="text-foreground/80 font-medium">{lnurlParams.domain}</span>
+              Pay to{" "}
+              <span className="text-foreground/80 font-medium">{lnurlParams.domain}</span>
             </p>
             {lnurlParams.description && (
               <p className="text-xs text-muted-foreground/40">{lnurlParams.description}</p>
             )}
             <p className="text-xs text-muted-foreground/40">
-              {minSats(lnurlParams).toLocaleString()} – {maxSats(lnurlParams).toLocaleString()} sats
+              {minSats(lnurlParams).toLocaleString()} –{" "}
+              {maxSats(lnurlParams).toLocaleString()} sats
             </p>
           </div>
           <div className="space-y-2">
@@ -1596,25 +1585,28 @@ function LightningSend({
               const fee = calcSendFee(sats);
               return (
                 <p className="text-[11px] text-muted-foreground/40">
-                  Fee: ~{fee.toLocaleString()} sats &middot; Total: ~{(sats + fee).toLocaleString()}{" "}
-                  sats
+                  Fee: ~{fee.toLocaleString()} sats &middot; Total: ~
+                  {(sats + fee).toLocaleString()} sats
                 </p>
               );
             })()}
         </div>
       )}
 
+      {/* ── Lightning: BOLT11 amount + fee ── */}
       {isBolt11 &&
         !lnurlParams &&
         (() => {
           try {
-            const invoiceSats = getInvoiceSatoshis(inputValue);
+            const invoiceSats = getInvoiceSatoshis(destination.trim());
             const fee = calcSendFee(invoiceSats);
             return (
               <div className="space-y-0.5">
                 <p className="text-[11px] text-muted-foreground/50">
                   Amount:{" "}
-                  <span className="text-foreground/80">{invoiceSats.toLocaleString()} sats</span>
+                  <span className="text-foreground/80">
+                    {invoiceSats.toLocaleString()} sats
+                  </span>
                 </p>
                 <p className="text-[11px] text-muted-foreground/40">
                   Fee: ~{fee.toLocaleString()} sats &middot; Total: ~
@@ -1627,17 +1619,103 @@ function LightningSend({
           }
         })()}
 
-      {lnError && <p className="text-xs text-red-400/80">{lnError}</p>}
+      {/* ── Arkade/Onchain: asset picker + amount ── */}
+      {(inputType === "arkade" || inputType === "onchain") && (
+        <div className="space-y-4">
+          {inputType === "arkade" && userTokens.length > 0 && (
+            <SendAssetPicker
+              userTokens={userTokens}
+              sendAssetId={sendAssetId}
+              setSendAssetId={setSendAssetId}
+            />
+          )}
+          <div className="space-y-2">
+            <label className="text-[11px] text-muted-foreground/50 font-medium">
+              {sendAssetId && inputType === "arkade"
+                ? `Amount (${userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"})`
+                : "Amount (sats)"}
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                value={sendAmount}
+                onChange={(e) => setSendAmount(e.target.value)}
+                placeholder="0"
+                className="w-full h-11 px-4 pr-16 text-sm rounded-xl bg-white/[0.05] border border-white/[0.08] text-foreground placeholder:text-muted-foreground/25 outline-none focus:border-white/[0.14] focus:bg-white/[0.07] transition-all"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-white/[0.08] border border-white/[0.1] text-[10px] font-semibold text-muted-foreground/60 hover:bg-white/[0.14] hover:text-foreground/80 transition-all"
+                onClick={() => {
+                  if (sendAssetId && inputType === "arkade") {
+                    const t = userTokens.find((t) => t.assetId === sendAssetId);
+                    if (t) setSendAmount(formatTokenAmount(t.amount, t.decimals));
+                  } else if (balance) {
+                    setSendAmount(String(balance.available));
+                  }
+                }}
+              >
+                Max
+              </button>
+            </div>
+            {sendAssetId && inputType === "arkade" ? (
+              <p className="text-[10px] text-muted-foreground/30 tabular-nums">
+                Available:{" "}
+                {formatTokenAmount(
+                  userTokens.find((t) => t.assetId === sendAssetId)?.amount ?? 0,
+                  userTokens.find((t) => t.assetId === sendAssetId)?.decimals
+                )}{" "}
+                {userTokens.find((t) => t.assetId === sendAssetId)?.ticker ?? "tokens"}
+              </p>
+            ) : (
+              balance && (
+                <p className="text-[10px] text-muted-foreground/30 tabular-nums">
+                  Available: {balance.available.toLocaleString()} sats
+                </p>
+              )
+            )}
+          </div>
+          {inputType === "onchain" &&
+            sendAmount &&
+            parseInt(sendAmount) > 0 &&
+            estimatedOnchainFee !== null && (
+              <p className="text-[11px] text-muted-foreground/40">
+                Network fee: {estimatedOnchainFee} sats &middot; Total:{" "}
+                {(parseInt(sendAmount) + estimatedOnchainFee).toLocaleString()} sats
+              </p>
+            )}
+        </div>
+      )}
 
-      <button
-        disabled={
-          lnSendLoading || !inputValue || lnurlLoading || (lnurlParams ? !lnurlAmount : false)
-        }
-        onClick={handleSend}
-        className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        {lnSendLoading ? "Sending..." : lnurlParams ? "Pay" : "Send"}
-      </button>
+      {/* Error */}
+      {(lnError || sendError) && (
+        <p className="text-xs text-red-400/80">{lnError || sendError}</p>
+      )}
+
+      {/* Send button */}
+      {inputType === "lightning" ? (
+        <button
+          disabled={
+            lnSendLoading ||
+            !destination.trim() ||
+            !lnReady ||
+            lnurlLoading ||
+            (lnurlParams ? !lnurlAmount : false)
+          }
+          onClick={handleLightningSend}
+          className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {lnSendLoading ? "Sending..." : lnurlParams ? "Pay" : "Send"}
+        </button>
+      ) : inputType !== "empty" ? (
+        <button
+          disabled={sendLoading || !sendAddress || !sendAmount}
+          onClick={handleSend}
+          className="w-full h-11 rounded-xl bg-white/[0.1] border border-white/[0.12] text-sm font-semibold transition-all hover:bg-white/[0.14] hover:border-white/[0.16] disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {sendLoading ? "Sending..." : "Send"}
+        </button>
+      ) : null}
     </div>
   );
 }
